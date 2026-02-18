@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Staff Dashboard</title>
+  <link rel="stylesheet" href="../../css/output.css" />
+</head>
+
+<body>
+<div class="flex min-h-screen bg-gray-50">
+
+  <!-- SIDEBAR -->
+<!-- SIDEBAR -->
+<aside class="w-64 bg-white border-r flex flex-col">
+
+  <!-- Logo -->
+  <div class="p-6 flex items-center gap-3 border-b">
+    <div class="bg-emerald-600 text-white p-3 rounded-lg">
+      <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none"
+        viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+          d="M12 4v16m8-8H4" />
+      </svg>
+    </div>
+    <div>
+      <p class="font-semibold leading-tight">General Medicine Clinic</p>
+      <p class="text-sm text-gray-500">Staff Portal</p>
+    </div>
+  </div>
+
+  <!-- NAVIGATION -->
+  <nav class="flex-1 px-4 py-6 space-y-2">
+
+    <!-- Dashboard -->
+    <a href="./staff_dashboard.html"
+      class="flex items-center gap-3 px-4 py-2 rounded-lg bg-emerald-600 text-white">
+      <span>📊</span>
+      <span class="font-medium">Dashboard</span>
+    </a>
+
+    <!-- Inventory -->
+    <a href="#"
+      class="flex items-center gap-3 px-4 py-2 rounded-lg text-gray-700 hover:bg-gray-100">
+      <span>📦</span>
+      <span>Inventory</span>
+    </a>
+
+    <!-- Billing -->
+    <a href="#"
+      class="flex items-center gap-3 px-4 py-2 rounded-lg text-gray-700 hover:bg-gray-100">
+      <span>💳</span>
+      <span>Billing</span>
+    </a>
+
+  </nav>
+
+  <!-- LOGOUT (BOTTOM) -->
+  <div class="border-t p-4">
+    <button id="logoutBtn"
+      class="w-full flex items-center gap-3 px-4 py-2 rounded-lg text-black hover:bg-red-50 transition">
+      <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5"
+        fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+          d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1
+             a3 3 0 01-3 3H6a3 3 0 01-3-3V7
+             a3 3 0 013-3h4a3 3 0 013 3v1" />
+      </svg>
+      Logout
+    </button>
+  </div>
+
+</aside>
+
+
+  <!-- MAIN -->
+  <main class="flex-1 p-6">
+
+    <!-- TOP BAR -->
+    <div class="flex justify-end mb-6 bg-white px-6 py-3 rounded shadow">
+      <div class="flex items-center gap-2">
+        <div id="staffAvatar"
+          class="w-9 h-9 bg-emerald-600 rounded-full text-white flex items-center justify-center">
+          S
+        </div>
+        <div>
+          <p id="staffName" class="font-medium">Staff Name</p>
+          <p id="staffUsername" class="text-xs text-gray-500">sampleusername</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- STATS -->
+    <div class="grid grid-cols-4 gap-4 mb-8">
+      <div class="bg-white p-4 rounded shadow">
+        <p class="text-sm text-gray-500">Today's Revenue</p>
+        <p id="revenueToday" class="text-2xl font-bold">—</p>
+      </div>
+      <div class="bg-white p-4 rounded shadow">
+        <p class="text-sm text-gray-500">Transactions</p>
+        <p id="transactionsToday" class="text-2xl font-bold">—</p>
+      </div>
+      <div class="bg-white p-4 rounded shadow">
+        <p class="text-sm text-gray-500">Items Issued</p>
+        <p id="itemsIssuedToday" class="text-2xl font-bold">—</p>
+      </div>
+      <div class="bg-white p-4 rounded shadow">
+        <p class="text-sm text-gray-500">Pending Restock</p>
+        <p id="pendingRestock" class="text-2xl font-bold">—</p>
+      </div>
+    </div>
+
+    <!-- LISTS -->
+    <div class="grid grid-cols-3 gap-6">
+      <div class="bg-white p-4 rounded shadow">
+        <h2 class="font-semibold mb-4">Recent Transactions</h2>
+        <div id="recentTransactions"></div>
+      </div>
+
+      <div class="bg-white p-4 rounded shadow">
+        <h2 class="font-semibold mb-4">Inventory Alerts</h2>
+        <div id="inventoryAlerts"></div>
+      </div>
+
+      <div class="bg-white p-4 rounded shadow">
+        <h2 class="font-semibold text-lg">Top Items Today</h2>
+        <p class="text-sm text-gray-500 mb-4">Best performing products</p>
+        <div id="topItemsToday"></div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<script type="module" src="../../JS/staff_dashboard/staff_dashboard.js"></script>
+</body>
+</html>

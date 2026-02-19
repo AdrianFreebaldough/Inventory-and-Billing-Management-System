@@ -2,135 +2,88 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Staff Dashboard</title>
   <link rel="stylesheet" href="../../css/output.css" />
 </head>
 
-<body>
-<div class="flex min-h-screen bg-gray-50">
+<body class="flex min-h-screen bg-gray-50">
 
-  <!-- SIDEBAR -->
-<!-- SIDEBAR -->
-<aside class="w-64 bg-white border-r flex flex-col">
+<!-- ===== SIDEBAR ===== -->
+<aside class="w-64 bg-white border-r flex flex-col fixed h-screen">
 
   <!-- Logo -->
   <div class="p-6 flex items-center gap-3 border-b">
-    <div class="bg-emerald-600 text-white p-3 rounded-lg">
-      <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none"
-        viewBox="0 0 24 24" stroke="currentColor">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-          d="M12 4v16m8-8H4" />
-      </svg>
-    </div>
+    <div class="bg-emerald-600 text-white p-3 rounded-lg">+</div>
     <div>
-      <p class="font-semibold leading-tight">General Medicine Clinic</p>
+      <p class="font-semibold">General Medicine Clinic</p>
       <p class="text-sm text-gray-500">Staff Portal</p>
     </div>
   </div>
 
-  <!-- NAVIGATION -->
+  <!-- NAV -->
   <nav class="flex-1 px-4 py-6 space-y-2">
 
     <!-- Dashboard -->
-    <a href="./staff_dashboard.html"
-      class="flex items-center gap-3 px-4 py-2 rounded-lg bg-emerald-600 text-white">
-      <span>📊</span>
-      <span class="font-medium">Dashboard</span>
-    </a>
-
-    <!-- Inventory -->
     <a href="#"
-      class="flex items-center gap-3 px-4 py-2 rounded-lg text-gray-700 hover:bg-gray-100">
-      <span>📦</span>
-      <span>Inventory</span>
+       id="navDashboard"
+       class="nav-link flex items-center gap-3 px-4 py-2 rounded-lg bg-emerald-600 text-white">
+      <span>Dashboard</span>
     </a>
 
     <!-- Billing -->
-    <a href="#"
-      class="flex items-center gap-3 px-4 py-2 rounded-lg text-gray-700 hover:bg-gray-100">
-      <span>💳</span>
+     <a href="#"
+       id="navBilling"
+       class="nav-link flex items-center gap-3 px-4 py-2 rounded-lg text-gray-700 hover:bg-gray-100">
       <span>Billing</span>
+    </a>
+
+    <!-- Inventory (placeholder) -->
+    <a href="#"
+       class="flex items-center gap-3 px-4 py-2 rounded-lg text-gray-400 cursor-not-allowed">
+      <span>Inventory</span>
     </a>
 
   </nav>
 
-  <!-- LOGOUT (BOTTOM) -->
-  <div class="border-t p-4">
-    <button id="logoutBtn"
-      class="w-full flex items-center gap-3 px-4 py-2 rounded-lg text-black hover:bg-red-50 transition">
-      <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5"
-        fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-          d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1
-             a3 3 0 01-3 3H6a3 3 0 01-3-3V7
-             a3 3 0 013-3h4a3 3 0 013 3v1" />
-      </svg>
-      Logout
+  <!-- LOGOUT -->
+  <div class="border-t p-4 mt-auto">
+    <button
+      id="logoutBtn"
+      type="button"
+      class="w-full flex items-center gap-3 px-4 py-2 rounded-lg text-gray-700 hover:bg-red-50 hover:text-red-600 transition">
+      🚪 Logout
     </button>
   </div>
 
 </aside>
 
+<!-- ===== MAIN ===== -->
+<main class="ml-64 flex flex-col w-full">
 
-  <!-- MAIN -->
-  <main class="flex-1 p-6">
-
-    <!-- TOP BAR -->
-    <div class="flex justify-end mb-6 bg-white px-6 py-3 rounded shadow">
-      <div class="flex items-center gap-2">
-        <div id="staffAvatar"
-          class="w-9 h-9 bg-emerald-600 rounded-full text-white flex items-center justify-center">
-          S
-        </div>
-        <div>
-          <p id="staffName" class="font-medium">Staff Name</p>
-          <p id="staffUsername" class="text-xs text-gray-500">sampleusername</p>
-        </div>
+  <!-- HEADER -->
+  <header class="flex justify-end items-center px-6 py-4 bg-white border-b">
+    <div class="flex items-center gap-5">
+      <button class="relative p-2 rounded-full hover:bg-gray-100">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6 text-gray-500">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M14.857 17.082a23.848 23.848 0 0 0 3.507-1.662A2.25 2.25 0 0 0 20.25 13.5v-2.036c0-2.577-1.456-4.954-3.708-6.016A6.375 6.375 0 0 0 6.75 6.75c-2.252 1.062-3.708 3.439-3.708 6.016V13.5c0 .795.423 1.537 1.136 1.92a23.848 23.848 0 0 0 3.507 1.662m7.172 0a11.548 11.548 0 0 1-7.172 0m7.172 0a3 3 0 1 1-7.172 0" />
+        </svg>
+      </button>
+      <div id="staffAvatar" class="w-9 h-9 bg-emerald-600 rounded-full text-white flex items-center justify-center font-semibold">A</div>
+      <div>
+        <p id="staffName" class="font-medium">Staff Name</p>
+        <p id="staffUsername" class="text-xs text-gray-500">username</p>
       </div>
     </div>
+  </header>
 
-    <!-- STATS -->
-    <div class="grid grid-cols-4 gap-4 mb-8">
-      <div class="bg-white p-4 rounded shadow">
-        <p class="text-sm text-gray-500">Today's Revenue</p>
-        <p id="revenueToday" class="text-2xl font-bold">—</p>
-      </div>
-      <div class="bg-white p-4 rounded shadow">
-        <p class="text-sm text-gray-500">Transactions</p>
-        <p id="transactionsToday" class="text-2xl font-bold">—</p>
-      </div>
-      <div class="bg-white p-4 rounded shadow">
-        <p class="text-sm text-gray-500">Items Issued</p>
-        <p id="itemsIssuedToday" class="text-2xl font-bold">—</p>
-      </div>
-      <div class="bg-white p-4 rounded shadow">
-        <p class="text-sm text-gray-500">Pending Restock</p>
-        <p id="pendingRestock" class="text-2xl font-bold">—</p>
-      </div>
-    </div>
+  <!-- 🔥 DYNAMIC CONTENT -->
+  <section
+    id="mainContent"
+    class="p-6 flex-1 overflow-y-auto">
+    <!-- Dashboard / Billing content injected here -->
+  </section>
 
-    <!-- LISTS -->
-    <div class="grid grid-cols-3 gap-6">
-      <div class="bg-white p-4 rounded shadow">
-        <h2 class="font-semibold mb-4">Recent Transactions</h2>
-        <div id="recentTransactions"></div>
-      </div>
-
-      <div class="bg-white p-4 rounded shadow">
-        <h2 class="font-semibold mb-4">Inventory Alerts</h2>
-        <div id="inventoryAlerts"></div>
-      </div>
-
-      <div class="bg-white p-4 rounded shadow">
-        <h2 class="font-semibold text-lg">Top Items Today</h2>
-        <p class="text-sm text-gray-500 mb-4">Best performing products</p>
-        <div id="topItemsToday"></div>
-      </div>
-    </div>
-
-  </main>
-</div>
+</main>
 
 <script type="module" src="../../JS/staff_dashboard/staff_dashboard.js"></script>
 </body>

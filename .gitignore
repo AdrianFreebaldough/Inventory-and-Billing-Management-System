@@ -1,3 +1,4 @@
 node_modules/
 
-frontend/css/output.css
+**/output.css
+

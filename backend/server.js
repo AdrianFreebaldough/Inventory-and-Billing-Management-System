@@ -1,22 +1,17 @@
-import mongoose from "mongoose";
 import dotenv from "dotenv";
+import app from "./app.js";
+import connectIBMS from "./database/database.js";
 
 dotenv.config();
 
-const connectDB = async () => {
-  try {
-    const uri = process.env.IBMS_DB_URI;
+const PORT = process.env.PORT || 3000;
 
-    if (!uri) {
-      throw new Error("IBMS_DB_URI is undefined. Check your .env file.");
-    }
+const startServer = async () => {
+  await connectIBMS();
 
-    await mongoose.connect(uri);
-    console.log("MongoDB (IBMS) connected");
-  } catch (error) {
-    console.error("MongoDB connection failed:", error.message);
-    process.exit(1);
-  }
+  app.listen(PORT, () => {
+    console.log(`🚀 Server running on port ${PORT}`);
+  });
 };
 
-export default connectDB;
+startServer();

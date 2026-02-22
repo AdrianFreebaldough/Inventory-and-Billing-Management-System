@@ -130,11 +130,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
       mainContent.innerHTML = await res.text();
 
-      // wait for DOM injection
-      await new Promise(r => setTimeout(r, 50));
+      // wait briefly for DOM injection to settle
+      await new Promise(r => setTimeout(r, 150));
 
-      // ✅ correct module path
-      const module = await import("../staff_inventory/staff_billing.js");
+      // ✅ correct module path (now in staff_billing folder)
+      const module = await import("../staff_billing/staff_billing.js");
 
       if (typeof module.initBilling !== "function") {
         throw new Error("initBilling() missing");
@@ -153,17 +153,38 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   /* ================= INVENTORY ================= */
-  function loadInventory() {
+  async function loadInventory() {
     setActive(navInventory);
 
-    mainContent.innerHTML = `
-      <div class="bg-white p-6 rounded shadow">
-        <h1 class="text-2xl font-semibold mb-4">Inventory</h1>
-        <p class="text-gray-500 mb-4">
-          Inventory module ready for connection.
-        </p>
-      </div>
-    `;
+    try {
+      // ✅ correct relative path from staff_dashboard.js
+      const res = await fetch("../../HTML/staff_Inventory/staff_Inventory.html");
+      if (!res.ok) throw new Error("Inventory HTML not found");
+
+      mainContent.innerHTML = await res.text();
+
+      // wait briefly for DOM injection to settle
+      await new Promise(r => setTimeout(r, 150));
+
+      // ✅ correct module path
+      console.log("Importing staff_inventory module...");
+      const module = await import("../staff_inventory/staff_inventory.js");
+
+      if (typeof module.initInventory !== "function") {
+        throw new Error("initInventory() missing");
+      }
+
+      module.initInventory();
+      console.log("staff_inventory.initInventory() called");
+
+    } catch (error) {
+      console.error(error);
+      mainContent.innerHTML = `
+        <div class="text-red-500 p-4 font-medium">
+          Failed to load Inventory module: ${error.message}
+        </div>
+      `;
+    }
   }
 
   /* ================= EVENTS ================= */

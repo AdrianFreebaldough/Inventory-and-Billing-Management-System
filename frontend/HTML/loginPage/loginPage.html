@@ -34,11 +34,9 @@
 
                 <div>
                     <label class="block text-gray-700 text-sm font-medium mb-2">Username</label>
-                    <input id="loginUsername" type="text"
-                        placeholder="Enter your username"
+                    <input id="loginUsername" type="text" placeholder="Enter your username"
                         class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-600 focus:border-transparent"/>
-                    <p id="loginUsernameWarning"
-                        class="text-sm text-red-600 mt-1 hidden">
+                    <p id="loginUsernameWarning" class="text-sm text-red-600 mt-1 hidden">
                         Username is required.
                     </p>
                 </div>
@@ -46,12 +44,10 @@
                 <div>
                     <label class="block text-gray-700 text-sm font-medium mb-2">Password</label>
                     <div class="relative">
-                        <input id="loginPassword" type="password"
-                            placeholder="Enter your password"
+                        <input id="loginPassword" type="password" placeholder="Enter your password"
                             class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-600 focus:border-transparent"/>
                         
-                        <button type="button"
-                            class="absolute right-3 top-1/2 -translate-y-1/2 focus:outline-none bg-transparent border-0 p-0 eyeToggle"
+                        <button type="button" class="absolute right-3 top-1/2 -translate-y-1/2 focus:outline-none bg-transparent border-0 p-0 eyeToggle"
                             data-target="loginPassword">
                             <img src="../../assets/eye-open.png" alt="Show password"
                                 class="eyeOpen w-5 h-4 grayscale">
@@ -60,14 +56,12 @@
                         </button>
                     </div>
 
-                    <p id="loginPasswordWarning"
-                        class="text-sm text-red-600 mt-1 hidden">
+                    <p id="loginPasswordWarning" class="text-sm text-red-600 mt-1 hidden">
                         Password is required.
                     </p>
                 </div>
 
-                <button type="button"
-                    onclick="validateLogin()"
+                <button type="button" onclick="validateLogin()"
                     class="w-full bg-teal-700 hover:bg-teal-800 text-white font-bold py-3 rounded-full transition duration-200">
                     Log In
                 </button>
@@ -102,18 +96,15 @@
 
                 <div>
                     <label class="block text-gray-700 text-sm font-medium mb-2">Username</label>
-                    <input id="resetUsername" type="text"
-                        placeholder="Enter your username"
+                    <input id="resetUsername" type="text" placeholder="Enter your username"
                         class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-600 focus:border-transparent"/>
 
                     <div class="flex items-center mt-1">
-                        <p id="resetUsernameWarning"
-                            class="text-sm text-red-600 hidden">
+                        <p id="resetUsernameWarning" class="text-sm text-red-600 hidden">
                             Username is required.
                         </p>
 
-                        <a href="#"
-                            class="text-teal-700 text-sm hover:underline ml-auto">
+                        <a href="#" class="text-teal-700 text-sm hover:underline ml-auto">
                             Send PIN
                         </a>
                     </div>
@@ -121,18 +112,15 @@
 
                 <div>
                     <label class="block text-gray-700 text-sm font-medium mb-2">PIN</label>
-                    <input id="pinInput" type="text"
-                        placeholder="Enter PIN"
+                    <input id="pinInput" type="text" placeholder="Enter PIN"
                         class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-600 focus:border-transparent"/>
 
-                    <p id="pinWarning"
-                        class="text-sm text-red-600 mt-1 hidden">
+                    <p id="pinWarning" class="text-sm text-red-600 mt-1 hidden">
                         Input should only be numbers.
                     </p>
                 </div>
 
-                <button type="button"
-                    onclick="verifyReset()"
+                <button type="button" onclick="verifyReset()"
                     class="w-full bg-teal-700 hover:bg-teal-800 text-white font-bold py-3 rounded-full transition duration-200">
                     Verify
                 </button>
@@ -152,8 +140,7 @@
         class="hidden fixed inset-0 grid grid-cols-1 md:grid-cols-2 h-screen">
 
         <div class="hidden md:block h-screen">
-            <img src="../../assets/login_left_bg.png"
-                class="w-full h-full object-cover">
+            <img src="../../assets/login_left_bg.png" class="w-full h-full object-cover">
         </div>
 
         <div class="flex flex-col items-center justify-center bg-white p-8">
@@ -175,41 +162,32 @@
                         <button type="button"
                             class="absolute right-3 top-1/2 -translate-y-1/2 focus:outline-none bg-transparent border-0 p-0 eyeToggle"
                             data-target="newPassword">
-                            <img src="../../assets/eye-open.png"
-                                class="eyeOpen w-5 h-4 grayscale">
-                            <img src="../../assets/eye-close.png"
-                                class="eyeClose hidden w-5 h-5">
+                            <img src="../../assets/eye-open.png" class="eyeOpen w-5 h-4 grayscale">
+                            <img src="../../assets/eye-close.png" class="eyeClose hidden w-5 h-5">
                         </button>
                     </div>
 
-                    <p id="passwordMsg"
-                        class="text-sm mt-2 text-red-600 hidden"></p>
+                    <p id="passwordMsg" class="text-sm mt-2 text-red-600 hidden"></p>
                 </div>
 
                 <div>
                     <label class="block text-gray-700 text-sm font-medium mb-2">Confirm Password</label>
                     <div class="relative">
-                        <input id="confirmPassword" type="password"
-                            placeholder="Confirm your new password"
+                        <input id="confirmPassword" type="password" placeholder="Confirm your new password"
                             class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-600 focus:border-transparent"/>
 
                         <button type="button"
                             class="absolute right-3 top-1/2 -translate-y-1/2 focus:outline-none bg-transparent border-0 p-0 eyeToggle"
                             data-target="confirmPassword">
-                            <img src="../../assets/eye-open.png"
-                                class="eyeOpen w-5 h-4 grayscale">
-                            <img src="../../assets/eye-close.png"
-                                class="eyeClose hidden w-5 h-5">
+                            <img src="../../assets/eye-open.png" class="eyeOpen w-5 h-4 grayscale">
+                            <img src="../../assets/eye-close.png" class="eyeClose hidden w-5 h-5">
                         </button>
                     </div>
 
-                    <p id="confirmMsg"
-                        class="text-sm mt-1 hidden"></p>
+                    <p id="confirmMsg" class="text-sm mt-1 hidden"></p>
                 </div>
 
-                <button id="updatePasswordBtn"
-                    type="submit"
-                    disabled
+                <button id="updatePasswordBtn" type="submit" disabled
                     class="w-full bg-teal-700 hover:bg-teal-800 text-white font-bold py-3 rounded-full transition duration-200 opacity-50 cursor-not-allowed">
                     Update Password
                 </button>
@@ -219,7 +197,6 @@
                 class="text-gray-700 text-sm mt-4 hover:underline hover:text-teal-700 transition border-none cursor-pointer">
                 Back to Login
             </button>
-
         </div>
     </div>
 

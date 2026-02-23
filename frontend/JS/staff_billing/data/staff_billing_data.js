@@ -26,5 +26,7 @@ export const products = [
     category: "Pain Relief",
     price: 5.00,
     stock: 300
-  }
+  }, 
+
+  
 ];

@@ -151,7 +151,7 @@ export function initBilling() {
     document.getElementById("receiptStaff").textContent = "Staff Name";
     // Items
     const receiptItems = document.getElementById("receiptItems");
-    receiptItems.innerHTML = cart.map(item => `<tr><td>${item.name}</td><td class='text-center'>${item.qty}</td><td class='text-center'>₱${item.price.toFixed(2)}</td><td class='text-right'>₱${(item.price*item.qty).toFixed(2)}</td></tr>`).join("");
+    receiptItems.innerHTML = cart.map(item => `<tr><td>${item.name}</td><td class='text-center'>${item.qty}</td><td class='text-right'>₱${item.price.toFixed(2)}</td><td class='text-right'>₱${(item.price*item.qty).toFixed(2)}</td></tr>`).join("");
     const total = cart.reduce((s,i)=>s+i.price*i.qty,0);
     document.getElementById("receiptTotal").textContent = `₱${total.toFixed(2)}`;
     document.getElementById("receiptCashPaid").textContent = `₱${parseFloat(cashReceivedInput.value).toFixed(2)}`;
@@ -367,5 +367,3 @@ export function initBilling() {
 
   clearCartBtn?.addEventListener("click", clearCart);
 }
-
-

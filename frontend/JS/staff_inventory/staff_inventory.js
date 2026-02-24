@@ -157,7 +157,7 @@ function createModal(options) {
   wrapper.id = id;
   wrapper.className = `fixed inset-0 bg-black/40 flex items-center justify-center z-[${Z_INDEX.MODAL_BASE}]`;
   wrapper.innerHTML = `
-    <div class="bg-white rounded-lg shadow-lg p-6 w-[${width}] max-w-[95vw] max-h-[90vh] overflow-y-auto relative">
+    <div class="bg-white rounded-lg shadow-lg p-6 max-w-[95vw] max-h-[90vh] overflow-y-auto relative" style="width: ${width}; min-width: ${width};">
       <button id="${closeBtnId}" class="absolute top-4 right-4 text-gray-400 hover:text-gray-700 text-2xl">&times;</button>
       ${content}
     </div>
@@ -794,7 +794,8 @@ function showAddItemModal() {
       <div><label class="block text-xs text-gray-700 mb-1">Category :</label>
         <select id="addCategory" class="w-full border border-gray-300 rounded px-3 py-2 bg-white">
           <option value="">Select category</option><option value="medicine">Medicine</option>
-          <option value="first-aid">First Aid & Medical Supplies</option><option value="vitamins-personal-care">Vitamins & Personal Care</option>
+          <option value="first-aid">First Aid & Medical Supplies</option><option value="vitamins">Vitamins</option>
+          <option value="personal-care">Personal Care</option>
         </select>
         <p id="addCategoryError" class="text-red-600 text-xs mt-1 hidden">Required</p></div>
       <div><label class="block text-xs text-gray-700 mb-1">Quantity :</label>
@@ -815,7 +816,8 @@ function showAddItemModal() {
 
   const addItemModal = createModal({
     id: 'addItemModal',
-    content: content
+    content: content,
+    width: '575px'
   });
 
   const closeBtn = getElement(addItemModal, '#closeAddItemModal');
@@ -824,6 +826,12 @@ function showAddItemModal() {
   const hide = () => { addItemModal.classList.add('hidden'); addItemModal.style.display = ''; setTimeout(() => addItemModal.remove(), 200); };
   if (closeBtn) closeBtn.onclick = hide;
   if (cancel) cancel.onclick = hide;
+
+  // Ensure modal is visible
+  addItemModal.classList.remove('hidden');
+  addItemModal.style.display = 'flex';
+  console.log('Modal display style:', addItemModal.style.display);
+  console.log('Modal inner div width class:', addItemModal.querySelector('.bg-white')?.style.width);
 
   if (save) {
     save.onclick = () => {

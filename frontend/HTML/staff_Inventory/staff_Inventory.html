@@ -11,7 +11,7 @@
   <div id="tabContent">
     
     <!-- ===== INVENTORY TAB ===== -->
-    <div id="inventorySection">
+    <div id="inventorySection" class="relative">
       <!-- TOOLBAR -->
       <div class="bg-white p-3 rounded-lg shadow space-y-3 mb-3">
         
@@ -77,12 +77,12 @@
       </div>
 
       <!-- INVENTORY GRID -->
-      <div id="inventoryGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div id="inventoryGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 max-h-[394px] overflow-y-auto pb-20">
         <!-- Item cards injected here (narrower cards for neater appearance) -->
       </div>
 
       <!-- LOW STOCK BOTTOM BAR -->
-      <div id="lowStockBottomBar" class="w-full bg-white border-t border-gray-200 shadow-lg p-4 flex justify-between items-center hidden rounded-b-lg mt-4">
+      <div id="lowStockBottomBar" class="fixed bottom-3 left-[281px] right-42 w-[1186px] bg-white border-t border-gray-200 shadow-lg p-4 flex justify-between items-center hidden rounded-t-lg z-1">
         <div class="text-sm font-semibold text-gray-700">
           Total Low Stock Items: <span id="lowStockItemCount" class="font-bold text-lg text-red-600">0</span>
         </div>

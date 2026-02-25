@@ -39,4 +39,8 @@ const inventoryRequestSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+inventoryRequestSchema.index({ requestedBy: 1, createdAt: -1 });
+inventoryRequestSchema.index({ status: 1, createdAt: -1 });
+inventoryRequestSchema.index({ requestedBy: 1, status: 1, createdAt: -1 });
+
 export default mongoose.model("InventoryRequest", inventoryRequestSchema);

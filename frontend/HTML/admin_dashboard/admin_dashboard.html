@@ -2,8 +2,9 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Staff Dashboard</title>
+  <title>Admin Dashboard</title>
   <link rel="stylesheet" href="../../css/output.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 
 <body class="flex min-h-screen bg-gray-50">
@@ -13,10 +14,10 @@
 
   <!-- Logo -->
   <div class="p-6 flex items-center gap-3 border-b">
-    <div class="bg-emerald-600 text-white p-3 rounded-lg">+</div>
+    <img src="../../assets/cross_icon.png" alt="Medical Cross" class="w-15 h-15 bg-blue-600 mb-6 rounded-lg">
     <div>
-      <p class="font-semibold">General Medicine Clinic</p>
-      <p class="text-sm text-gray-500">Staff Portal</p>
+      <p class="font-semibold">Zeal Community Medical Mission Foundation</p>
+      <p class="text-sm text-gray-500">Admin Portal</p>
     </div>
   </div>
 
@@ -24,24 +25,23 @@
   <nav class="flex-1 px-4 py-6 space-y-2">
 
     <!-- Dashboard -->
-    <a href="#"
-       id="navDashboard"
-       class="nav-link flex items-center gap-3 px-4 py-2 rounded-lg bg-emerald-600 text-white">
+    <a href="#" id="navDashboard" class="nav-link flex items-center gap-3 px-4 py-2 rounded-lg bg-blue-600 text-white">
       <span>Dashboard</span>
     </a>
 
-    <!-- Billing -->
-     <a href="#"
-       id="navBilling"
-       class="nav-link flex items-center gap-3 px-4 py-2 rounded-lg text-gray-700 hover:bg-gray-100">
-      <span>Billing</span>
-    </a>
-
-    <!-- Inventory (placeholder) -->
-    <a href="#"
-   id="navInventory"
-   class="nav-link flex items-center gap-3 px-4 py-2 rounded-lg text-gray-700 hover:bg-gray-100">
+<!-- Inventory (placeholder)-->
+    <a href="#" id="navInventory" class="nav-link flex items-center gap-3 px-4 py-2 rounded-lg text-gray-700 hover:bg-gray-100">
   <span>Inventory</span>
+</a>
+
+<!-- User Management (placeholder) -->
+    <a href="#" id="navUserManagement" class="nav-link flex items-center gap-3 px-4 py-2 rounded-lg text-gray-700 hover:bg-gray-100">
+  <span>User Management</span>
+</a>
+
+<!-- Reports (placeholder) -->
+    <a href="#" id="navReports" class="nav-link flex items-center gap-3 px-4 py-2 rounded-lg text-gray-700 hover:bg-gray-100">
+  <span>Reports</span>
 </a>
 
   </nav>
@@ -49,14 +49,13 @@
   <!-- LOGOUT -->
   <div class="border-t p-4 mt-auto">
     <button
-      id="logoutBtn"
-      type="button"
-      class="w-full flex items-center gap-3 px-4 py-2 rounded-lg text-gray-700 hover:bg-red-50 hover:text-red-600 transition">
-      Logout
-     </button>
+      id="logoutBtn" type="button" class="w-full flex items-center gap-3 px-4 py-2 rounded-lg text-gray-700 hover:bg-red-50 hover:text-red-600 transition">
+       Logout
+    </button>
   </div>
 
 </aside>
+
 
 <!-- ===== MAIN ===== -->
 <main class="ml-64 flex flex-col w-full">
@@ -81,11 +80,11 @@
   <section
     id="mainContent"
     class="p-6 flex-1 overflow-y-auto">
-    <!-- Dashboard / Billing content injected here -->
+    <!-- Dashboard content will be injected here by JavaScript -->
   </section>
 
 </main>
 
-<script type="module" src="../../JS/staff_dashboard/staff_dashboard.js"></script>
+<script type="module" src="../../js/admin_dashboard/admin_dashboard.js"></script>
 </body>
 </html>

@@ -6,40 +6,37 @@ import {
   topItemsToday
 } from "./data/staff_Dboard_data.js";
 
-
 document.addEventListener("DOMContentLoaded", () => {
-  
 
-  /* ===== ELEMENTS ===== */
-  const mainContent = document.getElementById("mainContent");
-  const navDashboard = document.getElementById("navDashboard");
-  const navBilling = document.getElementById("navBilling");
+  /* ================= ELEMENTS ================= */
+  const mainContent   = document.getElementById("mainContent");
+  const navDashboard  = document.getElementById("navDashboard");
+  const navBilling    = document.getElementById("navBilling");
+  const navInventory  = document.getElementById("navInventory");
 
-  const staffNameEl = document.getElementById("staffName");
+  const staffNameEl     = document.getElementById("staffName");
   const staffUsernameEl = document.getElementById("staffUsername");
-  const staffAvatarEl = document.getElementById("staffAvatar");
+  const staffAvatarEl   = document.getElementById("staffAvatar");
 
-  /* ===== STAFF INFO ===== */
+  /* ================= STAFF INFO ================= */
   if (staffUser) {
     staffNameEl.textContent = staffUser.fullName;
     staffUsernameEl.textContent = staffUser.username;
     staffAvatarEl.textContent = staffUser.fullName.charAt(0).toUpperCase();
   }
 
-  /* ===== ACTIVE NAV ===== */
+  /* ================= NAV ACTIVE ================= */
   function setActive(activeEl) {
     document.querySelectorAll(".nav-link").forEach(link => {
       link.classList.remove("bg-emerald-600", "text-white");
       link.classList.add("text-gray-700");
     });
 
-    if (activeEl) {
-      activeEl.classList.add("bg-emerald-600", "text-white");
-      activeEl.classList.remove("text-gray-700");
-    }
+    activeEl.classList.add("bg-emerald-600", "text-white");
+    activeEl.classList.remove("text-gray-700");
   }
 
-  /* ===== DASHBOARD ===== */
+  /* ================= DASHBOARD ================= */
   function loadDashboard() {
     setActive(navDashboard);
 
@@ -75,29 +72,23 @@ document.addEventListener("DOMContentLoaded", () => {
         </div>
 
         <div class="bg-white p-4 rounded shadow">
-          <h2 class="font-semibold mb-2">Top Items Today</h2>
+          <h2 class="font-semibold mb-4">Top Items Today</h2>
           <div id="topItemsToday"></div>
         </div>
       </div>
     `;
 
-    /* ===== RENDER DATA SAFELY ===== */
-
     document.getElementById("revenueToday").textContent =
       `₱${dashboardStats?.revenueToday ?? 0}`;
-
     document.getElementById("transactionsToday").textContent =
       dashboardStats?.transactionsToday ?? 0;
-
     document.getElementById("itemsIssuedToday").textContent =
       dashboardStats?.itemsIssuedToday ?? 0;
-
     document.getElementById("pendingRestock").textContent =
       dashboardStats?.pendingRestock ?? 0;
 
-    const txContainer = document.getElementById("recentTransactions");
-    recentTransactions?.forEach(tx => {
-      txContainer.innerHTML += `
+    document.getElementById("recentTransactions").innerHTML =
+      recentTransactions.map(tx => `
         <div class="flex justify-between py-2 border-b">
           <div>
             <p class="font-medium">${tx.id}</p>
@@ -105,12 +96,10 @@ document.addEventListener("DOMContentLoaded", () => {
           </div>
           <p class="font-semibold">₱${tx.amount}</p>
         </div>
-      `;
-    });
+      `).join("");
 
-    const invContainer = document.getElementById("inventoryAlerts");
-    inventoryAlerts?.forEach(item => {
-      invContainer.innerHTML += `
+    document.getElementById("inventoryAlerts").innerHTML =
+      inventoryAlerts.map(item => `
         <div class="py-2 border-b">
           <p class="font-medium">${item.name}</p>
           <p class="text-sm ${
@@ -119,76 +108,86 @@ document.addEventListener("DOMContentLoaded", () => {
             ${item.status.toUpperCase()} · ${item.remaining}
           </p>
         </div>
-      `;
-    });
+      `).join("");
 
-    const topItemsContainer = document.getElementById("topItemsToday");
-    topItemsToday?.forEach(item => {
-      topItemsContainer.innerHTML += `
+    document.getElementById("topItemsToday").innerHTML =
+      topItemsToday.map(item => `
         <div class="flex justify-between py-2 border-b">
           <span>${item.name}</span>
           <span class="font-semibold">₱${item.price}</span>
         </div>
-      `;
-    });
+      `).join("");
   }
 
-  /* ===== BILLING ===== */
-async function loadBilling() {
-  setActive(navBilling);
+  /* ================= BILLING (FIXED) ================= */
+  async function loadBilling() {
+    setActive(navBilling);
 
-  try {
-    console.log("Starting to load billing...");
-    
-    // Try multiple paths to handle different server configurations
-    let html;
-    let fetchPath = "/frontend/HTML/staffinventory/staffbilling.html";
-    
-    let res = await fetch(fetchPath);
-    
-    // If absolute path fails, try relative path
-    if (!res.ok) {
-      fetchPath = "../HTML/staffinventory/staffbilling.html";
-      res = await fetch(fetchPath);
-    }
-    
-    if (!res.ok) {
-      throw new Error(`Failed to fetch from ${fetchPath}: ${res.status}`);
-    }
-    
-    html = await res.text();
-    console.log("Billing HTML fetched successfully");
-
-    // 1️⃣ Inject billing HTML
-    mainContent.innerHTML = html;
-    console.log("Billing HTML injected");
-
-    // 2️⃣ Give DOM time to process the injection
-    await new Promise(resolve => setTimeout(resolve, 100));
-    console.log("DOM ready, loading billing module...");
-
-    // 3️⃣ Load billing JS with cache busting
-    const timestamp = Date.now();
-    const module = await import(`../staff_inventory/staff_billing.js?t=${timestamp}`);
-    console.log("Billing module imported");
-
-    // 4️⃣ Initialize billing logic with error handling
     try {
+      // ✅ correct relative path from staff_dashboard.js
+      const res = await fetch("../../HTML/staffinventory/staffbilling.html");
+      if (!res.ok) throw new Error("Billing HTML not found");
+
+      mainContent.innerHTML = await res.text();
+
+      // wait briefly for DOM injection to settle
+      await new Promise(r => setTimeout(r, 150));
+
+      // ✅ correct module path (now in staff_billing folder)
+      const module = await import("../staff_billing/staff_billing.js");
+
+      if (typeof module.initBilling !== "function") {
+        throw new Error("initBilling() missing");
+      }
+
       module.initBilling();
-      console.log("Billing module initialized successfully");
-    } catch (initError) {
-      console.error("Error during initBilling():", initError);
-      throw initError;
+
+    } catch (error) {
+      console.error(error);
+      mainContent.innerHTML = `
+        <div class="text-red-500 p-4 font-medium">
+          Failed to load Billing module.
+        </div>
+      `;
     }
-  } catch (error) {
-    console.error("Error loading billing:", error);
-    mainContent.innerHTML = `<div class="text-red-500 p-4"><strong>Error:</strong> ${error.message}</div>`;
   }
-}
 
+  /* ================= INVENTORY ================= */
+  async function loadInventory() {
+    setActive(navInventory);
 
+    try {
+      // ✅ correct relative path from staff_dashboard.js
+      const res = await fetch("../../HTML/staff_Inventory/staff_Inventory.html");
+      if (!res.ok) throw new Error("Inventory HTML not found");
 
-  /* ===== EVENTS ===== */
+      mainContent.innerHTML = await res.text();
+
+      // wait briefly for DOM injection to settle
+      await new Promise(r => setTimeout(r, 150));
+
+      // ✅ correct module path
+      console.log("Importing staff_inventory module...");
+      const module = await import("../staff_inventory/staff_inventory.js");
+
+      if (typeof module.initInventory !== "function") {
+        throw new Error("initInventory() missing");
+      }
+
+      module.initInventory();
+      console.log("staff_inventory.initInventory() called");
+
+    } catch (error) {
+      console.error(error);
+      mainContent.innerHTML = `
+        <div class="text-red-500 p-4 font-medium">
+          Failed to load Inventory module: ${error.message}
+        </div>
+      `;
+    }
+  }
+
+  /* ================= EVENTS ================= */
   navDashboard.addEventListener("click", e => {
     e.preventDefault();
     loadDashboard();
@@ -199,6 +198,11 @@ async function loadBilling() {
     loadBilling();
   });
 
-  /* ===== DEFAULT ===== */
-  loadDashboard(); // ← THIS MUST RUN
+  navInventory.addEventListener("click", e => {
+    e.preventDefault();
+    loadInventory();
+  });
+
+  /* ================= DEFAULT ================= */
+  loadDashboard();
 });

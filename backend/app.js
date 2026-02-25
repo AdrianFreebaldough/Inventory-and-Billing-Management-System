@@ -1,15 +1,23 @@
-const express = require("express");
-const dotenv = require("dotenv");
+import express from "express";
+import cors from "cors";
 
-dotenv.config({ path: ".env.development.local" });
+import authRoutes from "./routes/authroutesUsers.js";
+import OWNER_inventoryRoutes from "./routes/OWNER_inventoryRoutes.js";
+import dashboardRoutes from "./routes/dashboardRoutes.js";
 
-const app = express();
+const app = express(); // ✅ CREATE APP FIRST
+
+/* ================= MIDDLEWARE ================= */
+app.use(cors());
 app.use(express.json());
 
-// routes
-app.use("/api/auth", require("./routes/auth.routes"));
-
-const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+/* ================= ROUTES ================= */
+app.get("/", (req, res) => {
+  res.send("Backend API running 🚀");
 });
+
+app.use("/api/auth", authRoutes);
+app.use("/api/inventory", OWNER_inventoryRoutes);
+app.use("/api/dashboard", dashboardRoutes);
+
+export default app;

@@ -35,7 +35,7 @@ const productSchema = new mongoose.Schema(
 );
 
 /* 🔄 Auto-update status based on quantity */
-productSchema.pre("save", function (next) {
+productSchema.pre("save", function () {
   if (this.quantity <= 0) {
     this.status = "out";
   } else if (this.quantity <= 10) {
@@ -43,7 +43,6 @@ productSchema.pre("save", function (next) {
   } else {
     this.status = "available";
   }
-  next();
 });
 
 export default mongoose.model("Product", productSchema);

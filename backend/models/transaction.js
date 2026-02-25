@@ -49,4 +49,6 @@ const transactionSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+transactionSchema.index({ processedBy: 1, createdAt: -1 });
+
 export default mongoose.model("Transaction", transactionSchema);

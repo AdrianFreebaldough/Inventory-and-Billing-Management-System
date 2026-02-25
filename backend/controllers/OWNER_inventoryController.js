@@ -1,0 +1,321 @@
+import mongoose from "mongoose";
+import Product from "../models/product.js";
+import InventoryRequest from "../models/InventoryRequest.js";
+import ActivityLog from "../models/activityLog.js";
+import OWNER_ArchivedProduct from "../models/OWNER_archivedProduct.js";
+
+const OWNER_parsePositiveNumber = (value) => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return null;
+  }
+  return parsed;
+};
+
+export const OWNER_getActiveInventory = async (req, res) => {
+  try {
+    const products = await Product.find({ isArchived: { $ne: true } })
+      .sort({ name: 1 })
+      .lean();
+
+    return res.status(200).json({
+      message: "Active inventory fetched successfully",
+      count: products.length,
+      data: products,
+    });
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+};
+
+export const OWNER_addProduct = async (req, res) => {
+  try {
+    const { name, category, quantity, unit } = req.body;
+
+    const parsedQuantity = OWNER_parsePositiveNumber(quantity);
+    if (!name || !category || parsedQuantity === null) {
+      return res.status(400).json({
+        message: "name, category, and non-negative quantity are required",
+      });
+    }
+
+    const product = await Product.create({
+      name: String(name).trim(),
+      category: String(category).trim(),
+      quantity: parsedQuantity,
+      unit: unit ? String(unit).trim() : "pcs",
+      isArchived: false,
+      archivedAt: null,
+      archivedBy: null,
+    });
+
+    await ActivityLog.create({
+      action: "ADD_PRODUCT",
+      performedBy: req.user.id,
+      entityType: "Product",
+      entityId: product._id,
+      details: {
+        movement: {
+          quantityBefore: 0,
+          quantityChange: parsedQuantity,
+          quantityAfter: product.quantity,
+        },
+        notes: "Owner added product directly to active inventory",
+        metadata: {
+          name: product.name,
+          category: product.category,
+          unit: product.unit,
+        },
+      },
+    });
+
+    return res.status(201).json({
+      message: "Product added to active inventory",
+      data: product,
+    });
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+};
+
+export const OWNER_getPendingInventoryRequests = async (req, res) => {
+  try {
+    const requests = await InventoryRequest.find({ status: "pending" })
+      .populate("product", "name category quantity status isArchived")
+      .sort({ createdAt: -1 })
+      .lean();
+
+    const filtered = requests.filter(
+      (request) => request.product && request.product.isArchived !== true
+    );
+
+    return res.status(200).json({
+      message: "Pending requests fetched successfully",
+      count: filtered.length,
+      data: filtered,
+    });
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+};
+
+export const OWNER_approveInventoryRequest = async (req, res) => {
+  const { requestId } = req.params;
+  const session = await mongoose.startSession();
+
+  try {
+    let responsePayload = null;
+
+    await session.withTransaction(async () => {
+      const request = await InventoryRequest.findOne({
+        _id: requestId,
+        status: "pending",
+      }).session(session);
+
+      if (!request) {
+        throw new Error("PENDING_REQUEST_NOT_FOUND");
+      }
+
+      const product = await Product.findOne({
+        _id: request.product,
+        isArchived: { $ne: true },
+      }).session(session);
+
+      if (!product) {
+        throw new Error("ACTIVE_PRODUCT_NOT_FOUND");
+      }
+
+      const quantityBefore = product.quantity;
+      product.quantity += request.quantity;
+      await product.save({ session });
+
+      request.status = "approved";
+      request.reviewedBy = req.user.id;
+      request.reviewedAt = new Date();
+      request.rejectionReason = null;
+      await request.save({ session });
+
+      await ActivityLog.create(
+        [
+          {
+            action: "APPROVE_REQUEST",
+            performedBy: req.user.id,
+            entityType: "Product",
+            entityId: product._id,
+            details: {
+              requestId: request._id,
+              movement: {
+                quantityBefore,
+                quantityChange: request.quantity,
+                quantityAfter: product.quantity,
+              },
+              notes: "Owner approved pending inventory request",
+            },
+          },
+        ],
+        { session }
+      );
+
+      responsePayload = {
+        requestId: request._id,
+        productId: product._id,
+        quantityBefore,
+        quantityAdded: request.quantity,
+        quantityAfter: product.quantity,
+      };
+    });
+
+    return res.status(200).json({
+      message: "Request approved and inventory updated",
+      data: responsePayload,
+    });
+  } catch (error) {
+    if (error.message === "PENDING_REQUEST_NOT_FOUND") {
+      return res.status(404).json({ message: "Pending inventory request not found" });
+    }
+
+    if (error.message === "ACTIVE_PRODUCT_NOT_FOUND") {
+      return res.status(404).json({ message: "Active product for this request not found" });
+    }
+
+    return res.status(500).json({ message: error.message });
+  } finally {
+    await session.endSession();
+  }
+};
+
+export const OWNER_rejectInventoryRequest = async (req, res) => {
+  const { requestId } = req.params;
+  const { reason } = req.body;
+
+  try {
+    const request = await InventoryRequest.findOne({
+      _id: requestId,
+      status: "pending",
+    });
+
+    if (!request) {
+      return res.status(404).json({ message: "Pending inventory request not found" });
+    }
+
+    request.status = "rejected";
+    request.reviewedBy = req.user.id;
+    request.reviewedAt = new Date();
+    request.rejectionReason = reason ? String(reason).trim() : null;
+    await request.save();
+
+    await ActivityLog.create({
+      action: "REJECT_REQUEST",
+      performedBy: req.user.id,
+      entityType: "InventoryRequest",
+      entityId: request._id,
+      details: {
+        productId: request.product,
+        notes: request.rejectionReason || "Owner rejected pending inventory request",
+        movement: {
+          quantityBefore: null,
+          quantityChange: 0,
+          quantityAfter: null,
+        },
+      },
+    });
+
+    return res.status(200).json({
+      message: "Request rejected; inventory unchanged",
+      data: {
+        requestId: request._id,
+        status: request.status,
+        rejectionReason: request.rejectionReason,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+};
+
+export const OWNER_archiveProduct = async (req, res) => {
+  const { productId } = req.params;
+  const { reason } = req.body;
+  const session = await mongoose.startSession();
+
+  try {
+    let responsePayload = null;
+
+    await session.withTransaction(async () => {
+      const product = await Product.findOne({
+        _id: productId,
+        isArchived: { $ne: true },
+      }).session(session);
+
+      if (!product) {
+        throw new Error("ACTIVE_PRODUCT_NOT_FOUND");
+      }
+
+      const snapshot = product.toObject();
+
+      await OWNER_ArchivedProduct.create(
+        [
+          {
+            originalProductId: product._id,
+            name: product.name,
+            category: product.category,
+            quantity: product.quantity,
+            unit: product.unit,
+            statusAtArchive: product.status,
+            archivedBy: req.user.id,
+            archivedAt: new Date(),
+            archiveReason: reason ? String(reason).trim() : "Owner archived product",
+            snapshot,
+          },
+        ],
+        { session }
+      );
+
+      product.isArchived = true;
+      product.archivedAt = new Date();
+      product.archivedBy = req.user.id;
+      await product.save({ session });
+
+      await ActivityLog.create(
+        [
+          {
+            action: "ARCHIVE_PRODUCT",
+            performedBy: req.user.id,
+            entityType: "Product",
+            entityId: product._id,
+            details: {
+              movement: {
+                quantityBefore: product.quantity,
+                quantityChange: 0,
+                quantityAfter: product.quantity,
+              },
+              notes: reason ? String(reason).trim() : "Owner archived product",
+              metadata: {
+                archivedCollection: "archived_products",
+              },
+            },
+          },
+        ],
+        { session }
+      );
+
+      responsePayload = {
+        productId: product._id,
+        archivedAt: product.archivedAt,
+      };
+    });
+
+    return res.status(200).json({
+      message: "Product archived successfully",
+      data: responsePayload,
+    });
+  } catch (error) {
+    if (error.message === "ACTIVE_PRODUCT_NOT_FOUND") {
+      return res.status(404).json({ message: "Active product not found" });
+    }
+
+    return res.status(500).json({ message: error.message });
+  } finally {
+    await session.endSession();
+  }
+};

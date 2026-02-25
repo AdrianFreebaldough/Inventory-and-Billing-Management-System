@@ -10,6 +10,18 @@ const activityLogSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
     },
+    entityType: {
+      type: String,
+      default: null,
+    },
+    entityId: {
+      type: mongoose.Schema.Types.ObjectId,
+      default: null,
+    },
+    details: {
+      type: mongoose.Schema.Types.Mixed,
+      default: null,
+    },
   },
   { timestamps: true }
 );

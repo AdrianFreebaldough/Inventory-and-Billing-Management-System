@@ -15,6 +15,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const navInventory  = document.getElementById("navInventory");
   const navUserManagement = document.getElementById("navUserManagement");
   const navReports = document.getElementById("navReports");
+  const navStockLogs = document.getElementById("navStockLogs");
 
   const staffNameEl     = document.getElementById("staffName");
   const staffUsernameEl = document.getElementById("staffUsername");
@@ -504,6 +505,36 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
+/* ================= STOCK LOGS ================= */
+  async function loadStockLogs() {
+    setActive(navStockLogs);
+
+    try {
+      const res = await fetch("../../HTML/Admin_Activitylogs/OwnerActivitylogs.html");
+      if (!res.ok) throw new Error("Stock Logs HTML not found");
+
+      mainContent.innerHTML = await res.text();
+
+      await new Promise(r => setTimeout(r, 150));
+
+      const module = await import("../Admin_Activitylogs/OwnerActivitylogs.js");
+
+      if (typeof module.initOwnerActivitylogs !== "function") {
+        throw new Error("initOwnerActivitylogs() missing");
+      }
+
+      module.initOwnerActivitylogs();
+      console.log("OwnerActivitylogs.initOwnerActivitylogs() called");
+    } catch (error) {
+      console.error(error);
+      mainContent.innerHTML = `
+        <div class="text-red-500 p-4 font-medium">
+          Failed to load Stock Logs module: ${error.message}
+        </div>
+      `;
+    }
+  }
+
   /* ================= EVENTS ================= */
     navDashboard.addEventListener("click", e => {
         e.preventDefault();
@@ -526,6 +557,11 @@ document.addEventListener("DOMContentLoaded", () => {
         e.preventDefault();
         loadReports();
       // TODO: Load user management content
+    });
+
+    navStockLogs.addEventListener("click", e => {
+        e.preventDefault();
+        loadStockLogs();
     });
 
   /* ================= DEFAULT ================= */

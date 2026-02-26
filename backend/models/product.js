@@ -20,6 +20,12 @@ const productSchema = new mongoose.Schema(
       min: 0,
     },
 
+    unitPrice: {
+      type: Number,
+      min: 0,
+      default: 0,
+    },
+
     unit: {
       type: String,
       default: "pcs",

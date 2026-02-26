@@ -30,12 +30,19 @@ export const OWNER_getActiveInventory = async (req, res) => {
 
 export const OWNER_addProduct = async (req, res) => {
   try {
-    const { name, category, quantity, unit } = req.body;
+    const { name, category, quantity, unit, unitPrice } = req.body;
 
     const parsedQuantity = OWNER_parsePositiveNumber(quantity);
+    const parsedUnitPrice = Number(unitPrice ?? 0);
     if (!name || !category || parsedQuantity === null) {
       return res.status(400).json({
         message: "name, category, and non-negative quantity are required",
+      });
+    }
+
+    if (!Number.isFinite(parsedUnitPrice) || parsedUnitPrice < 0) {
+      return res.status(400).json({
+        message: "unitPrice must be a valid non-negative number",
       });
     }
 
@@ -43,6 +50,7 @@ export const OWNER_addProduct = async (req, res) => {
       name: String(name).trim(),
       category: String(category).trim(),
       quantity: parsedQuantity,
+      unitPrice: parsedUnitPrice,
       unit: unit ? String(unit).trim() : "pcs",
       isArchived: false,
       archivedAt: null,

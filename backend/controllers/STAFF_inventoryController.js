@@ -53,7 +53,7 @@ export const STAFF_getInventory = async (req, res) => {
 
     const items = await Product.find(filter)
       .sort({ name: 1 })
-      .select("name category status quantity unit expiryDate batchNumber")
+      .select("name category status quantity unit unitPrice expiryDate batchNumber")
       .lean();
 
     const data = items.map((item) => ({
@@ -63,6 +63,7 @@ export const STAFF_getInventory = async (req, res) => {
       stockStatus: item.status,
       currentQuantity: item.quantity,
       unit: item.unit,
+      unitPrice: item.unitPrice ?? 0,
       expiryDate: item.expiryDate || null,
       batchNumber: item.batchNumber || null,
     }));
@@ -84,7 +85,7 @@ export const STAFF_getInventoryItemDetails = async (req, res) => {
       _id: itemId,
       isArchived: { $ne: true },
     })
-      .select("name category status quantity unit expiryDate batchNumber")
+      .select("name category status quantity unit unitPrice expiryDate batchNumber")
       .lean();
 
     if (!item) {
@@ -107,6 +108,7 @@ export const STAFF_getInventoryItemDetails = async (req, res) => {
         stockStatus: item.status,
         currentQuantity: item.quantity,
         unit: item.unit,
+        unitPrice: item.unitPrice ?? 0,
         expiryDate: item.expiryDate || null,
         batchNumber: item.batchNumber || null,
       },

@@ -2,15 +2,55 @@ import mongoose from "mongoose";
 
 const inventoryRequestSchema = new mongoose.Schema(
   {
+    requestType: {
+      type: String,
+      enum: ["ADD_ITEM", "RESTOCK"],
+      required: true,
+    },
+
+    /* 🔹 ADD ITEM fields */
+    itemName: {
+      type: String,
+      trim: true,
+      default: null,
+    },
+    category: {
+      type: String,
+      trim: true,
+      default: null,
+    },
+    initialQuantity: {
+      type: Number,
+      default: null,
+      min: 1,
+    },
+    unit: {
+      type: String,
+      trim: true,
+      default: "pcs",
+    },
+    expiryDate: {
+      type: Date,
+      default: null,
+    },
+    batchNumber: {
+      type: String,
+      trim: true,
+      default: null,
+    },
+
+    /* 🔹 RESTOCK fields */
     product: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Product",
-      required: true,
+      default: null, // ✅ NOT required
     },
-    quantity: {
+    requestedQuantity: {
       type: Number,
-      required: true,
+      default: null,
     },
+
+    /* 🔹 COMMON */
     requestedBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
@@ -39,8 +79,32 @@ const inventoryRequestSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+/* 🔹 Indexes */
 inventoryRequestSchema.index({ requestedBy: 1, createdAt: -1 });
 inventoryRequestSchema.index({ status: 1, createdAt: -1 });
-inventoryRequestSchema.index({ requestedBy: 1, status: 1, createdAt: -1 });
+inventoryRequestSchema.index({ requestType: 1, status: 1, createdAt: -1 });
+
+inventoryRequestSchema.pre("validate", function (next) {
+  if (this.requestType === "ADD_ITEM") {
+    if (!this.itemName || !this.category || !this.initialQuantity) {
+      throw new Error("ADD_ITEM requests require itemName, category, and initialQuantity");
+    }
+
+    this.product = null;
+    this.requestedQuantity = null;
+  }
+
+  if (this.requestType === "RESTOCK") {
+    if (!this.product || !this.requestedQuantity) {
+      throw new Error("RESTOCK requests require product and requestedQuantity");
+    }
+
+    this.itemName = null;
+    this.category = null;
+    this.initialQuantity = null;
+  }
+
+  return undefined;
+});
 
 export default mongoose.model("InventoryRequest", inventoryRequestSchema);

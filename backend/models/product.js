@@ -25,6 +25,17 @@ const productSchema = new mongoose.Schema(
       default: "pcs",
     },
 
+    expiryDate: {
+      type: Date,
+      default: null,
+    },
+
+    batchNumber: {
+      type: String,
+      trim: true,
+      default: null,
+    },
+
     status: {
       type: String,
       enum: ["available", "low", "out"],

@@ -81,13 +81,22 @@ export const OWNER_addProduct = async (req, res) => {
 export const OWNER_getPendingInventoryRequests = async (req, res) => {
   try {
     const requests = await InventoryRequest.find({ status: "pending" })
-      .populate("product", "name category quantity status isArchived")
+      .populate("product", "name category quantity isArchived")
+      .populate("requestedBy", "email role")
       .sort({ createdAt: -1 })
       .lean();
 
-    const filtered = requests.filter(
-      (request) => request.product && request.product.isArchived !== true
-    );
+    const filtered = requests.filter((request) => {
+      if (request.requestType === "ADD_ITEM") {
+        return true;
+      }
+
+      if (request.requestType === "RESTOCK") {
+        return request.product && request.product.isArchived !== true;
+      }
+
+      return false;
+    });
 
     return res.status(200).json({
       message: "Pending requests fetched successfully",
@@ -116,53 +125,116 @@ export const OWNER_approveInventoryRequest = async (req, res) => {
         throw new Error("PENDING_REQUEST_NOT_FOUND");
       }
 
-      const product = await Product.findOne({
-        _id: request.product,
-        isArchived: { $ne: true },
-      }).session(session);
-
-      if (!product) {
-        throw new Error("ACTIVE_PRODUCT_NOT_FOUND");
-      }
-
-      const quantityBefore = product.quantity;
-      product.quantity += request.quantity;
-      await product.save({ session });
-
-      request.status = "approved";
-      request.reviewedBy = req.user.id;
-      request.reviewedAt = new Date();
-      request.rejectionReason = null;
-      await request.save({ session });
-
-      await ActivityLog.create(
-        [
-          {
-            action: "APPROVE_REQUEST",
-            performedBy: req.user.id,
-            entityType: "Product",
-            entityId: product._id,
-            details: {
-              requestId: request._id,
-              movement: {
-                quantityBefore,
-                quantityChange: request.quantity,
-                quantityAfter: product.quantity,
-              },
-              notes: "Owner approved pending inventory request",
+      if (request.requestType === "ADD_ITEM") {
+        const createdProduct = await Product.create(
+          [
+            {
+              name: request.itemName,
+              category: request.category,
+              quantity: request.initialQuantity,
+              unit: request.unit || "pcs",
+              expiryDate: request.expiryDate || null,
+              batchNumber: request.batchNumber || null,
+              isArchived: false,
+              archivedAt: null,
+              archivedBy: null,
             },
-          },
-        ],
-        { session }
-      );
+          ],
+          { session }
+        );
 
-      responsePayload = {
-        requestId: request._id,
-        productId: product._id,
-        quantityBefore,
-        quantityAdded: request.quantity,
-        quantityAfter: product.quantity,
-      };
+        const product = createdProduct[0];
+
+        request.product = product._id;
+        request.status = "approved";
+        request.reviewedBy = req.user.id;
+        request.reviewedAt = new Date();
+        request.rejectionReason = null;
+        await request.save({ session });
+
+        await ActivityLog.create(
+          [
+            {
+              action: "APPROVE_REQUEST",
+              performedBy: req.user.id,
+              entityType: "Product",
+              entityId: product._id,
+              details: {
+                requestId: request._id,
+                requestType: request.requestType,
+                movement: {
+                  quantityBefore: 0,
+                  quantityChange: request.initialQuantity,
+                  quantityAfter: product.quantity,
+                },
+                notes: "Owner approved add-item inventory request",
+              },
+            },
+          ],
+          { session }
+        );
+
+        responsePayload = {
+          requestId: request._id,
+          requestType: request.requestType,
+          productId: product._id,
+          quantityBefore: 0,
+          quantityAdded: request.initialQuantity,
+          quantityAfter: product.quantity,
+        };
+      } else if (request.requestType === "RESTOCK") {
+        const product = await Product.findOne({
+          _id: request.product,
+          isArchived: { $ne: true },
+        }).session(session);
+
+        if (!product) {
+          throw new Error("ACTIVE_PRODUCT_NOT_FOUND");
+        }
+
+        const quantityBefore = product.quantity;
+        product.quantity += request.requestedQuantity;
+        await product.save({ session });
+
+        request.status = "approved";
+        request.reviewedBy = req.user.id;
+        request.reviewedAt = new Date();
+        request.rejectionReason = null;
+        await request.save({ session });
+
+        await ActivityLog.create(
+          [
+            {
+              action: "APPROVE_REQUEST",
+              performedBy: req.user.id,
+              entityType: "Product",
+              entityId: product._id,
+              details: {
+                requestId: request._id,
+                requestType: request.requestType,
+                movement: {
+                  quantityBefore,
+                  quantityChange: request.requestedQuantity,
+                  quantityAfter: product.quantity,
+                },
+                notes: "Owner approved restock inventory request",
+              },
+            },
+          ],
+          { session }
+        );
+
+        responsePayload = {
+          requestId: request._id,
+          requestType: request.requestType,
+          productId: product._id,
+          quantityBefore,
+          quantityAdded: request.requestedQuantity,
+          quantityAfter: product.quantity,
+        };
+      } else {
+        throw new Error("INVALID_REQUEST_TYPE");
+      }
     });
 
     return res.status(200).json({
@@ -176,6 +248,10 @@ export const OWNER_approveInventoryRequest = async (req, res) => {
 
     if (error.message === "ACTIVE_PRODUCT_NOT_FOUND") {
       return res.status(404).json({ message: "Active product for this request not found" });
+    }
+
+    if (error.message === "INVALID_REQUEST_TYPE") {
+      return res.status(400).json({ message: "Invalid request type" });
     }
 
     return res.status(500).json({ message: error.message });
@@ -210,11 +286,15 @@ export const OWNER_rejectInventoryRequest = async (req, res) => {
       entityType: "InventoryRequest",
       entityId: request._id,
       details: {
+        requestType: request.requestType,
         productId: request.product,
         notes: request.rejectionReason || "Owner rejected pending inventory request",
         movement: {
           quantityBefore: null,
-          quantityChange: 0,
+          quantityChange:
+            request.requestType === "RESTOCK"
+              ? request.requestedQuantity || 0
+              : request.initialQuantity || 0,
           quantityAfter: null,
         },
       },

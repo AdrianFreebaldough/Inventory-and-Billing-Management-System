@@ -28,6 +28,10 @@ export const protect = (req, res, next) => {
 /* ================= ROLE AUTH ================= */
 export const authorizeRoles = (...allowedRoles) => {
   return (req, res, next) => {
+    if (!req.user || !req.user.role) {
+      return res.status(401).json({ message: "Not authorized" });
+    }
+
     if (!allowedRoles.includes(req.user.role)) {
       return res.status(403).json({
         message: "Forbidden: insufficient permissions",
@@ -36,3 +40,5 @@ export const authorizeRoles = (...allowedRoles) => {
     next();
   };
 };
+
+export default protect;

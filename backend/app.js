@@ -6,6 +6,7 @@ import OWNER_inventoryRoutes from "./routes/OWNER_inventoryRoutes.js";
 import dashboardRoutes from "./routes/dashboardRoutes.js";
 import STAFF_dashboardRoutes from "./routes/STAFF_dashboardRoutes.js";
 import STAFF_inventoryRoutes from "./routes/STAFF_inventoryRoutes.js";
+import STAFF_activityLogRoutes from "./routes/STAFF_activityLogRoutes.js";
 
 const app = express(); // ✅ CREATE APP FIRST
 
@@ -23,5 +24,6 @@ app.use("/api/owner/inventory", OWNER_inventoryRoutes);
 app.use("/api/owner/dashboard", dashboardRoutes);
 app.use("/api/staff/dashboard", STAFF_dashboardRoutes);
 app.use("/api/staff/inventory", STAFF_inventoryRoutes);
+app.use("/api/staff/activity-logs", STAFF_activityLogRoutes);
 
 export default app;

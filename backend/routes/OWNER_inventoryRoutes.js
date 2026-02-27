@@ -7,6 +7,7 @@ import {
   OWNER_approveInventoryRequest,
   OWNER_rejectInventoryRequest,
   OWNER_archiveProduct,
+  OWNER_adjustProductStock,
 } from "../controllers/OWNER_inventoryController.js";
 
 const OWNER_router = express.Router();
@@ -39,5 +40,7 @@ OWNER_router.patch(
   "/:productId/archive",
   OWNER_archiveProduct
 );
+
+OWNER_router.patch("/:productId/adjust-stock", OWNER_adjustProductStock);
 
 export default OWNER_router;

@@ -2,6 +2,7 @@ import mongoose from "mongoose";
 import Product from "../models/product.js";
 import STAFF_ActivityLog from "../models/STAFF_activityLog.js";
 import STAFF_BillingTransaction from "../models/STAFF_billingTransaction.js";
+import { createStockLog } from "./Owner_StockLog.service.js";
 
 class STAFF_BillingError extends Error {
   constructor(message, statusCode = 400) {
@@ -244,6 +245,18 @@ export const STAFF_completeBillingTransaction = async ({ transactionId, staffId,
 
       product.quantity = product.quantity - item.quantity;
       await product.save({ session });
+
+      await createStockLog({
+        productId: product._id,
+        movementType: "SALE",
+        quantityChange: -item.quantity,
+        performedBy: {
+          userId: staffId,
+          role: "staff",
+        },
+        source: "POS",
+        session,
+      });
     }
 
     const change = STAFF_roundCurrency(parsedCashReceived - transaction.totalAmount);

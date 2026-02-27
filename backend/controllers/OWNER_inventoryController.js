@@ -3,10 +3,11 @@ import Product from "../models/product.js";
 import InventoryRequest from "../models/InventoryRequest.js";
 import ActivityLog from "../models/activityLog.js";
 import OWNER_ArchivedProduct from "../models/OWNER_archivedProduct.js";
+import { createStockLog } from "../services/Owner_StockLog.service.js";
 
-const OWNER_parsePositiveNumber = (value) => {
+const OWNER_parseNonNegativeNumber = (value) => {
   const parsed = Number(value);
-  if (!Number.isFinite(parsed) || parsed <= 0) {
+  if (!Number.isFinite(parsed) || parsed < 0) {
     return null;
   }
   return parsed;
@@ -32,11 +33,11 @@ export const OWNER_addProduct = async (req, res) => {
   try {
     const { name, category, quantity, unit, unitPrice } = req.body;
 
-    const parsedQuantity = OWNER_parsePositiveNumber(quantity);
+    const parsedQuantity = OWNER_parseNonNegativeNumber(quantity ?? 0);
     const parsedUnitPrice = Number(unitPrice ?? 0);
     if (!name || !category || parsedQuantity === null) {
       return res.status(400).json({
-        message: "name, category, and non-negative quantity are required",
+        message: "name and category are required; quantity must be non-negative",
       });
     }
 
@@ -76,6 +77,19 @@ export const OWNER_addProduct = async (req, res) => {
         },
       },
     });
+
+    if (parsedQuantity > 0) {
+      await createStockLog({
+        productId: product._id,
+        movementType: "RESTOCK",
+        quantityChange: parsedQuantity,
+        performedBy: {
+          userId: req.user.id,
+          role: req.user.role,
+        },
+        source: "SYSTEM",
+      });
+    }
 
     return res.status(201).json({
       message: "Product added to active inventory",
@@ -182,6 +196,20 @@ export const OWNER_approveInventoryRequest = async (req, res) => {
           { session }
         );
 
+        if (request.initialQuantity > 0) {
+          await createStockLog({
+            productId: product._id,
+            movementType: "RESTOCK",
+            quantityChange: request.initialQuantity,
+            performedBy: {
+              userId: req.user.id,
+              role: req.user.role,
+            },
+            source: "SYSTEM",
+            session,
+          });
+        }
+
         responsePayload = {
           requestId: request._id,
           requestType: request.requestType,
@@ -231,6 +259,18 @@ export const OWNER_approveInventoryRequest = async (req, res) => {
           ],
           { session }
         );
+
+        await createStockLog({
+          productId: product._id,
+          movementType: "RESTOCK",
+          quantityChange: request.requestedQuantity,
+          performedBy: {
+            userId: req.user.id,
+            role: req.user.role,
+          },
+          source: "SYSTEM",
+          session,
+        });
 
         responsePayload = {
           requestId: request._id,
@@ -405,5 +445,73 @@ export const OWNER_archiveProduct = async (req, res) => {
     return res.status(500).json({ message: error.message });
   } finally {
     await session.endSession();
+  }
+};
+
+export const OWNER_adjustProductStock = async (req, res) => {
+  const { productId } = req.params;
+  const parsedQuantityChange = Number(req.body?.quantityChange);
+
+  if (!Number.isFinite(parsedQuantityChange) || parsedQuantityChange === 0) {
+    return res.status(400).json({ message: "quantityChange must be a non-zero number" });
+  }
+
+  try {
+    const product = await Product.findOne({
+      _id: productId,
+      isArchived: { $ne: true },
+    });
+
+    if (!product) {
+      return res.status(404).json({ message: "Active product not found" });
+    }
+
+    const quantityBefore = Number(product.quantity);
+    const quantityAfter = quantityBefore + parsedQuantityChange;
+
+    if (quantityAfter < 0) {
+      return res.status(400).json({ message: "Adjustment would result in negative stock" });
+    }
+
+    product.quantity = quantityAfter;
+    await product.save();
+
+    await ActivityLog.create({
+      action: "ADJUST_STOCK",
+      performedBy: req.user.id,
+      entityType: "Product",
+      entityId: product._id,
+      details: {
+        movement: {
+          quantityBefore,
+          quantityChange: parsedQuantityChange,
+          quantityAfter,
+        },
+        notes: "Owner manually adjusted stock",
+      },
+    });
+
+    await createStockLog({
+      productId: product._id,
+      movementType: "ADJUST",
+      quantityChange: parsedQuantityChange,
+      performedBy: {
+        userId: req.user.id,
+        role: req.user.role,
+      },
+      source: "MANUAL",
+    });
+
+    return res.status(200).json({
+      message: "Stock adjusted successfully",
+      data: {
+        productId: product._id,
+        quantityBefore,
+        quantityChange: parsedQuantityChange,
+        quantityAfter,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
   }
 };

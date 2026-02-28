@@ -2,16 +2,11 @@ import mongoose from "mongoose";
 
 const Owner_StockLogSchema = new mongoose.Schema(
   {
-    productId: {
+    product: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Product",
       required: true,
       index: true,
-    },
-    productName: {
-      type: String,
-      required: true,
-      trim: true,
     },
     movementType: {
       type: String,
@@ -34,22 +29,10 @@ const Owner_StockLogSchema = new mongoose.Schema(
       min: 0,
     },
     performedBy: {
-      userId: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: "User",
-        required: true,
-        index: true,
-      },
-      name: {
-        type: String,
-        required: true,
-        trim: true,
-      },
-      role: {
-        type: String,
-        required: true,
-        enum: ["owner", "staff"],
-      },
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+      index: true,
     },
     referenceId: {
       type: String,

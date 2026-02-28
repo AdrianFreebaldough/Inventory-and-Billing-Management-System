@@ -17,6 +17,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const staffNameEl     = document.getElementById("staffName");
   const staffUsernameEl = document.getElementById("staffUsername");
   const staffAvatarEl   = document.getElementById("staffAvatar");
+  const profileBtn      = document.getElementById("profileBtn");
 
   /* ================= STAFF INFO ================= */
   if (staffUser) {
@@ -28,11 +29,11 @@ document.addEventListener("DOMContentLoaded", () => {
   /* ================= NAV ACTIVE ================= */
   function setActive(activeEl) {
     document.querySelectorAll(".nav-link").forEach(link => {
-      link.classList.remove("bg-emerald-600", "text-white");
+      link.classList.remove("bg-blue-600", "text-white");
       link.classList.add("text-gray-700");
     });
 
-    activeEl.classList.add("bg-emerald-600", "text-white");
+    activeEl.classList.add("bg-blue-600", "text-white");
     activeEl.classList.remove("text-gray-700");
   }
 
@@ -187,6 +188,50 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
+  /* ================= USER PROFILE ================= */
+  async function loadUserProfile() {
+    try {
+      console.log('🔄 Loading User Profile...');
+      
+      // Show loading state
+      mainContent.innerHTML = `
+        <div class="flex items-center justify-center p-8">
+          <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+          <span class="ml-2 text-gray-600">Loading Profile...</span>
+        </div>
+      `;
+      
+      // Load User Profile HTML
+      const res = await fetch('../../HTML/user_Profile/user_Profile.html');
+      if (!res.ok) throw new Error("User Profile HTML not found");
+
+      mainContent.innerHTML = await res.text();
+      console.log('✅ User Profile HTML loaded');
+
+      // Reduce wait time
+      await new Promise(r => setTimeout(r, 50));
+
+      // Load User Profile JavaScript module
+      console.log('📦 Importing User Profile module...');
+      const module = await import('../../js/user_Profile/user_Profile.js');
+
+      if (typeof module.initProfile !== "function") {
+        throw new Error("initProfile() missing from user profile module");
+      }
+
+      module.initProfile('staff');
+      console.log('✅ User Profile initialized');
+
+    } catch (error) {
+      console.error('❌ Error loading User Profile:', error);
+      mainContent.innerHTML = `
+        <div class="text-red-500 p-4 font-medium">
+          Failed to load User Profile: ${error.message}
+        </div>
+      `;
+    }
+  }
+
   /* ================= EVENTS ================= */
   navDashboard.addEventListener("click", e => {
     e.preventDefault();
@@ -201,6 +246,11 @@ document.addEventListener("DOMContentLoaded", () => {
   navInventory.addEventListener("click", e => {
     e.preventDefault();
     loadInventory();
+  });
+
+  profileBtn.addEventListener("click", e => {
+    e.preventDefault();
+    loadUserProfile();
   });
 
   /* ================= DEFAULT ================= */

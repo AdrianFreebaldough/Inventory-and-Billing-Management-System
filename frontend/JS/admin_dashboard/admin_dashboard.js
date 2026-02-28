@@ -19,6 +19,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const staffNameEl     = document.getElementById("staffName");
   const staffUsernameEl = document.getElementById("staffUsername");
   const staffAvatarEl   = document.getElementById("staffAvatar");
+  const profileBtn      = document.getElementById("profileBtn");
 
   /* ================= ADMIN INFO ================= */
   if (adminUser) {
@@ -475,7 +476,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     try {
       // ✅ correct relative path from staff_dashboard.js
-      const res = await fetch("../../HTML/admin_Reports/admin_Reports.html");
+      const res = await fetch("../../HTML/admin_Reports/admin_Reports_Sales/admin_Reports_Sales.html");
       if (!res.ok) throw new Error("Reports HTML not found");
 
       mainContent.innerHTML = await res.text();
@@ -484,21 +485,65 @@ document.addEventListener("DOMContentLoaded", () => {
       await new Promise(r => setTimeout(r, 150));
 
       // ✅ correct module path
-      console.log("Importing admin_Reports module...");
-      const module = await import("../admin_Reports/admin_Reports.js");
+      console.log("Importing admin_Reports_Sales module...");
+      const module = await import("../admin_Reports/admin_Reports_Sales/admin_Reports_Sales.js");
 
       if (typeof module.initReports !== "function") {
         throw new Error("initReports() missing");
       }
 
       module.initReports();
-      console.log("admin_Reports.initReports() called");
+      console.log("admin_Reports_Sales.initReports() called");
 
     } catch (error) {
       console.error(error);
       mainContent.innerHTML = `
         <div class="text-red-500 p-4 font-medium">
           Failed to load Reports module: ${error.message}
+        </div>
+      `;
+    }
+  }
+
+  /* ================= USER PROFILE ================= */
+  async function loadUserProfile() {
+    try {
+      console.log('🔄 Loading User Profile...');
+      
+      // Show loading state
+      mainContent.innerHTML = `
+        <div class="flex items-center justify-center p-8">
+          <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+          <span class="ml-2 text-gray-600">Loading Profile...</span>
+        </div>
+      `;
+      
+      // Load User Profile HTML
+      const res = await fetch('../../HTML/user_Profile/user_Profile.html');
+      if (!res.ok) throw new Error("User Profile HTML not found");
+
+      mainContent.innerHTML = await res.text();
+      console.log('✅ User Profile HTML loaded');
+
+      // Reduce wait time
+      await new Promise(r => setTimeout(r, 50));
+
+      // Load User Profile JavaScript module
+      console.log('📦 Importing User Profile module...');
+      const module = await import('../../js/user_Profile/user_Profile.js');
+
+      if (typeof module.initProfile !== "function") {
+        throw new Error("initProfile() missing from user profile module");
+      }
+
+      module.initProfile('admin');
+      console.log('✅ User Profile initialized');
+
+    } catch (error) {
+      console.error('❌ Error loading User Profile:', error);
+      mainContent.innerHTML = `
+        <div class="text-red-500 p-4 font-medium">
+          Failed to load User Profile: ${error.message}
         </div>
       `;
     }
@@ -526,6 +571,11 @@ document.addEventListener("DOMContentLoaded", () => {
         e.preventDefault();
         loadReports();
       // TODO: Load user management content
+    });
+
+    profileBtn.addEventListener("click", e => {
+        e.preventDefault();
+        loadUserProfile();
     });
 
   /* ================= DEFAULT ================= */

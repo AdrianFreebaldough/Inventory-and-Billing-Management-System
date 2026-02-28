@@ -1,4 +1,4 @@
-import { ownerStockLogs, ownerClinicInfo } from "./OwnerActivitylogsData/OwnerActivitylogsData.js";
+import { apiFetch, buildQueryString } from "../utils/apiClient.js";
 
 const formatDateTime = (dateTime) => {
 	const date = new Date(dateTime);
@@ -10,6 +10,8 @@ const formatDateTime = (dateTime) => {
 		minute: "2-digit",
 	});
 };
+
+const STOCK_LOGS_ENDPOINT = "/api/stock-logs";
 
 const escapeHtml = (value) =>
 	String(value)
@@ -29,6 +31,47 @@ const qtyClass = (qtyChange) =>
 	qtyChange >= 0
 		? "text-emerald-700 font-semibold"
 		: "text-rose-700 font-semibold";
+
+const renderStatusRow = (tableBody, message) => {
+	tableBody.innerHTML = `
+		<tr>
+			<td colspan="8" class="px-4 py-8 text-center text-sm text-slate-500">${escapeHtml(message)}</td>
+		</tr>
+	`;
+};
+
+const toStockLogRecord = (log) => ({
+	dateTime: log.createdAt,
+	productName: log?.product?.name || "Unknown Product",
+	movementType: log.movementType,
+	qtyChange: Number(log.quantityChange) || 0,
+	beforeQty: Number(log.beforeQuantity) || 0,
+	afterQty: Number(log.afterQuantity) || 0,
+	performedBy: log?.performedBy?.name || "Unknown User",
+	referenceId: log.referenceId || "N/A",
+});
+
+const setFilterOptions = (selectElement, options) => {
+	if (!selectElement) {
+		return;
+	}
+
+	const currentValue = selectElement.value;
+	const defaultOption = selectElement.querySelector("option")?.outerHTML || "<option value=\"\">All</option>";
+
+	selectElement.innerHTML = defaultOption;
+
+	options.forEach((entry) => {
+		const option = document.createElement("option");
+		option.value = entry.value;
+		option.textContent = entry.label;
+		selectElement.append(option);
+	});
+
+	if ([...selectElement.options].some((option) => option.value === currentValue)) {
+		selectElement.value = currentValue;
+	}
+};
 
 export function initOwnerActivitylogs() {
 	const totalSaleEl = document.getElementById("summaryTotalSale");
@@ -52,53 +95,20 @@ export function initOwnerActivitylogs() {
 	}
 
 	if (systemLabelEl) {
-		systemLabelEl.textContent = `${ownerClinicInfo.generatedBy} • Logs are system-generated and cannot be edited or deleted.`;
+		systemLabelEl.textContent = "System Generated • Logs are system-generated and cannot be edited or deleted.";
 	}
 
-	const uniqueProducts = [...new Set(ownerStockLogs.map((log) => log.productName))].sort();
-	const uniquePerformedBy = [...new Set(ownerStockLogs.map((log) => log.performedBy))].sort();
-
-	uniqueProducts.forEach((product) => {
-		const option = document.createElement("option");
-		option.value = product;
-		option.textContent = product;
-		productFilterEl?.append(option);
-	});
-
-	uniquePerformedBy.forEach((person) => {
-		const option = document.createElement("option");
-		option.value = person;
-		option.textContent = person;
-		performedByFilterEl?.append(option);
-	});
-
-	const renderSummary = (logs) => {
-		const saleTotal = logs
-			.filter((log) => log.movementType === "SALE")
-			.reduce((sum, log) => sum + Math.abs(Number(log.qtyChange)), 0);
-
-		const restockTotal = logs
-			.filter((log) => log.movementType === "RESTOCK")
-			.reduce((sum, log) => sum + Number(log.qtyChange), 0);
-
-		const adjustTotal = logs
-			.filter((log) => log.movementType === "ADJUST")
-			.reduce((sum, log) => sum + Math.abs(Number(log.qtyChange)), 0);
-
-		if (totalSaleEl) totalSaleEl.textContent = saleTotal.toString();
-		if (totalRestockEl) totalRestockEl.textContent = restockTotal.toString();
-		if (totalAdjustEl) totalAdjustEl.textContent = adjustTotal.toString();
+	const renderSummary = (summary) => {
+		if (totalSaleEl) totalSaleEl.textContent = String(summary?.totalSale || 0);
+		if (totalRestockEl) totalRestockEl.textContent = String(summary?.totalRestock || 0);
+		if (totalAdjustEl) totalAdjustEl.textContent = String(summary?.totalAdjust || 0);
 	};
 
 	const renderTable = (logs) => {
 		tableBody.innerHTML = "";
 
 		if (!logs.length) {
-			tableBody.innerHTML = `
-				<tr>
-					<td colspan="8" class="px-4 py-8 text-center text-sm text-slate-500">No stock log records found for the selected filters.</td>
-				</tr>
-			`;
+			renderStatusRow(tableBody, "No stock log records found for the selected filters.");
 			if (resultCountEl) resultCountEl.textContent = "0 log(s)";
 			return;
 		}
@@ -139,40 +149,64 @@ export function initOwnerActivitylogs() {
 		if (resultCountEl) resultCountEl.textContent = `${logs.length} log(s)`;
 	};
 
-	const applyFilters = () => {
-		const startDate = startDateInput?.value ? new Date(startDateInput.value) : null;
-		const endDate = endDateInput?.value ? new Date(endDateInput.value) : null;
-		if (endDate) {
-			endDate.setHours(23, 59, 59, 999);
-		}
+	const getFilters = () => ({
+		startDate: startDateInput?.value || "",
+		endDate: endDateInput?.value || "",
+		productId: productFilterEl?.value || "",
+		movementType: movementFilterEl?.value || "",
+		performedBy: performedByFilterEl?.value || "",
+		referenceId: referenceFilterEl?.value || "",
+	});
 
-		const product = productFilterEl?.value || "";
-		const movementType = movementFilterEl?.value || "";
-		const performedBy = performedByFilterEl?.value || "";
-		const referenceKeyword = (referenceFilterEl?.value || "").trim().toLowerCase();
+	const refreshFilterOptions = (records) => {
+		const productsMap = new Map();
+		const usersMap = new Map();
 
-		const filtered = ownerStockLogs.filter((log) => {
-			const logDate = new Date(log.dateTime);
-			const matchesStart = !startDate || logDate >= startDate;
-			const matchesEnd = !endDate || logDate <= endDate;
-			const matchesProduct = !product || log.productName === product;
-			const matchesMovement = !movementType || log.movementType === movementType;
-			const matchesPerformedBy = !performedBy || log.performedBy === performedBy;
-			const matchesReference =
-				!referenceKeyword || log.referenceId.toLowerCase().includes(referenceKeyword);
+		records.forEach((record) => {
+			if (record?.product?._id && record?.product?.name) {
+				productsMap.set(record.product._id, record.product.name);
+			}
 
-			return (
-				matchesStart &&
-				matchesEnd &&
-				matchesProduct &&
-				matchesMovement &&
-				matchesPerformedBy &&
-				matchesReference
-			);
+			if (record?.performedBy?._id && record?.performedBy?.name) {
+				usersMap.set(record.performedBy._id, record.performedBy.name);
+			}
 		});
 
-		renderSummary(filtered);
-		renderTable(filtered);
+		const productOptions = [...productsMap.entries()]
+			.map(([value, label]) => ({ value, label }))
+			.sort((a, b) => a.label.localeCompare(b.label));
+
+		const userOptions = [...usersMap.entries()]
+			.map(([value, label]) => ({ value, label }))
+			.sort((a, b) => a.label.localeCompare(b.label));
+
+		setFilterOptions(productFilterEl, productOptions);
+		setFilterOptions(performedByFilterEl, userOptions);
+	};
+
+	const fetchAndRenderLogs = async () => {
+		renderStatusRow(tableBody, "Loading stock logs...");
+		if (resultCountEl) {
+			resultCountEl.textContent = "Loading...";
+		}
+
+		try {
+			const queryString = buildQueryString(getFilters());
+			const response = await apiFetch(`${STOCK_LOGS_ENDPOINT}${queryString}`);
+
+			const rawData = Array.isArray(response?.data) ? response.data : [];
+			const normalizedData = rawData.map(toStockLogRecord);
+
+			renderSummary(response?.summary || {});
+			renderTable(normalizedData);
+			refreshFilterOptions(rawData);
+		} catch (error) {
+			renderSummary({ totalSale: 0, totalRestock: 0, totalAdjust: 0 });
+			renderStatusRow(tableBody, error.message || "Failed to load stock logs.");
+			if (resultCountEl) {
+				resultCountEl.textContent = "0 log(s)";
+			}
+		}
 	};
 
 	[
@@ -183,8 +217,8 @@ export function initOwnerActivitylogs() {
 		performedByFilterEl,
 		referenceFilterEl,
 	].forEach((el) => {
-		el?.addEventListener("input", applyFilters);
-		el?.addEventListener("change", applyFilters);
+		el?.addEventListener("input", fetchAndRenderLogs);
+		el?.addEventListener("change", fetchAndRenderLogs);
 	});
 
 	resetFiltersEl?.addEventListener("click", () => {
@@ -194,10 +228,10 @@ export function initOwnerActivitylogs() {
 		if (movementFilterEl) movementFilterEl.value = "";
 		if (performedByFilterEl) performedByFilterEl.value = "";
 		if (referenceFilterEl) referenceFilterEl.value = "";
-		applyFilters();
+		fetchAndRenderLogs();
 	});
 
-	applyFilters();
+	fetchAndRenderLogs();
 }
 
 if (document.readyState === "loading") {

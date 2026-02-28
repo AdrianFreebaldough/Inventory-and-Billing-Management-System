@@ -9,20 +9,6 @@ const Owner_ALLOWED_SOURCES = new Set(["POS", "MANUAL", "SYSTEM"]);
 
 const Owner_escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-const Owner_normalizePagination = ({ page, limit }) => {
-  const parsedPage = Number(page);
-  const parsedLimit = Number(limit);
-
-  const safePage = Number.isInteger(parsedPage) && parsedPage > 0 ? parsedPage : 1;
-  const safeLimit = Number.isInteger(parsedLimit) && parsedLimit > 0 ? Math.min(parsedLimit, 200) : 20;
-
-  return {
-    page: safePage,
-    limit: safeLimit,
-    skip: (safePage - 1) * safeLimit,
-  };
-};
-
 const Owner_generateReferenceId = async (session = null) => {
   for (let attempt = 0; attempt < 5; attempt += 1) {
     const candidate = `SL-${Date.now()}-${crypto.randomBytes(4).toString("hex").toUpperCase()}`;
@@ -46,7 +32,7 @@ const Owner_resolvePerformer = async ({ performedBy, session = null }) => {
     throw new Error("Invalid performedBy.userId");
   }
 
-  const userQuery = User.findById(userId).select("email role");
+  const userQuery = User.findById(userId).select("name email role");
   if (session) {
     userQuery.session(session);
   }
@@ -56,11 +42,7 @@ const Owner_resolvePerformer = async ({ performedBy, session = null }) => {
     throw new Error("Performer not found");
   }
 
-  return {
-    userId: user._id,
-    name: String(performedBy?.name || user.email || "Unknown User").trim(),
-    role: String(performedBy?.role || user.role || "staff").trim(),
-  };
+  return user._id;
 };
 
 export const createStockLog = async ({
@@ -119,8 +101,7 @@ export const createStockLog = async ({
   const [stockLog] = await Owner_StockLog.create(
     [
       {
-        productId: product._id,
-        productName: product.name,
+        product: product._id,
         movementType,
         quantityChange: parsedChange,
         beforeQuantity,
@@ -136,7 +117,21 @@ export const createStockLog = async ({
   return stockLog;
 };
 
-const Owner_buildStockLogFilters = ({
+const Owner_getDateUpperBound = (dateValue) => {
+  const asString = String(dateValue);
+  const parsedDate = new Date(asString);
+  if (Number.isNaN(parsedDate.getTime())) {
+    throw new Error("Invalid endDate");
+  }
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(asString)) {
+    parsedDate.setHours(23, 59, 59, 999);
+  }
+
+  return parsedDate;
+};
+
+const Owner_buildStockLogFilters = async ({
   startDate,
   endDate,
   productId,
@@ -158,10 +153,7 @@ const Owner_buildStockLogFilters = ({
     }
 
     if (endDate) {
-      const parsedEndDate = new Date(endDate);
-      if (Number.isNaN(parsedEndDate.getTime())) {
-        throw new Error("Invalid endDate");
-      }
+      const parsedEndDate = Owner_getDateUpperBound(endDate);
       filters.createdAt.$lte = parsedEndDate;
     }
   }
@@ -170,7 +162,7 @@ const Owner_buildStockLogFilters = ({
     if (!mongoose.Types.ObjectId.isValid(productId)) {
       throw new Error("Invalid productId filter");
     }
-    filters.productId = productId;
+    filters.product = productId;
   }
 
   if (movementType) {
@@ -181,10 +173,14 @@ const Owner_buildStockLogFilters = ({
   }
 
   if (performedBy) {
+    // Support both ObjectId and legacy email string filters
     if (mongoose.Types.ObjectId.isValid(performedBy)) {
-      filters["performedBy.userId"] = performedBy;
+      filters.performedBy = performedBy;
+    } else if (typeof performedBy === "string" && performedBy.includes("@")) {
+      // Legacy: filter by email string directly
+      filters.performedBy = performedBy;
     } else {
-      filters["performedBy.name"] = { $regex: new RegExp(Owner_escapeRegex(String(performedBy).trim()), "i") };
+      throw new Error("Invalid performedBy filter");
     }
   }
 
@@ -195,6 +191,70 @@ const Owner_buildStockLogFilters = ({
   return filters;
 };
 
+const Owner_buildSummaryFromAggregation = (groupedRows) => {
+  const summary = {
+    totalSale: 0,
+    totalRestock: 0,
+    totalAdjust: 0,
+  };
+
+  groupedRows.forEach((row) => {
+    if (row._id === "SALE") {
+      summary.totalSale = row.totalQuantity;
+    }
+
+    if (row._id === "RESTOCK") {
+      summary.totalRestock = row.totalQuantity;
+    }
+
+    if (row._id === "ADJUST") {
+      summary.totalAdjust = row.totalQuantity;
+    }
+  });
+
+  return summary;
+};
+
+const Owner_getStockLogSummaryTotals = async (filters) => {
+  const groupedRows = await Owner_StockLog.aggregate([
+    { $match: filters },
+    {
+      $group: {
+        _id: "$movementType",
+        totalQuantity: {
+          $sum: {
+            $abs: "$quantityChange",
+          },
+        },
+      },
+    },
+  ]);
+
+  return Owner_buildSummaryFromAggregation(groupedRows);
+};
+
+const Owner_normalizeStockLog = (stockLog) => {
+  const performerName = stockLog?.performedBy?.name || stockLog?.performedBy?.email || "Unknown User";
+
+  return {
+    _id: stockLog._id,
+    product: {
+      _id: stockLog?.product?._id || null,
+      name: stockLog?.product?.name || "Unknown Product",
+    },
+    movementType: stockLog.movementType,
+    quantityChange: stockLog.quantityChange,
+    beforeQuantity: stockLog.beforeQuantity,
+    afterQuantity: stockLog.afterQuantity,
+    performedBy: {
+      _id: stockLog?.performedBy?._id || null,
+      name: performerName,
+    },
+    referenceId: stockLog.referenceId,
+    createdAt: stockLog.createdAt,
+  };
+};
+
 export const getStockLogs = async ({
   startDate,
   endDate,
@@ -202,10 +262,8 @@ export const getStockLogs = async ({
   movementType,
   performedBy,
   referenceId,
-  page,
-  limit,
 }) => {
-  const filters = Owner_buildStockLogFilters({
+  const filters = await Owner_buildStockLogFilters({
     startDate,
     endDate,
     productId,
@@ -214,23 +272,62 @@ export const getStockLogs = async ({
     referenceId,
   });
 
-  const pagination = Owner_normalizePagination({ page, limit });
+  const rawData = await Owner_StockLog.find(filters)
+    .sort({ createdAt: -1 })
+    .populate("product", "name")
+    .lean();
 
-  const [total, data] = await Promise.all([
-    Owner_StockLog.countDocuments(filters),
-    Owner_StockLog.find(filters)
-      .sort({ createdAt: -1 })
-      .skip(pagination.skip)
-      .limit(pagination.limit)
-      .lean(),
-  ]);
+  // Calculate summary from fetched data (avoids aggregation type-casting issues with legacy data)
+  const summary = {
+    totalSale: 0,
+    totalRestock: 0,
+    totalAdjust: 0,
+  };
+  rawData.forEach((log) => {
+    const qty = Math.abs(Number(log.quantityChange) || 0);
+    if (log.movementType === "SALE") summary.totalSale += qty;
+    else if (log.movementType === "RESTOCK") summary.totalRestock += qty;
+    else if (log.movementType === "ADJUST") summary.totalAdjust += qty;
+  });
+
+  // Collect valid ObjectIds for batch user lookup
+  const validUserIds = rawData
+    .map((log) => log.performedBy)
+    .filter((id) => mongoose.Types.ObjectId.isValid(id));
+
+  const usersById = new Map();
+  if (validUserIds.length > 0) {
+    const users = await User.find({ _id: { $in: validUserIds } })
+      .select("name email")
+      .lean();
+    users.forEach((user) => usersById.set(String(user._id), user));
+  }
+
+  // Attach performer info (handles both ObjectId refs and legacy email strings)
+  const data = rawData.map((log) => {
+    const performerId = log.performedBy;
+    let performer = null;
+
+    if (mongoose.Types.ObjectId.isValid(performerId)) {
+      performer = usersById.get(String(performerId)) || null;
+    }
+
+    return {
+      ...log,
+      performedBy: performer || {
+        _id: null,
+        name: typeof performerId === "string" ? performerId : "Unknown User",
+        email: typeof performerId === "string" && performerId.includes("@") ? performerId : null,
+      },
+    };
+  });
+
+  const normalizedData = data.map(Owner_normalizeStockLog);
 
   return {
-    total,
-    page: pagination.page,
-    limit: pagination.limit,
-    totalPages: Math.max(1, Math.ceil(total / pagination.limit)),
-    data,
+    total: normalizedData.length,
+    summary,
+    data: normalizedData,
   };
 };
 
@@ -242,7 +339,7 @@ export const getStockLogSummary = async ({
   performedBy,
   referenceId,
 }) => {
-  const filters = Owner_buildStockLogFilters({
+  const filters = await Owner_buildStockLogFilters({
     startDate,
     endDate,
     productId,
@@ -251,45 +348,5 @@ export const getStockLogSummary = async ({
     referenceId,
   });
 
-  const [totals, byMovementType] = await Promise.all([
-    Owner_StockLog.aggregate([
-      { $match: filters },
-      {
-        $group: {
-          _id: null,
-          totalLogs: { $sum: 1 },
-          netQuantityChange: { $sum: "$quantityChange" },
-          totalStockIn: {
-            $sum: {
-              $cond: [{ $gt: ["$quantityChange", 0] }, "$quantityChange", 0],
-            },
-          },
-          totalStockOut: {
-            $sum: {
-              $cond: [{ $lt: ["$quantityChange", 0] }, { $abs: "$quantityChange" }, 0],
-            },
-          },
-        },
-      },
-    ]),
-    Owner_StockLog.aggregate([
-      { $match: filters },
-      {
-        $group: {
-          _id: "$movementType",
-          count: { $sum: 1 },
-          netQuantityChange: { $sum: "$quantityChange" },
-        },
-      },
-      { $sort: { _id: 1 } },
-    ]),
-  ]);
-
-  return {
-    totalLogs: totals[0]?.totalLogs || 0,
-    netQuantityChange: totals[0]?.netQuantityChange || 0,
-    totalStockIn: totals[0]?.totalStockIn || 0,
-    totalStockOut: totals[0]?.totalStockOut || 0,
-    byMovementType,
-  };
+  return Owner_getStockLogSummaryTotals(filters);
 };

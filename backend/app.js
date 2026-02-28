@@ -29,5 +29,6 @@ app.use("/api/staff/inventory", STAFF_inventoryRoutes);
 app.use("/api/staff/activity-logs", STAFF_activityLogRoutes);
 app.use("/api/staff/billing", STAFF_billingRoutes);
 app.use("/api/owner/stock-logs", Owner_stockLogRoutes);
+app.use("/api/stock-logs", Owner_stockLogRoutes);
 
 export default app;

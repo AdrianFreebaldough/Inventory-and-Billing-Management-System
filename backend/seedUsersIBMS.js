@@ -45,14 +45,16 @@ const run = async () => {
 
     await User.create([
       {
+        username: "owner",
         email: "owner@test.com",
         password: bcrypt.hashSync("owner123", 10),
-        role: "owner",
+        role: "OWNER",
       },
       {
+        username: "staff",
         email: "staff@test.com",
         password: bcrypt.hashSync("staff123", 10),
-        role: "staff",
+        role: "STAFF",
       },
     ]);
 

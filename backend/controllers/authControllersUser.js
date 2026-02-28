@@ -7,8 +7,12 @@ export const login = async (req, res) => {
   try {
     const { email, password } = req.body;
 
+    if (!email || !password) {
+      return res.status(400).json({ message: "email and password are required" });
+    }
+
     // 1. Find user in IBMS DB
-    const user = await User.findOne({ email });
+    const user = await User.findOne({ email: String(email).trim().toLowerCase() });
 
     if (!user || !user.isActive) {
       return res.status(401).json({ message: "Invalid credentials" });
@@ -49,13 +53,21 @@ export const login = async (req, res) => {
 export const createUser = async (req, res) => {
   try {
     const { email, password, role } = req.body;
+    const normalizedRole = String(role || "").trim().toLowerCase();
 
-    if (!email || !password || !role) {
+    if (!email || !password || !normalizedRole) {
       return res.status(400).json({ message: "All fields are required" });
     }
 
+    if (!["owner", "staff"].includes(normalizedRole)) {
+      return res.status(400).json({ message: "role must be owner or staff" });
+    }
+
     // Prevent duplicate users
-    const existingUser = await User.findOne({ email });
+    const existingUser = await User.findOne({
+      email: String(email).trim().toLowerCase(),
+    });
+
     if (existingUser) {
       return res.status(409).json({ message: "User already exists" });
     }
@@ -65,9 +77,9 @@ export const createUser = async (req, res) => {
 
     // Save to IBMS database
     const user = await User.create({
-      email,
+      email: String(email).trim().toLowerCase(),
       password: hashedPassword,
-      role,
+      role: normalizedRole,
       isActive: true,
     });
 

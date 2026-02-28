@@ -132,6 +132,14 @@ export const OWNER_getPendingInventoryRequests = async (req, res) => {
 
 export const OWNER_approveInventoryRequest = async (req, res) => {
   const { requestId } = req.params;
+  const ownerId = req.user?.id;
+
+  if (!mongoose.Types.ObjectId.isValid(ownerId)) {
+    return res.status(401).json({
+      message: "Invalid authenticated user id. Please log in again.",
+    });
+  }
+
   const session = await mongoose.startSession();
 
   try {
@@ -169,7 +177,7 @@ export const OWNER_approveInventoryRequest = async (req, res) => {
 
         request.product = product._id;
         request.status = "approved";
-        request.reviewedBy = req.user.id;
+        request.reviewedBy = ownerId;
         request.reviewedAt = new Date();
         request.rejectionReason = null;
         await request.save({ session });
@@ -178,7 +186,7 @@ export const OWNER_approveInventoryRequest = async (req, res) => {
           [
             {
               action: "APPROVE_REQUEST",
-              performedBy: req.user.id,
+              performedBy: ownerId,
               entityType: "Product",
               entityId: product._id,
               details: {
@@ -202,7 +210,7 @@ export const OWNER_approveInventoryRequest = async (req, res) => {
             movementType: "RESTOCK",
             quantityChange: request.initialQuantity,
             performedBy: {
-              userId: req.user.id,
+              userId: ownerId,
               role: req.user.role,
             },
             source: "SYSTEM",
@@ -233,7 +241,7 @@ export const OWNER_approveInventoryRequest = async (req, res) => {
         await product.save({ session });
 
         request.status = "approved";
-        request.reviewedBy = req.user.id;
+        request.reviewedBy = ownerId;
         request.reviewedAt = new Date();
         request.rejectionReason = null;
         await request.save({ session });
@@ -242,7 +250,7 @@ export const OWNER_approveInventoryRequest = async (req, res) => {
           [
             {
               action: "APPROVE_REQUEST",
-              performedBy: req.user.id,
+              performedBy: ownerId,
               entityType: "Product",
               entityId: product._id,
               details: {
@@ -265,7 +273,7 @@ export const OWNER_approveInventoryRequest = async (req, res) => {
           movementType: "RESTOCK",
           quantityChange: request.requestedQuantity,
           performedBy: {
-            userId: req.user.id,
+            userId: ownerId,
             role: req.user.role,
           },
           source: "SYSTEM",

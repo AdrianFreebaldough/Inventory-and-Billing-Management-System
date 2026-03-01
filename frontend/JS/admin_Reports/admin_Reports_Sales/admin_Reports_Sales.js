@@ -12,11 +12,14 @@ const State = {
     currentTab: 'sales', 
     currentFilter: 'All Types', 
     currentSort: '',
-    currentPeriod: 'Last Week'
+    currentPeriod: 'Last Week',
+    abortController: null
 };
 const DOM = {};
 const ReportCache = { sales: null, inventory: null, billing: null };
 
+// Track current module for cleanup
+let currentModule = null;
 let exportListenerAttached = false;
 
 export function initReports() {
@@ -29,6 +32,7 @@ export function initReports() {
     if (typeof Chart === 'undefined') return;
     initializeView();
     setupNavigation();
+    setupPreload();
 }
 
 function cacheDOM() {
@@ -36,7 +40,6 @@ function cacheDOM() {
     DOM.nav = document.querySelector('.flex.bg-white.rounded-full');
     DOM.periodSelect = document.getElementById('period-select');
     DOM.exportBtn = document.getElementById('export-btn');
-    // Sales-specific elements
     DOM.stats = document.getElementById('statsCardsContainer');
     DOM.tableBody = document.getElementById('table-body');
     DOM.sortSelect = document.getElementById('sort-select');
@@ -62,6 +65,25 @@ function setupNavigation() {
     updateActiveTab('sales');
 }
 
+function setupPreload() {
+    if (!DOM.nav) return;
+    
+    const preloadMap = {
+        'tab-inventory': () => import('../../admin_Reports/admin_Reports_Inventory/admin_Reports_Inventory.js'),
+        'tab-billing': () => import('../admin_Reports_Billing/admin_Reports_Billing.js')
+    };
+    
+    DOM.nav.addEventListener('mouseover', (e) => {
+        const btn = e.target.closest('button');
+        if (!btn || btn.id === 'tab-sales') return;
+        
+        const preloader = preloadMap[btn.id];
+        if (preloader) {
+            preloader().catch(() => {});
+        }
+    });
+}
+
 function handleNavClick(e) {
     const btn = e.target.closest('button');
     if (!btn) return;
@@ -76,6 +98,14 @@ function handleNavClick(e) {
     if (!tab || tab === State.currentTab) return;
     e.preventDefault();
     
+    if (State.abortController) {
+        State.abortController.abort();
+    }
+    
+    // Cleanup current module before switching
+    cleanupCurrentModule();
+    cleanupCurrentTab();
+    
     State.currentTab = tab;
     updateActiveTab(tab);
     resetScroll();
@@ -87,6 +117,27 @@ function handleNavClick(e) {
     };
     
     debouncedLoad(loaders[tab]);
+}
+
+// NEW: Cleanup external module before switching
+function cleanupCurrentModule() {
+    if (currentModule && currentModule.cleanup) {
+        try {
+            currentModule.cleanup();
+        } catch (err) {
+            console.warn('Module cleanup error:', err);
+        }
+    }
+    currentModule = null;
+}
+
+function cleanupCurrentTab() {
+    Object.keys(Charts).forEach(k => {
+        if (Charts[k]) {
+            Charts[k].destroy();
+            Charts[k] = null;
+        }
+    });
 }
 
 function updateActiveTab(active) {
@@ -112,8 +163,6 @@ function debouncedLoad(fn) {
     });
 }
 
-// ==================== LOADERS ====================
-
 async function loadSales() {
     if (!DOM.content) return;
     
@@ -121,9 +170,7 @@ async function loadSales() {
         DOM.content.innerHTML = ReportCache.sales;
     }
     
-    // Re-cache DOM for sales elements
     cacheSalesDOM();
-    
     await new Promise(r => setTimeout(r, 10));
     
     initCharts();
@@ -142,58 +189,112 @@ function cacheSalesDOM() {
 async function loadInventory() {
     if (!DOM.content) return;
     
+    State.abortController = new AbortController();
+    const signal = State.abortController.signal;
+    
     try {
         showLoading();
         
-        if (ReportCache.inventory) {
-            DOM.content.innerHTML = ReportCache.inventory;
-        } else {
-            const res = await fetch('../../HTML/admin_Reports/admin_Reports_Inventory/admin_Reports_Inventory.html');
-            if (!res.ok) throw new Error('Inventory HTML not found');
+        if (signal.aborted) return;
+        
+        if (!ReportCache.inventory) {
+            const res = await fetch('../../HTML/admin_Reports/admin_Reports_Inventory/admin_Reports_Inventory.html', { signal });
+            if (!res.ok) throw new Error(`HTTP ${res.status}: Failed to fetch inventory HTML`);
             const html = await res.text();
             const temp = document.createElement('div');
             temp.innerHTML = html;
-            const content = temp.querySelector('#contentArea') || temp;
-            ReportCache.inventory = content.innerHTML;
-            DOM.content.innerHTML = ReportCache.inventory;
+            ReportCache.inventory = temp.querySelector('#contentArea')?.innerHTML || temp.innerHTML;
         }
         
-        const module = await import('../../admin_Reports/admin_Reports_Inventory/admin_Reports_Inventory.js');
+        if (signal.aborted) return;
+        DOM.content.innerHTML = ReportCache.inventory;
+        
+        let module;
+        try {
+            module = await import('../../admin_Reports/admin_Reports_Inventory/admin_Reports_Inventory.js');
+        } catch (importErr) {
+            throw new Error(`Failed to load inventory module: ${importErr.message}`);
+        }
+        
+        if (signal.aborted) return;
+        
+        // Store module reference for cleanup
+        currentModule = module;
+        
         if (module.initReports) {
-            await module.initReports();
+            const timeoutPromise = new Promise((_, reject) => 
+                setTimeout(() => reject(new Error('Inventory initialization timeout')), 10000)
+            );
+            await Promise.race([module.initReports(), timeoutPromise]);
+        } else {
+            console.warn('Inventory module loaded but initReports not found');
         }
         
     } catch (err) {
+        if (err.name === 'AbortError') return;
+        console.error('Inventory load error:', err);
         showError('Inventory Reports', err);
+        currentModule = null;
+    } finally {
+        if (State.abortController?.signal === signal) {
+            State.abortController = null;
+        }
     }
 }
 
 async function loadBilling() {
     if (!DOM.content) return;
     
+    State.abortController = new AbortController();
+    const signal = State.abortController.signal;
+    
     try {
         showLoading();
         
-        if (ReportCache.billing) {
-            DOM.content.innerHTML = ReportCache.billing;
-        } else {
-            const res = await fetch('../../HTML/admin_Reports/admin_Reports_Billing/admin_Reports_Billing.html');
-            if (!res.ok) throw new Error('Billing HTML not found');
+        if (signal.aborted) return;
+        
+        if (!ReportCache.billing) {
+            const res = await fetch('../../HTML/admin_Reports/admin_Reports_Billing/admin_Reports_Billing.html', { signal });
+            if (!res.ok) throw new Error(`HTTP ${res.status}: Failed to fetch billing HTML`);
             const html = await res.text();
             const temp = document.createElement('div');
             temp.innerHTML = html;
-            const content = temp.querySelector('#contentArea') || temp;
-            ReportCache.billing = content.innerHTML;
-            DOM.content.innerHTML = ReportCache.billing;
+            ReportCache.billing = temp.querySelector('#contentArea')?.innerHTML || temp.innerHTML;
         }
         
-        const module = await import('../admin_Reports_Billing/admin_Reports_Billing.js');
+        if (signal.aborted) return;
+        DOM.content.innerHTML = ReportCache.billing;
+        
+        let module;
+        try {
+            module = await import('../admin_Reports_Billing/admin_Reports_Billing.js');
+        } catch (importErr) {
+            throw new Error(`Failed to load billing module: ${importErr.message}`);
+        }
+        
+        if (signal.aborted) return;
+        
+        // Store module reference for cleanup
+        currentModule = module;
+        
         if (module.initReports) {
-            await module.initReports();
+            const timeoutPromise = new Promise((_, reject) => 
+                setTimeout(() => reject(new Error('Billing initialization timeout')), 10000)
+            );
+            await Promise.race([module.initReports(), timeoutPromise]);
+        } else {
+            console.warn('Billing module loaded but initReports not found');
         }
         
     } catch (err) {
+        if (err.name === 'AbortError') return;
+        console.error('Billing load error:', err);
         showError('Billing Reports', err);
+        currentModule = null;
+    } finally {
+        if (State.abortController?.signal === signal) {
+            State.abortController = null;
+        }
     }
 }
 
@@ -210,11 +311,14 @@ function showError(name, err) {
     if (!DOM.content) return;
     DOM.content.innerHTML = `
         <div class="text-red-500 p-4 font-medium text-center">
-            Failed to load ${name}: ${err.message}
+            <i class="fas fa-exclamation-circle mb-2"></i>
+            <p>Failed to load ${name}</p>
+            <p class="text-sm text-gray-500 mt-2">${err.message}</p>
+            <button onclick="location.reload()" class="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+                Retry
+            </button>
         </div>`;
 }
-
-// ==================== SALES REPORT FUNCTIONS ====================
 
 function getRevenueChartData(period = 'Last Week') {
     const d = TIME_PERIOD_DATA[period];
@@ -264,6 +368,12 @@ function getRevenueChartOptions() {
         maintainAspectRatio: false,
         interaction: { mode: 'index', intersect: false },
         plugins: {
+            title: {
+                display: true,
+                text: 'Revenue Overview',
+                font: { size: 16, weight: 'bold' },
+                padding: { top: 10, bottom: 20 }
+            },
             legend: { position: 'bottom', labels: { usePointStyle: true, padding: 20, font: { size: 12 } } },
             tooltip: { callbacks: { label: (c) => `${c.dataset.label}: ${c.dataset.label === 'Revenue (₱)' ? '₱' : ''}${c.parsed.y.toLocaleString()}` } }
         },
@@ -280,6 +390,12 @@ function getServicesChartOptions() {
         responsive: true,
         maintainAspectRatio: false,
         plugins: {
+            title: {
+                display: true,
+                text: 'Services Distribution',
+                font: { size: 16, weight: 'bold' },
+                padding: { top: 10, bottom: 20 }
+            },
             legend: { position: 'bottom', labels: { usePointStyle: true, padding: 15, font: { size: 12 } } },
             tooltip: { callbacks: { label: (c) => `${c.label}: ₱${c.parsed.toLocaleString()}` } }
         }
@@ -291,7 +407,15 @@ function getTopServicesChartOptions() {
         responsive: true,
         maintainAspectRatio: false,
         cutout: '60%',
-        plugins: { legend: { position: 'right', labels: { boxWidth: 12, padding: 10, font: { size: 11 } } } }
+        plugins: {
+            title: {
+                display: true,
+                text: 'Top Performing Services',
+                font: { size: 16, weight: 'bold' },
+                padding: { top: 10, bottom: 20 }
+            },
+            legend: { position: 'right', labels: { boxWidth: 12, padding: 10, font: { size: 11 } } }
+        }
     };
 }
 
@@ -307,22 +431,18 @@ function updateStats(period = State.currentPeriod) {
                 <span class="text-xs text-${tr === 'up' ? 'green' : 'red'}-500">${tr === 'up' ? '+' : ''}${p} from last period</span>
             </p>
         </div>`;
-    DOM.stats.innerHTML = card('Total Revenue', s.totalRevenue, s.revenueTrend, s.revenueTrendPercent, '₱') +
-                          card('Total Transactions', s.totalTransactions, s.transactionsTrend, s.transactionsTrendPercent) +
-                          card('Average Transaction', s.averageTransaction, s.averageTrend, s.averageTrendPercent, '₱');
+    DOM.stats.innerHTML = card('TOTAL REVENUE', s.totalRevenue, s.revenueTrend, s.revenueTrendPercent, '₱') +
+                          card('TOTAL TRANSACTION', s.totalTransactions, s.transactionsTrend, s.transactionsTrendPercent) +
+                          card('AVERAGE TRANSACTION', s.averageTransaction, s.averageTrend, s.averageTrendPercent, '₱');
 }
-
-// ==================== TABLE FUNCTIONS - FIXED ====================
 
 function getFilteredAndSortedData() {
     let data = [...TABLE_DATA];
     
-    // Apply filter first
     if (State.currentFilter !== 'All Types') {
         data = data.filter(item => item.category === State.currentFilter);
     }
     
-    // Then apply sort
     if (State.currentSort && State.currentSort !== '') {
         const sortFunctions = {
             'Highest Revenue': (a, b) => b.totalRevenue - a.totalRevenue,
@@ -331,9 +451,7 @@ function getFilteredAndSortedData() {
         };
         
         const sortFn = sortFunctions[State.currentSort];
-        if (sortFn) {
-            data.sort(sortFn);
-        }
+        if (sortFn) data.sort(sortFn);
     }
     
     return data;
@@ -346,8 +464,6 @@ function populateTable() {
     }
     
     const displayData = getFilteredAndSortedData();
-    
-    // Clear existing content
     DOM.tableBody.innerHTML = '';
     
     if (displayData.length === 0) {
@@ -360,13 +476,11 @@ function populateTable() {
         return;
     }
     
-    // Use DocumentFragment for better performance
     const fragment = document.createDocumentFragment();
     
     displayData.forEach(item => {
         const row = document.createElement('tr');
         row.className = 'border-b border-gray-100 hover:bg-gray-50 transition-colors duration-150';
-        
         row.innerHTML = `
             <td class="py-3 px-2">
                 <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${item.category === 'Services' ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800'}">
@@ -378,7 +492,6 @@ function populateTable() {
             <td class="py-3 px-2 text-center text-sm text-gray-600">${item.timesAvailed.toLocaleString()}</td>
             <td class="py-3 px-2 text-right font-semibold text-gray-900">₱${item.totalRevenue.toLocaleString()}</td>
         `;
-        
         fragment.appendChild(row);
     });
     
@@ -386,17 +499,13 @@ function populateTable() {
 }
 
 function setupEventListeners() {
-    // Period change - only for sales
     if (DOM.periodSelect) {
         DOM.periodSelect.addEventListener('change', (e) => {
             State.currentPeriod = e.target.value;
-            if (State.currentTab === 'sales') {
-                updateChartsAndStats();
-            }
+            if (State.currentTab === 'sales') updateChartsAndStats();
         });
     }
 
-    // Export button - simplified popup
     if (DOM.exportBtn && !exportListenerAttached) {
         DOM.exportBtn.addEventListener('click', () => {
             alert('Export functionality coming soon! This feature is under development.');
@@ -404,9 +513,7 @@ function setupEventListeners() {
         exportListenerAttached = true;
     }
 
-    // Sort dropdown - FIXED
     if (DOM.sortSelect) {
-        // Remove existing listeners by cloning
         const newSortSelect = DOM.sortSelect.cloneNode(true);
         DOM.sortSelect.parentNode.replaceChild(newSortSelect, DOM.sortSelect);
         DOM.sortSelect = newSortSelect;
@@ -418,9 +525,7 @@ function setupEventListeners() {
         });
     }
 
-    // Filter dropdown - FIXED
     if (DOM.filterSelect) {
-        // Remove existing listeners by cloning
         const newFilterSelect = DOM.filterSelect.cloneNode(true);
         DOM.filterSelect.parentNode.replaceChild(newFilterSelect, DOM.filterSelect);
         DOM.filterSelect = newFilterSelect;

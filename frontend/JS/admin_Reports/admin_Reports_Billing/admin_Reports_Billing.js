@@ -19,6 +19,15 @@ export function initReports() {
     setupListeners();
 }
 
+export function cleanup() {
+    Object.keys(Charts).forEach(k => {
+        if (Charts[k]) {
+            Charts[k].destroy();
+            Charts[k] = null;
+        }
+    });
+}
+
 function cacheDOM() {
     DOM.content = document.getElementById('contentArea');
     DOM.stats = document.getElementById('statsCardsContainer');
@@ -26,7 +35,6 @@ function cacheDOM() {
     DOM.transactionTable = document.getElementById('transaction-table-body');
     DOM.resultsCount = document.getElementById('results-count');
     
-    // Controls
     DOM.sortSelect = document.getElementById('sort-select');
     DOM.filterSelect = document.getElementById('filter-select');
     DOM.searchInput = document.getElementById('search-input');
@@ -83,6 +91,12 @@ function getCollectionOptions() {
         responsive: true,
         maintainAspectRatio: false,
         plugins: { 
+            title: {
+                display: true,
+                text: 'Collection Trend Analysis',
+                font: { size: 16, weight: 'bold' },
+                padding: { top: 10, bottom: 20 }
+            },
             legend: { position: 'top', labels: { usePointStyle: true, padding: 20, font: { size: 12 } } },
             tooltip: { callbacks: { label: (c) => (c.dataset.label || '') + ': ₱' + c.parsed.y.toLocaleString('en-PH') } }
         },
@@ -98,6 +112,12 @@ function getDiscountOptions() {
         responsive: true,
         maintainAspectRatio: false,
         plugins: { 
+            title: {
+                display: true,
+                text: 'Discount Distribution',
+                font: { size: 16, weight: 'bold' },
+                padding: { top: 10, bottom: 20 }
+            },
             legend: { position: 'bottom', labels: { usePointStyle: true, padding: 20, font: { size: 12 } } },
             tooltip: { callbacks: { label: (c) => (c.label || '') + ': ₱' + c.parsed.toLocaleString('en-PH') } }
         }
@@ -137,12 +157,9 @@ function populateCashierTable() {
     DOM.cashierTable.appendChild(frag);
 }
 
-// ==================== SEARCH & FILTER LOGIC ====================
-
 function getFilteredAndSearchedTransactions() {
     let data = [...BILLING_TABLE_DATA.transactions];
     
-    // Apply search filter first
     if (State.searchQuery.trim()) {
         const query = State.searchQuery.toLowerCase();
         data = data.filter(tx => 
@@ -153,7 +170,6 @@ function getFilteredAndSearchedTransactions() {
         );
     }
     
-    // Apply type filter
     if (State.currentFilter !== 'All Types') {
         switch(State.currentFilter) {
             case 'Paid': data = data.filter(t => t.status === 'Paid'); break;
@@ -163,7 +179,6 @@ function getFilteredAndSearchedTransactions() {
         }
     }
     
-    // Apply sort
     if (State.currentSort) {
         switch(State.currentSort) {
             case 'Highest Amount': data.sort((a, b) => b.netCollected - a.netCollected); break;
@@ -181,7 +196,6 @@ function populateTransactionTable() {
     
     const data = getFilteredAndSearchedTransactions();
     
-    // Update results count
     if (DOM.resultsCount) {
         const total = BILLING_TABLE_DATA.transactions.length;
         const showing = data.length;
@@ -228,7 +242,6 @@ function populateTransactionTable() {
 }
 
 function setupListeners() {
-    // Search input with debounce
     if (DOM.searchInput) {
         let debounceTimer;
         DOM.searchInput.addEventListener('input', (e) => {
@@ -236,11 +249,10 @@ function setupListeners() {
             debounceTimer = setTimeout(() => {
                 State.searchQuery = e.target.value;
                 populateTransactionTable();
-            }, 300); // 300ms debounce
+            }, 300);
         });
     }
 
-    // Sort dropdown
     if (DOM.sortSelect) {
         DOM.sortSelect.addEventListener('change', (e) => {
             State.currentSort = e.target.value === 'Sort By' ? '' : e.target.value;
@@ -248,7 +260,6 @@ function setupListeners() {
         });
     }
 
-    // Filter dropdown
     if (DOM.filterSelect) {
         DOM.filterSelect.addEventListener('change', (e) => {
             State.currentFilter = e.target.value;

@@ -2,6 +2,11 @@ import mongoose from "mongoose";
 
 export const userSchema = new mongoose.Schema(
   {
+    name: {
+      type: String,
+      trim: true,
+      default: null,
+    },
     email: {
       type: String,
       required: true,
@@ -18,9 +23,24 @@ export const userSchema = new mongoose.Schema(
       enum: ["owner", "staff"],
       required: true,
     },
+    status: {
+      type: String,
+      enum: ["Active", "Inactive", "Archived"],
+      default: "Active",
+      index: true,
+    },
     isActive: {
       type: Boolean,
       default: true,
+    },
+    archivedAt: {
+      type: Date,
+      default: null,
+    },
+    archiveReason: {
+      type: String,
+      trim: true,
+      default: null,
     },
   },
   { timestamps: true }

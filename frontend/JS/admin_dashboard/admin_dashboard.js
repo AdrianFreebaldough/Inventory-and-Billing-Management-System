@@ -401,41 +401,40 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  /* ================= INVENTORY ================= */
+    /* ================= INVENTORY ================= */
   async function loadInventory() {
-    setActive(navInventory);
+      setActive(navInventory);
 
-    try {
-      // ✅ correct relative path from staff_dashboard.js
-      const res = await fetch("../../HTML/admin_Inventory/admin_Inventory.html");
-      if (!res.ok) throw new Error("Inventory HTML not found");
+      try {
+          // Fetch the admin inventory HTML
+          const res = await fetch("../../HTML/admin_Inventory/admin_Inventory.html");
+          if (!res.ok) throw new Error("Inventory HTML not found");
 
-      mainContent.innerHTML = await res.text();
+          mainContent.innerHTML = await res.text();
 
-      // wait briefly for DOM injection to settle
-      await new Promise(r => setTimeout(r, 150));
+          // Wait briefly for DOM injection to settle
+          await new Promise(r => setTimeout(r, 150));
 
-      // ✅ correct module path
-      console.log("Importing admin_inventory module...");
-      const module = await import("../admin_inventory/admin_inventory.js");
+          // Import and initialize the admin inventory module
+          console.log("Importing admin_Inventory module...");
+          const module = await import("../admin_Inventory/admin_Inventory.js");
 
-      if (typeof module.initInventory !== "function") {
-        throw new Error("initInventory() missing");
+          if (typeof module.initAdminInventory !== "function") {
+              throw new Error("initAdminInventory() missing");
+          }
+
+          module.initAdminInventory();
+          console.log("admin_Inventory.initAdminInventory() called");
+
+      } catch (error) {
+          console.error(error);
+          mainContent.innerHTML = `
+              <div class="text-red-500 p-4 font-medium">
+                  Failed to load Inventory module: ${error.message}
+              </div>
+          `;
       }
-
-      module.initInventory();
-      console.log("admin_inventory.initInventory() called");
-
-    } catch (error) {
-      console.error(error);
-      mainContent.innerHTML = `
-        <div class="text-red-500 p-4 font-medium">
-          Failed to load Inventory module: ${error.message}
-        </div>
-      `;
-    }
   }
-
   /* ================= USER MANAGEMENT ================= */
   async function loadUserManagement() {
     setActive(navUserManagement);

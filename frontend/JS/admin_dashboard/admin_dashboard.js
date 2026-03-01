@@ -441,8 +441,7 @@ document.addEventListener("DOMContentLoaded", () => {
     setActive(navUserManagement);
 
     try {
-      // ✅ correct relative path from staff_dashboard.js
-      const res = await fetch("../../HTML/admin_UserManagement/admin_UserManagement.html");
+      const res = await fetch("../../HTML/Owner_UserManagement/UserManagement.html");
       if (!res.ok) throw new Error("UserManagement HTML not found");
 
       mainContent.innerHTML = await res.text();
@@ -450,9 +449,8 @@ document.addEventListener("DOMContentLoaded", () => {
       // wait briefly for DOM injection to settle
       await new Promise(r => setTimeout(r, 150));
 
-      // ✅ correct module path
-      console.log("Importing staff_inventory module...");
-      const module = await import("../admin_UserManagement/UserManagement.js");
+      console.log("Importing owner_usermanagement module...");
+      const module = await import("../Owner_Usermanagement/UserManagement.js");
 
       if (typeof module.initUserManagement !== "function") {
         throw new Error("initUserManagement() missing");

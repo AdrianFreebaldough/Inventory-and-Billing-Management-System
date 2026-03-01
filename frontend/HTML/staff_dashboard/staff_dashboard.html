@@ -13,7 +13,7 @@
 
   <!-- Logo -->
   <div class="p-6 flex items-center gap-3 border-b">
-    <div class="bg-emerald-600 text-white p-3 rounded-lg">+</div>
+    <div class="bg-blue-600 text-white p-3 rounded-lg">+</div>
     <div>
       <p class="font-semibold">General Medicine Clinic</p>
       <p class="text-sm text-gray-500">Staff Portal</p>
@@ -26,7 +26,7 @@
     <!-- Dashboard -->
     <a href="#"
        id="navDashboard"
-       class="nav-link flex items-center gap-3 px-4 py-2 rounded-lg bg-emerald-600 text-white">
+       class="nav-link flex items-center gap-3 px-4 py-2 rounded-lg bg-blue-600 text-white">
       <span>Dashboard</span>
     </a>
 
@@ -69,11 +69,13 @@
           <path stroke-linecap="round" stroke-linejoin="round" d="M14.857 17.082a23.848 23.848 0 0 0 3.507-1.662A2.25 2.25 0 0 0 20.25 13.5v-2.036c0-2.577-1.456-4.954-3.708-6.016A6.375 6.375 0 0 0 6.75 6.75c-2.252 1.062-3.708 3.439-3.708 6.016V13.5c0 .795.423 1.537 1.136 1.92a23.848 23.848 0 0 0 3.507 1.662m7.172 0a11.548 11.548 0 0 1-7.172 0m7.172 0a3 3 0 1 1-7.172 0" />
         </svg>
       </button>
-      <div id="staffAvatar" class="w-9 h-9 bg-emerald-600 rounded-full text-white flex items-center justify-center font-semibold">A</div>
-      <div>
-        <p id="staffName" class="font-medium">Staff Name</p>
-        <p id="staffUsername" class="text-xs text-gray-500">username</p>
-      </div>
+      <button id="profileBtn" class="flex items-center gap-5 hover:bg-gray-50 rounded-lg px-3 py-2 transition-colors cursor-pointer">
+        <div id="staffAvatar" class="w-9 h-9 bg-blue-600 rounded-full text-white flex items-center justify-center font-semibold">A</div>
+        <div>
+          <p id="staffName" class="font-medium">Staff Name</p>
+          <p id="staffUsername" class="text-xs text-left text-gray-500">Username</p>
+        </div>
+      </button>
     </div>
   </header>
 

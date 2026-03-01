@@ -15,6 +15,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const navInventory  = document.getElementById("navInventory");
   const navUserManagement = document.getElementById("navUserManagement");
   const navReports = document.getElementById("navReports");
+  const navStockLogs = document.getElementById("navStockLogs");
 
   const staffNameEl     = document.getElementById("staffName");
   const staffUsernameEl = document.getElementById("staffUsername");
@@ -508,7 +509,7 @@ document.addEventListener("DOMContentLoaded", () => {
   /* ================= USER PROFILE ================= */
   async function loadUserProfile() {
     try {
-      console.log('🔄 Loading User Profile...');
+      console.log(' Loading User Profile...');
       
       // Show loading state
       mainContent.innerHTML = `
@@ -523,13 +524,13 @@ document.addEventListener("DOMContentLoaded", () => {
       if (!res.ok) throw new Error("User Profile HTML not found");
 
       mainContent.innerHTML = await res.text();
-      console.log('✅ User Profile HTML loaded');
+      console.log(' User Profile HTML loaded');
 
       // Reduce wait time
       await new Promise(r => setTimeout(r, 50));
 
       // Load User Profile JavaScript module
-      console.log('📦 Importing User Profile module...');
+      console.log(' Importing User Profile module...');
       const module = await import('../../js/user_Profile/user_Profile.js');
 
       if (typeof module.initProfile !== "function") {
@@ -537,10 +538,10 @@ document.addEventListener("DOMContentLoaded", () => {
       }
 
       module.initProfile('admin');
-      console.log('✅ User Profile initialized');
+      console.log(' User Profile initialized');
 
     } catch (error) {
-      console.error('❌ Error loading User Profile:', error);
+      console.error(' Error loading User Profile:', error);
       mainContent.innerHTML = `
         <div class="text-red-500 p-4 font-medium">
           Failed to load User Profile: ${error.message}
@@ -549,35 +550,70 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  /* ================= EVENTS ================= */
-    navDashboard.addEventListener("click", e => {
-        e.preventDefault();
-        loadDashboard();
-    });
+  /* ================= STOCK LOGS ================= */
+  async function loadStockLogs() {
+    setActive(navStockLogs);
 
-    navInventory.addEventListener("click", e => {
-        e.preventDefault();
-        loadInventory();
-    // TODO: Load inventory content
-    });
+    try {
+      const res = await fetch("../../HTML/Admin_Activitylogs/OwnerActivitylogs.html");
+      if (!res.ok) throw new Error("Stock Logs HTML not found");
 
-    navUserManagement.addEventListener("click", e => {
-        e.preventDefault();
-        loadUserManagement();
-      // TODO: Load user management content
-    });
-  
-    navReports.addEventListener("click", e => {
-        e.preventDefault();
-        loadReports();
-      // TODO: Load user management content
-    });
+      mainContent.innerHTML = await res.text();
 
-    profileBtn.addEventListener("click", e => {
-        e.preventDefault();
-        loadUserProfile();
-    });
+      await new Promise(r => setTimeout(r, 150));
+
+      const module = await import("../Admin_Activitylogs/OwnerActivitylogs.js");
+
+      if (typeof module.initOwnerActivitylogs !== "function") {
+        throw new Error("initOwnerActivitylogs() missing");
+      }
+
+      module.initOwnerActivitylogs();
+      console.log("OwnerActivitylogs.initOwnerActivitylogs() called");
+    } catch (error) {
+      console.error(error);
+      mainContent.innerHTML = `
+        <div class="text-red-500 p-4 font-medium">
+          Failed to load Stock Logs module: ${error.message}
+        </div>
+      `;
+    }
+  }
+
+/* ================= EVENTS ================= */
+  navDashboard.addEventListener("click", e => {
+    e.preventDefault();
+    loadDashboard();
+  });
+
+  navInventory.addEventListener("click", e => {
+    e.preventDefault();
+    loadInventory();
+      // TODO: Load inventory content
+  });
+
+  navUserManagement.addEventListener("click", e => {
+    e.preventDefault();
+    loadUserManagement();
+        // TODO: Load user management content
+  });
+
+  navReports.addEventListener("click", e => {
+    e.preventDefault();
+    loadReports();
+        // TODO: Load user management content
+  });
+
+  profileBtn.addEventListener("click", e => {
+    e.preventDefault();
+    loadUserProfile();
+  });
+
+  navStockLogs.addEventListener("click", e => {
+    e.preventDefault();
+    loadStockLogs();
+  });
 
   /* ================= DEFAULT ================= */
-    loadDashboard();
-})
+  loadDashboard();
+  })

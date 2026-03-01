@@ -296,9 +296,60 @@ function validateLogin() {
   !usernameVal ? userWarn?.classList.remove("hidden") : userWarn?.classList.add("hidden");
   !passwordVal ? passWarn?.classList.remove("hidden") : passWarn?.classList.add("hidden");
 
-  if (usernameVal && passwordVal) {
-    alert("Login successfully!");
-    $("loginUsername").value = "";
-    $("loginPassword").value = "";
+  if (!usernameVal || !passwordVal) {
+    return;
   }
+
+  const API_BASE_URL = window.IBMS_API_BASE_URL || "http://localhost:3000";
+
+  fetch(`${API_BASE_URL}/api/auth/login`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      email: usernameVal,
+      password: passwordVal,
+    }),
+  })
+    .then(async (response) => {
+      const payload = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(payload?.message || "Login failed");
+      }
+
+      return payload;
+    })
+    .then((payload) => {
+      localStorage.setItem("token", payload.token);
+      localStorage.setItem("role", payload?.user?.role || "");
+
+      const role = payload?.user?.role;
+
+      if (role === "owner") {
+        window.location.href = "../admin_dashboard/admin_dashboard.html";
+        return;
+      }
+
+      if (role === "staff") {
+        window.location.href = "../staff_dashboard/staff_dashboard.html";
+        return;
+      }
+
+      throw new Error("Invalid role");
+    })
+    .catch((error) => {
+      const message = String(error.message || "Invalid username or password");
+
+      if (userWarn) {
+        userWarn.textContent = message;
+        userWarn.classList.remove("hidden");
+      }
+
+      if (passWarn) {
+        passWarn.textContent = " ";
+        passWarn.classList.remove("hidden");
+      }
+    });
 }

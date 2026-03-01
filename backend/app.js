@@ -9,6 +9,7 @@ import STAFF_inventoryRoutes from "./routes/STAFF_inventoryRoutes.js";
 import STAFF_activityLogRoutes from "./routes/STAFF_activityLogRoutes.js";
 import STAFF_billingRoutes from "./routes/STAFF_billingRoutes.js";
 import Owner_stockLogRoutes from "./routes/Owner_StockLog.routes.js";
+import Owner_UserManagementRoutes from "./routes/Owner_UserManagement.routes.js";
 
 const app = express(); // ✅ CREATE APP FIRST
 
@@ -30,5 +31,6 @@ app.use("/api/staff/activity-logs", STAFF_activityLogRoutes);
 app.use("/api/staff/billing", STAFF_billingRoutes);
 app.use("/api/owner/stock-logs", Owner_stockLogRoutes);
 app.use("/api/stock-logs", Owner_stockLogRoutes);
+app.use("/api/owner", Owner_UserManagementRoutes);
 
 export default app;

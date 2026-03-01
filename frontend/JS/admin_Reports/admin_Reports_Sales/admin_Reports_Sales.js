@@ -163,6 +163,45 @@ function debouncedLoad(fn) {
     });
 }
 
+const exportBtn = document.getElementById('export-btn');
+const toggleBtn = document.getElementById('toggle-btn');
+const btnLabel = document.getElementById('btn-label');
+const btnIcon = document.getElementById('btn-icon');
+
+let isPdf = true;
+
+toggleBtn.addEventListener('click', () => {
+    isPdf = !isPdf;
+    
+    if (isPdf) {
+        // Switch to PDF - Blue
+        exportBtn.className = 'bg-blue-600 text-white pl-6 pr-4 py-2 rounded-l-xl text-sm font-medium flex items-center gap-2 hover:bg-blue-700 transition-all shadow-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2';
+        toggleBtn.className = 'bg-blue-600 text-white px-3 py-2 rounded-r-xl text-sm font-medium flex items-center hover:bg-blue-700 transition-all shadow-md border-l border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2';
+        toggleBtn.title = 'Switch to Excel';
+        
+        exportBtn.innerHTML = `
+            <img src="../../assets/download_icon.png" class="w-4 h-4" aria-hidden="true">
+            <span>PDF</span>
+        `;
+    } else {
+        // Switch to Excel - Green
+        exportBtn.className = 'bg-green-700 text-white pl-6 pr-4 py-2 rounded-l-xl text-sm font-medium flex items-center gap-2 hover:bg-green-700 transition-all shadow-md focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2';
+        toggleBtn.className = 'bg-green-700 text-white px-3 py-2 rounded-r-xl text-sm font-medium flex items-center hover:bg-green-700 transition-all shadow-md border-l border-green-500 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2';
+        toggleBtn.title = 'Switch to PDF';
+        
+        exportBtn.innerHTML = `
+            <img src="../../assets/download_icon.png" class="w-4 h-4" aria-hidden="true">
+            <span>Excel</span>
+        `;
+    }
+});
+
+// Main button click exports current format
+exportBtn.addEventListener('click', () => {
+    const format = isPdf ? 'PDF' : 'Excel';
+    console.log('Exporting as:', format);
+});
+
 async function loadSales() {
     if (!DOM.content) return;
     

@@ -17,22 +17,32 @@
     
     <!-- Right Side Controls -->
     <div class="flex items-center gap-4 shrink-0 ml-6">
-        <div class="flex items-center gap-2 bg-gray-50 px-4 py-2 rounded-lg">
-            <i class="fas fa-calendar text-gray-500 text-sm" aria-hidden="true"></i>
-            <label for="period-select" class="sr-only">Select Time Period</label>
-            <select id="period-select" class="bg-transparent text-sm text-gray-600 outline-none cursor-pointer">
-                <option value="Last Week">Last Week</option>
-                <option value="Last Month">Last Month</option>
-                <option value="Last 3 Months">Last 3 Months</option>
-                <option value="Last 6 Months">Last 6 Months</option>
-                <option value="This Year">This Year</option>
-            </select>
-        </div>
-        <button id="export-btn" class="bg-blue-600 text-white px-6 py-2 rounded-xl text-sm font-medium flex items-center gap-2 hover:bg-blue-700 transition-all shadow-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
-            <i class="fas fa-download" aria-hidden="true"></i>
-            PDF
+    <div class="flex items-center gap-2 bg-gray-50 px-4 py-2 rounded-lg">
+        <i class="fas fa-calendar text-gray-500 text-sm" aria-hidden="true"></i>
+        <label for="period-select" class="sr-only">Select Time Period</label>
+        <select id="period-select" class="bg-transparent text-sm text-gray-600 outline-none cursor-pointer">
+            <option value="Last Week">Last Week</option>
+            <option value="Last Month">Last Month</option>
+            <option value="Last 3 Months">Last 3 Months</option>
+            <option value="Last 6 Months">Last 6 Months</option>
+            <option value="This Year">This Year</option>
+        </select>
+    </div>
+    
+    <!-- Split Toggle Button -->
+    <div class="flex">
+        <!-- PDF Button -->
+        <button id="export-btn" class="bg-blue-600 text-white pl-6 pr-4 py-2 rounded-l-xl text-sm font-medium flex items-center gap-2 hover:bg-blue-700 transition-all shadow-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
+            <img id="btn-icon" src="../../assets/download_icon.png" class="w-4 h-4" aria-hidden="true">
+            <span id="btn-label">PDF</span>
+        </button>
+        
+        <!-- Toggle Arrow Button -->
+        <button id="toggle-btn" class="bg-blue-600 text-white px-3 py-2 rounded-r-xl text-sm font-medium flex items-center hover:bg-blue-700 transition-all shadow-md border-l border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2" title="Switch to Excel">
+            <img src="../../assets/arrow_down_icon.png" class="w-2 h-2" aria-hidden="true">
         </button>
     </div>
+</div>
 </div>
 
 <!-- DYNAMIC CONTENT AREA -->

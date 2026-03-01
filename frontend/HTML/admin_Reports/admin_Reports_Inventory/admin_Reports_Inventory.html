@@ -1,0 +1,30 @@
+<!-- INVENTORY REPORTS CONTENT ONLY -->
+<div id="contentArea" class="p-0">
+    <!-- Stats Cards -->
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6" id="statsCardsContainer" role="region" aria-label="Inventory Statistics">
+    </div>
+
+    <!-- Inventory Status by Category Chart -->
+    <section class="bg-white rounded-lg p-6 border border-gray-100 shadow-md hover:shadow-lg transition-shadow duration-200 mb-6" aria-labelledby="status-heading">
+        <h3 id="status-heading" class="text-sm font-semibold text-gray-700 mb-6">Inventory Status by Category</h3>
+        <div class="relative h-64 w-full">
+            <canvas id="inventoryStatusChart" role="img" aria-label="Bar chart showing inventory status by category"></canvas>
+        </div>
+    </section>
+
+    <!-- Top Dispensed Products Chart -->
+    <section class="bg-white rounded-lg p-6 border border-gray-100 shadow-md hover:shadow-lg transition-shadow duration-200 mb-6" aria-labelledby="products-heading">
+        <h3 id="products-heading" class="text-sm font-semibold text-gray-700 mb-6">Top Dispensed Products</h3>
+        <div class="relative h-64 w-full">
+            <canvas id="topProductsChart" role="img" aria-label="Bar chart showing top dispensed products"></canvas>
+        </div>
+    </section>
+
+    <!-- Usage Trend Chart -->
+    <section class="bg-white rounded-lg p-6 border border-gray-100 shadow-md hover:shadow-lg transition-shadow duration-200" aria-labelledby="usage-heading">
+        <h3 id="usage-heading" class="text-sm font-semibold text-gray-700 mb-6">Usage Trend</h3>
+        <div class="relative h-64 w-full">
+            <canvas id="usageTrendChart" role="img" aria-label="Line chart showing usage trends over time"></canvas>
+        </div>
+    </section>
+</div>

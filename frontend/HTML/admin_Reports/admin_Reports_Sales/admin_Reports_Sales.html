@@ -1,0 +1,114 @@
+<!-- MAIN CONTAINER WITH NAVIGATION -->
+<div id="mainContent" class="bg-white shadow-md rounded-2xl px-8 py-5 flex justify-between items-center mb-8 border-b border-gray-100 overflow-hidden">
+    <!-- Navigation Tabs -->
+    <nav class="flex-1 min-w-0" aria-label="Report Types">
+        <div class="flex bg-white rounded-full p-1 shadow-sm border border-gray-200 w-full" role="tablist">
+            <button role="tab" aria-selected="true" aria-controls="contentArea" id="tab-sales" class="flex-1 px-4 py-2.5 bg-blue-700 text-white text-sm font-medium rounded-full transition-colors duration-200 whitespace-nowrap">
+                Sales Reports
+            </button>
+            <button role="tab" aria-selected="false" aria-controls="contentArea" id="tab-inventory" class="flex-1 px-4 py-2.5 text-gray-600 text-sm font-medium rounded-full hover:bg-gray-50 transition-colors duration-200 whitespace-nowrap">
+                Inventory Reports
+            </button>
+            <button role="tab" aria-selected="false" aria-controls="contentArea" id="tab-billing" class="flex-1 px-4 py-2.5 text-gray-600 text-sm font-medium rounded-full hover:bg-gray-50 transition-colors duration-200 whitespace-nowrap">
+                Billing Reports
+            </button>
+        </div>
+    </nav>
+    
+    <!-- Right Side Controls -->
+    <div class="flex items-center gap-4 shrink-0 ml-6">
+        <div class="flex items-center gap-2 bg-gray-50 px-4 py-2 rounded-lg">
+            <i class="fas fa-calendar text-gray-500 text-sm" aria-hidden="true"></i>
+            <label for="period-select" class="sr-only">Select Time Period</label>
+            <select id="period-select" class="bg-transparent text-sm text-gray-600 outline-none cursor-pointer">
+                <option value="Last Week">Last Week</option>
+                <option value="Last Month">Last Month</option>
+                <option value="Last 3 Months">Last 3 Months</option>
+                <option value="Last 6 Months">Last 6 Months</option>
+                <option value="This Year">This Year</option>
+            </select>
+        </div>
+        <button id="export-btn" class="bg-blue-600 text-white px-6 py-2 rounded-xl text-sm font-medium flex items-center gap-2 hover:bg-blue-700 transition-all shadow-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
+            <i class="fas fa-download" aria-hidden="true"></i>
+            PDF
+        </button>
+    </div>
+</div>
+
+<!-- DYNAMIC CONTENT AREA -->
+<div id="contentArea" class="pl-6 pt-2" role="tabpanel" aria-labelledby="tab-sales">
+    <!-- Stats Cards -->
+    <div class="grid grid-cols-3 gap-6 mb-8" id="statsCardsContainer" role="region" aria-label="Key Statistics"></div>
+
+    <!-- Revenue Chart -->
+    <section class="bg-white rounded-lg shadow-md p-6 mb-6" aria-labelledby="revenue-heading">
+        <h3 id="revenue-heading" class="text-lg font-semibold text-gray-800 mb-4">Revenue & Transactions Trend</h3>
+        <div class="h-64">
+            <canvas id="revenueChart" role="img" aria-label="Bar chart showing revenue and transactions trend"></canvas>
+        </div>
+    </section>
+
+    <!-- Two Charts Row -->
+    <div class="grid grid-cols-2 gap-6 mb-6">
+        <section class="bg-white rounded-lg shadow-md p-6" aria-labelledby="services-heading">
+            <h3 id="services-heading" class="text-lg font-semibold text-gray-800 mb-4">Services and Product Sales</h3>
+            <div class="h-48 flex items-center justify-center">
+                <canvas id="servicesChart" role="img" aria-label="Pie chart showing services vs product sales"></canvas>
+            </div>
+        </section>
+        <section class="bg-white rounded-lg shadow-md p-6" aria-labelledby="top-services-heading">
+            <h3 id="top-services-heading" class="text-lg font-semibold text-gray-800 mb-4">Top Services by Revenue</h3>
+            <div class="h-48 flex items-center justify-center">
+                <canvas id="topServicesChart" role="img" aria-label="Doughnut chart showing top services by revenue"></canvas>
+            </div>
+        </section>
+    </div>
+
+    <!-- Detailed Revenue Breakdown - FIXED STRUCTURE -->
+    <section class="bg-white rounded-lg shadow-md p-6" aria-labelledby="breakdown-heading">
+        <div class="flex justify-between items-center mb-4">
+            <h3 id="breakdown-heading" class="text-lg font-semibold text-gray-800">Detailed Revenue Breakdown</h3>
+            <div class="flex gap-3">
+                <!-- Sort Dropdown -->
+                <div class="flex items-center gap-2 bg-gray-50 px-4 py-2 rounded-lg">
+                    <i class="fas fa-sort text-gray-500 text-sm" aria-hidden="true"></i>
+                    <label for="sort-select" class="sr-only">Sort by</label>
+                    <select id="sort-select" class="bg-transparent text-sm text-gray-600 outline-none cursor-pointer">
+                        <option value="">Sort By</option>
+                        <option value="Highest Revenue">Highest Revenue</option>
+                        <option value="Highest Quantity">Highest Quantity</option>
+                        <option value="A-Z">A-Z</option>
+                    </select>
+                </div>
+                <!-- Filter Dropdown -->
+                <div class="flex items-center gap-2 bg-gray-50 px-4 py-2 rounded-lg">
+                    <i class="fas fa-filter text-gray-500 text-sm" aria-hidden="true"></i>
+                    <label for="filter-select" class="sr-only">Filter by type</label>
+                    <select id="filter-select" class="bg-transparent text-sm text-gray-600 outline-none cursor-pointer">
+                        <option value="All Types">All Types</option>
+                        <option value="Products">Products</option>
+                        <option value="Services">Services</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Table Container with Horizontal Scroll -->
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm border-collapse">
+                <thead>
+                    <tr class="text-left text-gray-500 border-b border-gray-200 bg-gray-50">
+                        <th scope="col" class="pb-3 pt-3 px-2 font-medium">Category</th>
+                        <th scope="col" class="pb-3 pt-3 px-2 font-medium">Sub-Category</th>
+                        <th scope="col" class="pb-3 pt-3 px-2 font-medium">Item/Service</th>
+                        <th scope="col" class="pb-3 pt-3 px-2 font-medium text-center">Times Availed</th>
+                        <th scope="col" class="pb-3 pt-3 px-2 font-medium text-right">Total Revenue</th>
+                    </tr>
+                </thead>
+                <tbody class="text-gray-700" id="table-body">
+                    <!-- Rows populated by JavaScript -->
+                </tbody>
+            </table>
+        </div>
+    </section>
+</div>

@@ -14,7 +14,8 @@ export const inventoryItems = [
     supplier: "Local Pharma",
     status: "low-stock",
     lastRestocked: "2025-12-10",
-    description: "Paracetamol pain reliever and fever reducer. Used for mild to moderate pain and fever management. Store in a cool dry place."
+    description: "Paracetamol pain reliever and fever reducer. Used for mild to moderate pain and fever management. Store in a cool dry place.",
+    archived: false
   },
   {
     id: "INV002",
@@ -31,7 +32,8 @@ export const inventoryItems = [
     supplier: "Local Pharma",
     status: "low-stock",
     lastRestocked: "2025-12-10",
-    description: "Paracetamol pain reliever and fever reducer. Critical low stock — immediate restock required."
+    description: "Paracetamol pain reliever and fever reducer. Critical low stock — immediate restock required.",
+    archived: false
   },
   {
     id: "INV003",
@@ -48,7 +50,8 @@ export const inventoryItems = [
     supplier: "Local Pharma",
     status: "out-of-stock",
     lastRestocked: "2025-12-05",
-    description: "Ibuprofen anti-inflammatory for pain relief. Currently out of stock; restock recommended."
+    description: "Ibuprofen anti-inflammatory for pain relief. Currently out of stock; restock recommended.",
+    archived: false
   },
   {
     id: "INV004",
@@ -65,7 +68,8 @@ export const inventoryItems = [
     supplier: "International Pharma",
     status: "out-of-stock",
     lastRestocked: "2025-12-05",
-    description: "Ibuprofen anti-inflammatory 400mg variant. Out of stock."
+    description: "Ibuprofen anti-inflammatory 400mg variant. Out of stock.",
+    archived: false
   },
   {
     id: "INV005",
@@ -82,7 +86,8 @@ export const inventoryItems = [
     supplier: "Medical Supply Co",
     status: "in-stock",
     lastRestocked: "2025-12-15",
-    description: "Isopropyl alcohol used for disinfection and first aid cleaning. Keep away from heat sources."
+    description: "Isopropyl alcohol used for disinfection and first aid cleaning. Keep away from heat sources.",
+    archived: false
   },
   {
     id: "INV006",
@@ -99,7 +104,8 @@ export const inventoryItems = [
     supplier: "Medical Supply Co",
     status: "low-stock",
     lastRestocked: "2025-12-01",
-    description: "Sterile gauze bandages for wound care. Low stock."
+    description: "Sterile gauze bandages for wound care. Low stock.",
+    archived: false
   },
   {
     id: "INV007",
@@ -116,7 +122,8 @@ export const inventoryItems = [
     supplier: "International Pharma",
     status: "in-stock",
     lastRestocked: "2025-12-12",
-    description: "Broad-spectrum antibiotic for bacterial infections. Prescribed as directed."
+    description: "Broad-spectrum antibiotic for bacterial infections. Prescribed as directed.",
+    archived: false
   },
   {
     id: "INV008",
@@ -133,7 +140,8 @@ export const inventoryItems = [
     supplier: "Vitamin Company",
     status: "low-stock",
     lastRestocked: "2025-12-08",
-    description: "Vitamin C supplement for immune support. Low stock, consider restocking."
+    description: "Vitamin C supplement for immune support. Low stock, consider restocking.",
+    archived: false
   },
   {
     id: "INV009",
@@ -150,7 +158,8 @@ export const inventoryItems = [
     supplier: "Nutrition Plus",
     status: "in-stock",
     lastRestocked: "2025-12-14",
-    description: "Daily multivitamin supplement for general nutrition."
+    description: "Daily multivitamin supplement for general nutrition.",
+    archived: false
   },
   {
     id: "INV010",
@@ -167,7 +176,8 @@ export const inventoryItems = [
     supplier: "Care Products Ltd",
     status: "in-stock",
     lastRestocked: "2025-12-16",
-    description: "Hand sanitizer for hygiene and infection control. Keep cap closed when not in use."
+    description: "Hand sanitizer for hygiene and infection control. Keep cap closed when not in use.",
+    archived: false
   },
   {
     id: "INV011",
@@ -184,7 +194,8 @@ export const inventoryItems = [
     supplier: "PPE Supplier",
     status: "low-stock",
     lastRestocked: "2025-12-01",
-    description: "KN95 facial mask for respiratory protection. Low stock."
+    description: "KN95 facial mask for respiratory protection. Low stock.",
+    archived: false
   },
   {
     id: "INV012",
@@ -201,7 +212,8 @@ export const inventoryItems = [
     supplier: "Chemical Supply",
     status: "in-stock",
     lastRestocked: "2025-12-11",
-    description: "Antiseptic solution used for certain clinical procedures. Use per instructions."
+    description: "Antiseptic solution used for certain clinical procedures. Use per instructions.",
+    archived: false
   },
   {
     id: "INV013",
@@ -218,7 +230,8 @@ export const inventoryItems = [
     supplier: "Local Pharma",
     status: "out-of-stock",
     lastRestocked: "2025-11-28",
-    description: "Broad-spectrum antibiotic for infections. Out of stock."
+    description: "Broad-spectrum antibiotic for infections. Out of stock.",
+    archived: false
   },
   {
     id: "INV014",
@@ -235,7 +248,8 @@ export const inventoryItems = [
     supplier: "Wellness Pharma",
     status: "low-stock",
     lastRestocked: "2025-12-05",
-    description: "Antacid for acid reflux relief. Low stock needs attention."
+    description: "Antacid for acid reflux relief. Low stock needs attention.",
+    archived: false
   },
   {
     id: "INV015",
@@ -252,7 +266,8 @@ export const inventoryItems = [
     supplier: "PPE Supplier",
     status: "low-stock",
     lastRestocked: "2025-12-03",
-    description: "Latex-free medical gloves for patient care. Critical low stock."
+    description: "Latex-free medical gloves for patient care. Critical low stock.",
+    archived: false
   },
   {
     id: "INV016",
@@ -269,7 +284,8 @@ export const inventoryItems = [
     supplier: "International Pharma",
     status: "out-of-stock",
     lastRestocked: "2025-11-20",
-    description: "Antihistamine for allergy relief. Out of stock."
+    description: "Antihistamine for allergy relief. Out of stock.",
+    archived: false
   },
   {
     id: "INV017",
@@ -286,7 +302,8 @@ export const inventoryItems = [
     supplier: "Nutrition Plus",
     status: "low-stock",
     lastRestocked: "2025-12-09",
-    description: "Calcium citrate supplement for bone health. Low inventory."
+    description: "Calcium citrate supplement for bone health. Low inventory.",
+    archived: false
   },
   {
     id: "INV018",
@@ -303,7 +320,8 @@ export const inventoryItems = [
     supplier: "Medical Devices Inc",
     status: "low-stock",
     lastRestocked: "2025-12-06",
-    description: "Digital thermometer for temperature monitoring. Low stock."
+    description: "Digital thermometer for temperature monitoring. Low stock.",
+    archived: false
   }
 ];
 

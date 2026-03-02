@@ -71,6 +71,13 @@ const STATUS_DISPLAY = {
     'archived': 'Archived'
 };
 
+const STATUS_SORT_PRIORITY = {
+    'pending': 0,
+    'out-of-stock': 1,
+    'low-stock': 2,
+    'in-stock': 3
+};
+
 const Z_INDEX = {
     MODAL_BASE: 10000,
     MODAL_OVERLAY: 9999,
@@ -95,6 +102,13 @@ function getStatusColors(status) {
 function getStatusDisplayText(status) {
     const normalized = normalizeStatus(status);
     return STATUS_DISPLAY[normalized] || 'In Stock';
+}
+
+function getStatusSortPriority(status) {
+    const normalized = normalizeStatus(status);
+    return Object.prototype.hasOwnProperty.call(STATUS_SORT_PRIORITY, normalized)
+        ? STATUS_SORT_PRIORITY[normalized]
+        : Number.MAX_SAFE_INTEGER;
 }
 
 function formatCategory(category) {
@@ -239,11 +253,7 @@ function applyFilters() {
         return matchesSearch && matchesCategory && matchesStatus && matchesStockFilter;
     });
 
-    filteredItems.sort((a, b) => {
-        if (a.status === 'pending' && b.status !== 'pending') return -1;
-        if (a.status !== 'pending' && b.status === 'pending') return 1;
-        return 0;
-    });
+    filteredItems.sort((a, b) => getStatusSortPriority(a.status) - getStatusSortPriority(b.status));
 
     updateFilterButtonStyles('#statusFiltersContainer', currentStatusFilter);
     renderInventory();
@@ -359,13 +369,7 @@ function showItemDetails(item) {
     const criticalText = (item.minStock || item.minStock === 0) ? `${item.minStock} ${item.unit || ''}` : '—';
     setText("detailsCriticalText", criticalText);
 
-    const statusBadge = getElement(modal, '#detailsStatusBadge');
     const statusTextContainer = getElement(modal, '#detailsStatusText');
-    
-    if (statusBadge) {
-        statusBadge.textContent = getStatusDisplayText(item.status);
-        statusBadge.className = `inline-block px-3 py-1 rounded-full text-sm font-medium ${colors.bg} ${colors.text} border ${colors.border}`;
-    }
     
     if (statusTextContainer) {
         statusTextContainer.innerHTML = `<span class="inline-block px-2 py-1 rounded-full text-xs font-medium ${colors.bg} ${colors.text} border ${colors.border}">${getStatusDisplayText(item.status)}</span>`;

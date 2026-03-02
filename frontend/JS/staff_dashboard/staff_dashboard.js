@@ -7,6 +7,8 @@ import {
 } from "./data/staff_Dboard_data.js";
 
 document.addEventListener("DOMContentLoaded", () => {
+  const BILLING_MODE_RETURN_KEY = "lastStaffRoute";
+  const STAFF_CURRENT_ROUTE_KEY = "staffCurrentRoute";
 
   /* ================= ELEMENTS ================= */
   const mainContent   = document.getElementById("mainContent");
@@ -18,12 +20,55 @@ document.addEventListener("DOMContentLoaded", () => {
   const staffUsernameEl = document.getElementById("staffUsername");
   const staffAvatarEl   = document.getElementById("staffAvatar");
   const profileBtn      = document.getElementById("profileBtn");
+  const menuPosHeaderBtn = document.getElementById("menuPosHeaderBtn");
+
+  function getCurrentTokenRole() {
+    const tokenKeys = ["token", "authToken", "jwtToken", "ibmsToken"];
+
+    for (const key of tokenKeys) {
+      const token = localStorage.getItem(key);
+      if (!token || !token.trim()) continue;
+
+      const parts = token.split(".");
+      if (parts.length < 2) continue;
+
+      try {
+        const payload = JSON.parse(atob(parts[1]));
+        const role = String(payload?.role || "").toLowerCase();
+        if (role) return role;
+      } catch {
+        return "";
+      }
+    }
+
+    return "";
+  }
 
   /* ================= STAFF INFO ================= */
   if (staffUser) {
     staffNameEl.textContent = staffUser.fullName;
     staffUsernameEl.textContent = staffUser.username;
     staffAvatarEl.textContent = staffUser.fullName.charAt(0).toUpperCase();
+  }
+
+  const currentRole = getCurrentTokenRole();
+  let currentStaffRoute = "dashboard";
+
+  function setCurrentStaffRoute(route) {
+    currentStaffRoute = route;
+    sessionStorage.setItem(STAFF_CURRENT_ROUTE_KEY, route);
+  }
+
+  function enterBillingMode() {
+    sessionStorage.setItem(BILLING_MODE_RETURN_KEY, currentStaffRoute || "dashboard");
+    window.location.href = "../../HTML/Staff_Billing/Staff_Billing.html";
+  }
+  if (menuPosHeaderBtn) {
+    if (currentRole === "staff") {
+      menuPosHeaderBtn.classList.remove("hidden");
+    } else {
+      menuPosHeaderBtn.classList.add("hidden");
+    }
   }
 
   /* ================= NAV ACTIVE ================= */
@@ -39,6 +84,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   /* ================= DASHBOARD ================= */
   function loadDashboard() {
+    setCurrentStaffRoute("dashboard");
     setActive(navDashboard);
 
     mainContent.innerHTML = `
@@ -120,41 +166,15 @@ document.addEventListener("DOMContentLoaded", () => {
       `).join("");
   }
 
-  /* ================= BILLING (FIXED) ================= */
-  async function loadBilling() {
-    setActive(navBilling);
-
-    try {
-      // ✅ correct relative path from staff_dashboard.js
-      const res = await fetch("../../HTML/staffinventory/staffbilling.html");
-      if (!res.ok) throw new Error("Billing HTML not found");
-
-      mainContent.innerHTML = await res.text();
-
-      // wait briefly for DOM injection to settle
-      await new Promise(r => setTimeout(r, 150));
-
-      // ✅ correct module path (now in staff_billing folder)
-      const module = await import("../staff_billing/staff_billing.js");
-
-      if (typeof module.initBilling !== "function") {
-        throw new Error("initBilling() missing");
-      }
-
-      module.initBilling();
-
-    } catch (error) {
-      console.error(error);
-      mainContent.innerHTML = `
-        <div class="text-red-500 p-4 font-medium">
-          Failed to load Billing module.
-        </div>
-      `;
-    }
+  /* ================= BILLING MODE (FULL SCREEN) ================= */
+  function loadBilling() {
+    setCurrentStaffRoute(currentStaffRoute || "dashboard");
+    enterBillingMode();
   }
 
   /* ================= INVENTORY ================= */
   async function loadInventory() {
+    setCurrentStaffRoute("inventory");
     setActive(navInventory);
 
     try {
@@ -190,6 +210,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   /* ================= USER PROFILE ================= */
   async function loadUserProfile() {
+    setCurrentStaffRoute("profile");
     try {
       console.log('🔄 Loading User Profile...');
       
@@ -248,11 +269,35 @@ document.addEventListener("DOMContentLoaded", () => {
     loadInventory();
   });
 
+  menuPosHeaderBtn?.addEventListener("click", e => {
+    e.preventDefault();
+
+    if (currentRole !== "staff") {
+      return;
+    }
+
+    loadBilling();
+  });
+
   profileBtn.addEventListener("click", e => {
     e.preventDefault();
     loadUserProfile();
   });
 
-  /* ================= DEFAULT ================= */
-  loadDashboard();
+  /* ================= DEFAULT / RESTORE ROUTE ================= */
+  const hashRoute = window.location.hash.replace("#", "").toLowerCase();
+  const storedRoute = (sessionStorage.getItem(STAFF_CURRENT_ROUTE_KEY) || "").toLowerCase();
+  const initialRoute = ["dashboard", "inventory", "profile"].includes(hashRoute)
+    ? hashRoute
+    : ["dashboard", "inventory", "profile"].includes(storedRoute)
+      ? storedRoute
+      : "dashboard";
+
+  if (initialRoute === "inventory") {
+    loadInventory();
+  } else if (initialRoute === "profile") {
+    loadUserProfile();
+  } else {
+    loadDashboard();
+  }
 });

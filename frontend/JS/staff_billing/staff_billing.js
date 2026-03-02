@@ -1,5 +1,44 @@
 import { heldTransactions, products, transactionHistory } from "./BillingData.js";
 
+const BILLING_MODE_RETURN_KEY = "lastStaffRoute";
+
+function getCurrentTokenRole() {
+	const tokenKeys = ["token", "authToken", "jwtToken", "ibmsToken"];
+
+	for (const key of tokenKeys) {
+		const token = localStorage.getItem(key);
+		if (!token || !token.trim()) continue;
+
+		const parts = token.split(".");
+		if (parts.length < 2) continue;
+
+		try {
+			const payload = JSON.parse(atob(parts[1]));
+			const role = String(payload?.role || "").toLowerCase();
+			if (role) return role;
+		} catch {
+			return "";
+		}
+	}
+
+	return "";
+}
+
+function enforceStaffAccessOrRedirect() {
+	const role = getCurrentTokenRole();
+	if (role !== "staff") {
+		window.location.href = "../../HTML/loginPage/loginPage.html";
+		return false;
+	}
+	return true;
+}
+
+function exitBillingMode() {
+	const lastRoute = (sessionStorage.getItem(BILLING_MODE_RETURN_KEY) || "dashboard").toLowerCase();
+	const safeRoute = ["dashboard", "inventory", "profile"].includes(lastRoute) ? lastRoute : "dashboard";
+	window.location.href = `../../HTML/staff_dashboard/staff_dashboard.html#${safeRoute}`;
+}
+
 const VAT_RATE = 0.12;
 const CLINIC_NAME = "IBMS Clinic";
 const tabs = ["All Items", "Medicines", "Medical Supplies", "Medical Equipment", "Diagnostic Kits", "General Supplies"];
@@ -735,7 +774,7 @@ function attachEvents() {
 	});
 
 	menuPosButton.addEventListener("click", () => {
-		console.log("MenuPOS button clicked");
+		exitBillingMode();
 	});
 
 	holdTopButton.addEventListener("click", () => {
@@ -865,6 +904,10 @@ function attachEvents() {
 }
 
 function init() {
+	if (!enforceStaffAccessOrRedirect()) {
+		return;
+	}
+
 	state.transactionLog = state.transactionLog.map(normalizeTransaction);
 	state.activeTransactionId = generateMockTxnId();
 	txnIdElement.textContent = state.activeTransactionId;

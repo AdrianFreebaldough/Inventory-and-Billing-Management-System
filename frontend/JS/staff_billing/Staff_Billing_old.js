@@ -1,53 +1,62 @@
-/**
- * Staff Billing Module - Production Version
- * Fully integrated with backend API. No mock data.
- */
-
-import {
-	fetchBillingProducts,
-	createTransaction,
-	proceedToPayment,
-	completeTransaction,
-	voidTransaction as apiVoidTransaction,
-	fetchHistory,
-	fetchReceipt,
-} from "./BillingAPI.js";
-
-/* ===== Constants ===== */
+import { heldTransactions, products, transactionHistory } from "./BillingData.js";
 
 const BILLING_MODE_RETURN_KEY = "lastStaffRoute";
+
+function getCurrentTokenRole() {
+	const tokenKeys = ["token", "authToken", "jwtToken", "ibmsToken"];
+
+	for (const key of tokenKeys) {
+		const token = localStorage.getItem(key);
+		if (!token || !token.trim()) continue;
+
+		const parts = token.split(".");
+		if (parts.length < 2) continue;
+
+		try {
+			const payload = JSON.parse(atob(parts[1]));
+			const role = String(payload?.role || "").toLowerCase();
+			if (role) return role;
+		} catch {
+			return "";
+		}
+	}
+
+	return "";
+}
+
+function enforceStaffAccessOrRedirect() {
+	const role = getCurrentTokenRole();
+	if (role !== "staff") {
+		window.location.href = "../../HTML/loginPage/loginPage.html";
+		return false;
+	}
+	return true;
+}
+
+function exitBillingMode() {
+	const lastRoute = (sessionStorage.getItem(BILLING_MODE_RETURN_KEY) || "dashboard").toLowerCase();
+	const safeRoute = ["dashboard", "inventory", "profile"].includes(lastRoute) ? lastRoute : "dashboard";
+	window.location.href = `../../HTML/staff_dashboard/staff_dashboard.html#${safeRoute}`;
+}
+
 const VAT_RATE = 0.12;
 const CLINIC_NAME = "IBMS Clinic";
-const PRODUCT_CATEGORIES = [
-	"All Items",
-	"Medicines",
-	"Medical Supplies",
-	"Medical Equipment",
-	"Diagnostic Kits",
-	"General Supplies",
-];
-
-/* ===== State ===== */
+const tabs = ["All Items", "Medicines", "Medical Supplies", "Medical Equipment", "Diagnostic Kits", "General Supplies"];
 
 const state = {
-	products: [],
 	activeCategory: "All Items",
 	searchTerm: "",
 	quantities: {},
 	discountRate: 0,
 	patientId: "",
 	activeView: "sale",
-	transactionLog: [],
-	activeTransactionId: null,
-	heldTransactions: [],
+	transactionLog: [...transactionHistory],
+	activeTransactionId: "",
 	heldCounter: 1,
 	currentModal: null,
 	lastCompletedSale: null,
-	pendingVoidTransactionId: null,
-	isLoading: false,
+	pendingVoidTransactionId: null
 };
-
-/* ===== DOM Elements ===== */
 
 const categoryTabs = document.getElementById("categoryTabs");
 const itemsTableBody = document.getElementById("itemsTableBody");
@@ -129,84 +138,36 @@ const historyViewTotal = document.getElementById("historyViewTotal");
 const voidCancelBtn = document.getElementById("voidCancelBtn");
 const voidConfirmBtn = document.getElementById("voidConfirmBtn");
 
-const toastContainer = document.getElementById("toastContainer");
-const loadingOverlay = document.getElementById("loadingOverlay");
-const loadingText = document.getElementById("loadingText");
-
-/* ===== Auth & Navigation ===== */
-
-function getCurrentTokenRole() {
-	const tokenKeys = ["token", "authToken", "jwtToken", "ibmsToken"];
-	for (const key of tokenKeys) {
-		const token = localStorage.getItem(key);
-		if (!token || !token.trim()) continue;
-		const parts = token.split(".");
-		if (parts.length < 2) continue;
-		try {
-			const payload = JSON.parse(atob(parts[1]));
-			const role = String(payload?.role || "").toLowerCase();
-			if (role) return role;
-		} catch {
-			return "";
-		}
-	}
-	return "";
+function normalizeTransaction(entry) {
+	const items = Array.isArray(entry.items) ? entry.items : [];
+	const subtotal = typeof entry.subtotal === "number" ? entry.subtotal : Number(entry.totalAmount || 0);
+	const discount = typeof entry.discount === "number" ? entry.discount : 0;
+	const vat = typeof entry.vat === "number" ? entry.vat : 0;
+	const total = typeof entry.total === "number" ? entry.total : Number(entry.totalAmount || 0);
+	return {
+		transactionId: entry.transactionId,
+		date: entry.date,
+		time: entry.time,
+		patientId: entry.patientId,
+		items,
+		subtotal,
+		discount,
+		vat,
+		total,
+		status: entry.status === "VOIDED" ? "VOIDED" : "COMPLETED"
+	};
 }
-
-function enforceStaffAccessOrRedirect() {
-	const role = getCurrentTokenRole();
-	if (role !== "staff") {
-		window.location.href = "../../HTML/loginPage/loginPage.html";
-		return false;
-	}
-	return true;
-}
-
-function exitBillingMode() {
-	const lastRoute = (sessionStorage.getItem(BILLING_MODE_RETURN_KEY) || "dashboard").toLowerCase();
-	const safeRoute = ["dashboard", "inventory", "profile"].includes(lastRoute) ? lastRoute : "dashboard";
-	window.location.href = `../../HTML/staff_dashboard/staff_dashboard.html#${safeRoute}`;
-}
-
-/* ===== UI Utilities ===== */
 
 function formatPeso(value) {
-	return `₱${Number(value).toFixed(2)}`;
+	return `₱${value.toFixed(2)}`;
 }
 
-function showToast(message, type = "info") {
-	const toast = document.createElement("div");
-	const bgColor = {
-		success: "bg-emerald-500",
-		error: "bg-rose-500",
-		info: "bg-cyan-500",
-		warning: "bg-amber-500",
-	}[type] || "bg-slate-700";
-
-	toast.className = `${bgColor} text-white px-4 py-2 rounded shadow-lg text-sm animate-fade-in`;
-	toast.textContent = message;
-	toastContainer.appendChild(toast);
-
-	setTimeout(() => {
-		toast.classList.add("opacity-0", "transition-opacity");
-		setTimeout(() => toast.remove(), 300);
-	}, 3000);
+function generateMockTxnId() {
+	const suffix = Math.floor(100000 + Math.random() * 900000);
+	return `TXN-${suffix}`;
 }
 
-function showLoading(text = "Processing...") {
-	state.isLoading = true;
-	loadingText.textContent = text;
-	loadingOverlay.classList.remove("hidden");
-	loadingOverlay.classList.add("flex");
-}
-
-function hideLoading() {
-	state.isLoading = false;
-	loadingOverlay.classList.add("hidden");
-	loadingOverlay.classList.remove("flex");
-}
-
-function generatePatientId() {
+function generateMockPatientId() {
 	const suffix = Math.floor(100000 + Math.random() * 900000);
 	return `PAT-${suffix}`;
 }
@@ -217,49 +178,25 @@ function generateHeldId() {
 	return id;
 }
 
-function formatDateTime(isoString) {
-	if (!isoString) return { date: "N/A", time: "N/A" };
-	const d = new Date(isoString);
-	const month = d.getMonth() + 1;
-	const day = d.getDate();
-	const year = d.getFullYear();
-	const hour = d.getHours();
-	const minute = String(d.getMinutes()).padStart(2, "0");
+function getCurrentDateTimeParts() {
+	const now = new Date();
+	const month = now.getMonth() + 1;
+	const day = now.getDate();
+	const year = now.getFullYear();
+	const hour = String(now.getHours());
+	const minute = String(now.getMinutes()).padStart(2, "0");
 	return { date: `${month}/${day}/${year}`, time: `${hour}:${minute}` };
 }
 
-/* ===== Modals ===== */
-
-function closeAllModals() {
-	[summaryModal, cashModal, successModal, heldModal, historyViewModal, voidConfirmModal].forEach((modal) => {
-		modal.classList.add("hidden");
-		modal.classList.remove("flex");
-	});
-	modalOverlay.classList.add("hidden");
-	document.body.classList.remove("overflow-hidden");
-	state.currentModal = null;
-}
-
-function openModal(modal) {
-	closeAllModals();
-	modalOverlay.classList.remove("hidden");
-	modal.classList.remove("hidden");
-	modal.classList.add("flex");
-	document.body.classList.add("overflow-hidden");
-	state.currentModal = modal.id;
-}
-
-/* ===== Data Computation ===== */
-
 function getSelectedItems() {
-	return state.products
+	return products
 		.filter((item) => (state.quantities[item.id] || 0) > 0)
 		.map((item) => ({ ...item, qty: state.quantities[item.id] }));
 }
 
 function getFilteredItems() {
 	const term = state.searchTerm.trim().toLowerCase();
-	return state.products.filter((item) => {
+	return products.filter((item) => {
 		const categoryMatch = state.activeCategory === "All Items" || item.category === state.activeCategory;
 		const searchMatch = item.name.toLowerCase().includes(term);
 		return categoryMatch && searchMatch;
@@ -276,8 +213,6 @@ function computeSaleTotals() {
 	const totalDue = taxableAmount + vat;
 	return { selected, itemCount, subtotal, discount, vat, totalDue };
 }
-
-/* ===== Rendering ===== */
 
 function setProceedButtonEnabled(enabled) {
 	proceedButton.disabled = !enabled;
@@ -304,8 +239,27 @@ function updatePaymentLockStatus() {
 	setProceedButtonEnabled(itemCount > 0 && Boolean(state.patientId));
 }
 
+function closeAllModals() {
+	[summaryModal, cashModal, successModal, heldModal, historyViewModal, voidConfirmModal].forEach((modal) => {
+		modal.classList.add("hidden");
+		modal.classList.remove("flex");
+	});
+	modalOverlay.classList.add("hidden");
+	document.body.classList.remove("overflow-hidden");
+	state.currentModal = null;
+}
+
+function openModal(modal) {
+	closeAllModals();
+	modalOverlay.classList.remove("hidden");
+	modal.classList.remove("hidden");
+	modal.classList.add("flex");
+	document.body.classList.add("overflow-hidden");
+	state.currentModal = modal.id;
+}
+
 function renderTabs() {
-	categoryTabs.innerHTML = PRODUCT_CATEGORIES
+	categoryTabs.innerHTML = tabs
 		.map((tab) => {
 			const isActive = tab === state.activeCategory;
 			return `
@@ -413,13 +367,18 @@ function renderSummaryPanel() {
 	totalDueElement.textContent = formatPeso(totalDue);
 }
 
-function renderHistoryTable() {
-	const transactions = [...state.transactionLog].sort((a, b) => {
-		const dateA = new Date(a.dateTime).getTime();
-		const dateB = new Date(b.dateTime).getTime();
-		return dateB - dateA;
-	});
+function parseHistoryDateTime(entry) {
+	const [month, day, year] = entry.date.split("/").map((value) => Number(value));
+	const [hour, minute] = entry.time.split(":").map((value) => Number(value));
+	return new Date(year, month - 1, day, hour, minute).getTime();
+}
 
+function getHistoryNewestFirst() {
+	return [...state.transactionLog].sort((a, b) => parseHistoryDateTime(b) - parseHistoryDateTime(a));
+}
+
+function renderHistoryTable() {
+	const transactions = getHistoryNewestFirst();
 	if (!transactions.length) {
 		historyTableBody.innerHTML = `
 			<tr>
@@ -430,67 +389,114 @@ function renderHistoryTable() {
 	}
 
 	historyTableBody.innerHTML = transactions
-		.map((txn) => {
-			const isVoided = txn.status === "VOIDED";
-			const { date, time } = formatDateTime(txn.dateTime);
-			const itemCount = txn.items?.reduce((sum, item) => sum + item.quantity, 0) || 0;
-			const rowClass = isVoided ? "bg-slate-100 text-slate-500" : "text-black";
-			const cellClass = isVoided ? "text-slate-500" : "text-black";
-
-			return `
+		.map(
+			(transaction) => {
+				const isVoided = transaction.status === "VOIDED";
+				const rowClass = isVoided ? "bg-slate-100 text-slate-500" : "text-black";
+				const cellClass = isVoided ? "text-slate-500" : "text-black";
+				return `
 				<tr class="text-xs ${rowClass}">
-					<td class="px-2 py-2 font-semibold ${cellClass}">${String(txn.transactionId).slice(-8).toUpperCase()}</td>
+					<td class="px-2 py-2 font-semibold ${cellClass}">${transaction.transactionId}</td>
 					<td class="px-2 py-2 ${cellClass}">
-						<div>${date}</div>
-						<div>${time}</div>
+						<div>${transaction.date}</div>
+						<div>${transaction.time}</div>
 					</td>
-					<td class="px-2 py-2 ${cellClass}">${itemCount} item(s)</td>
-					<td class="px-2 py-2 ${cellClass}">${txn.patientId || "N/A"}</td>
+					<td class="px-2 py-2 ${cellClass}">${transaction.items.reduce((total, item) => total + item.qty, 0)} item(s)</td>
+					<td class="px-2 py-2 ${cellClass}">${transaction.patientId}</td>
 					<td class="px-2 py-2 font-medium ${cellClass}">
-						${isVoided ? formatPeso(0) : formatPeso(txn.totalAmount || 0)}
-						<div class="text-[10px] ${isVoided ? "text-rose-600" : "text-emerald-600"}">${txn.status}</div>
+						${isVoided ? formatPeso(0) : formatPeso(transaction.total)}
+						<div class="text-[10px] ${isVoided ? "text-rose-600" : "text-emerald-600"}">${transaction.status}</div>
 					</td>
 					<td class="px-2 py-2">
 						<div class="flex items-center justify-end gap-2">
-							<button type="button" data-action="view" data-transaction-id="${txn.transactionId}" class="min-w-14 border border-slate-400 bg-slate-100 px-2 py-1 text-[10px] font-semibold text-slate-700 hover:bg-slate-200">
+							<button type="button" data-action="view" data-transaction-id="${transaction.transactionId}" class="min-w-14 border border-slate-400 bg-slate-100 px-2 py-1 text-[10px] font-semibold text-slate-700 hover:bg-slate-200">
 								VIEW
 							</button>
 							${
 								isVoided
 									? '<span class="min-w-14 border border-rose-300 bg-rose-100 px-2 py-1 text-center text-[10px] font-semibold text-rose-600">VOIDED</span>'
-									: `<button type="button" data-action="void" data-transaction-id="${txn.transactionId}" class="min-w-14 border border-rose-700 bg-rose-700 px-2 py-1 text-[10px] font-semibold text-white hover:bg-rose-600">VOID</button>`
+									: `<button type="button" data-action="void" data-transaction-id="${transaction.transactionId}" class="min-w-14 border border-rose-700 bg-rose-700 px-2 py-1 text-[10px] font-semibold text-white hover:bg-rose-600">VOID</button>`
 							}
 						</div>
 					</td>
 				</tr>
 			`;
-		})
+			}
+		)
 		.join("");
 }
 
-function renderHeldModalList() {
-	if (!state.heldTransactions.length) {
-		heldList.innerHTML = '<p class="text-center text-xs text-slate-500">No held transactions.</p>';
+function findTransaction(transactionId) {
+	return state.transactionLog.find((entry) => entry.transactionId === transactionId);
+}
+
+function openHistoryTransactionModal(transactionId) {
+	const transaction = findTransaction(transactionId);
+	if (!transaction) {
 		return;
 	}
 
-	heldList.innerHTML = state.heldTransactions
+	historyViewTxnId.textContent = transaction.transactionId;
+	historyViewDateTime.textContent = `${transaction.date} ${transaction.time}`;
+	historyViewPatientId.textContent = transaction.patientId;
+	historyViewStatus.textContent = transaction.status;
+	historyViewStatus.className = transaction.status === "VOIDED"
+		? "rounded bg-rose-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-rose-700"
+		: "rounded bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-emerald-700";
+
+	historyViewItemsBody.innerHTML = transaction.items
 		.map(
-			(entry) => `
-				<div class="border border-slate-200 bg-slate-50 p-3">
-					<div class="flex items-center justify-between gap-3">
-						<div>
-							<p class="font-semibold text-slate-900">${entry.heldId}</p>
-							<p class="text-[11px] text-slate-600">${entry.itemCount} item(s) • ${formatPeso(entry.totalDue)}</p>
-						</div>
-						<button type="button" data-resume-id="${entry.heldId}" class="min-w-20 border border-emerald-600 bg-emerald-500 px-3 py-1.5 text-[11px] font-semibold text-white hover:bg-emerald-400">
-							RESUME
-						</button>
-					</div>
-				</div>
+			(item) => `
+				<tr class="text-xs text-slate-700">
+					<td class="px-3 py-2">${item.name}</td>
+					<td class="px-3 py-2 text-center">${item.qty}</td>
+					<td class="px-3 py-2 text-right">${formatPeso(item.price)}</td>
+					<td class="px-3 py-2 text-right">${formatPeso(item.qty * item.price)}</td>
+				</tr>
 			`
 		)
 		.join("");
+
+	historyViewSubtotal.textContent = formatPeso(transaction.subtotal);
+	historyViewDiscount.textContent = formatPeso(transaction.discount);
+	historyViewVat.textContent = formatPeso(transaction.vat);
+	historyViewTotal.textContent = formatPeso(transaction.total);
+
+	openModal(historyViewModal);
+}
+
+function openVoidConfirmation(transactionId) {
+	const transaction = findTransaction(transactionId);
+	if (!transaction || transaction.status === "VOIDED") {
+		return;
+	}
+	state.pendingVoidTransactionId = transactionId;
+	openModal(voidConfirmModal);
+}
+
+function voidTransaction() {
+	if (!state.pendingVoidTransactionId) {
+		return;
+	}
+
+	const transaction = findTransaction(state.pendingVoidTransactionId);
+	if (!transaction || transaction.status === "VOIDED") {
+		state.pendingVoidTransactionId = null;
+		closeAllModals();
+		return;
+	}
+
+	transaction.items.forEach((item) => {
+		const product = products.find((entry) => entry.id === item.productId);
+		if (product) {
+			product.stock += item.qty;
+		}
+	});
+
+	transaction.status = "VOIDED";
+	state.pendingVoidTransactionId = null;
+	closeAllModals();
+	refreshUi();
 }
 
 function updateTopTabs() {
@@ -515,8 +521,33 @@ function renderActiveView() {
 	}
 }
 
+function renderHeldModalList() {
+	if (!heldTransactions.length) {
+		heldList.innerHTML = '<p class="text-center text-xs text-slate-500">No held transactions.</p>';
+		return;
+	}
+
+	heldList.innerHTML = heldTransactions
+		.map(
+			(entry) => `
+				<div class="border border-slate-200 bg-slate-50 p-3">
+					<div class="flex items-center justify-between gap-3">
+						<div>
+							<p class="font-semibold text-slate-900">${entry.heldId}</p>
+							<p class="text-[11px] text-slate-600">${entry.itemCount} item(s) • ${formatPeso(entry.totalDue)}</p>
+						</div>
+						<button type="button" data-resume-id="${entry.heldId}" class="min-w-20 border border-emerald-600 bg-emerald-500 px-3 py-1.5 text-[11px] font-semibold text-white hover:bg-emerald-400">
+							RESUME
+						</button>
+					</div>
+				</div>
+			`
+		)
+		.join("");
+}
+
 function refreshUi() {
-	txnIdElement.textContent = state.activeTransactionId ? String(state.activeTransactionId).slice(-8).toUpperCase() : "NEW";
+	txnIdElement.textContent = state.activeTransactionId;
 	patientIdInput.value = state.patientId;
 	renderTabs();
 	renderItemRows();
@@ -526,18 +557,17 @@ function refreshUi() {
 	renderHeldModalList();
 }
 
-/* ===== Cart Actions ===== */
-
 function setQuantity(itemId, nextQty) {
-	const item = state.products.find((entry) => entry.id === itemId);
-	if (!item) return;
+	const item = products.find((entry) => entry.id === itemId);
+	if (!item) {
+		return;
+	}
 
 	const boundedQty = Math.max(0, Math.min(nextQty, item.stock));
 	state.quantities[itemId] = boundedQty;
-
 	const { itemCount } = computeSaleTotals();
 	if (itemCount > 0 && !state.patientId) {
-		state.patientId = generatePatientId();
+		state.patientId = generateMockPatientId();
 	}
 	if (itemCount === 0) {
 		state.patientId = "";
@@ -551,20 +581,19 @@ function resetActiveSale() {
 	});
 	state.discountRate = 0;
 	state.patientId = "";
-	state.activeTransactionId = null;
 	searchInput.value = "";
 	state.searchTerm = "";
 	state.activeCategory = "All Items";
 }
 
-/* ===== Transaction Flow ===== */
-
 function openSummaryModal() {
 	const totals = computeSaleTotals();
-	if (!state.patientId || totals.itemCount === 0) return;
+	if (!state.patientId || totals.itemCount === 0) {
+		return;
+	}
 
 	summaryClinic.textContent = CLINIC_NAME;
-	summaryTxnId.textContent = state.activeTransactionId ? String(state.activeTransactionId).slice(-8).toUpperCase() : "PENDING";
+	summaryTxnId.textContent = state.activeTransactionId;
 	summaryPatientId.textContent = state.patientId;
 	summaryItemsBody.innerHTML = totals.selected
 		.map(
@@ -585,45 +614,13 @@ function openSummaryModal() {
 	openModal(summaryModal);
 }
 
-async function handleProceedToPayment() {
-	const totals = computeSaleTotals();
-	if (!state.patientId || totals.itemCount === 0) return;
-
-	showLoading("Creating transaction...");
-
-	try {
-		// Build items array for API
-		const items = totals.selected.map((item) => ({
-			productId: item.id,
-			quantity: item.qty,
-		}));
-
-		// Create transaction on backend
-		const result = await createTransaction({
-			patientId: state.patientId,
-			items,
-			discountRate: state.discountRate,
-		});
-
-		state.activeTransactionId = result.transactionId;
-
-		// Proceed to payment
-		await proceedToPayment(result.transactionId);
-
-		hideLoading();
-		openCashModal();
-	} catch (error) {
-		hideLoading();
-		showToast(error.message || "Failed to create transaction", "error");
-	}
-}
-
 function openCashModal() {
 	const totals = computeSaleTotals();
 	cashTotalDue.textContent = formatPeso(totals.totalDue);
 	cashTenderedInput.value = "";
 	cashChangeValue.textContent = formatPeso(0);
-	setFinalizeEnabled(false);
+	finalizeBtn.disabled = true;
+	finalizeBtn.className = "min-w-28 cursor-not-allowed border border-slate-300 bg-slate-200 px-3 py-2 text-xs font-semibold text-slate-400";
 	openModal(cashModal);
 }
 
@@ -642,58 +639,52 @@ function updateCashChange() {
 	setFinalizeEnabled(tendered >= totalDue && totalDue > 0);
 }
 
-async function handleCompleteSale() {
-	if (!state.activeTransactionId) {
-		showToast("No active transaction", "error");
+function completeSale() {
+	const totals = computeSaleTotals();
+	if (!totals.itemCount || !state.patientId) {
 		return;
 	}
 
-	const tendered = Number(cashTenderedInput.value || 0);
-	const { totalDue } = computeSaleTotals();
+	const { date, time } = getCurrentDateTimeParts();
+	const transactionItems = totals.selected.map((item) => ({
+		productId: item.id,
+		name: item.name,
+		qty: item.qty,
+		price: item.price,
+		lineTotal: item.qty * item.price
+	}));
 
-	if (tendered < totalDue) {
-		showToast("Insufficient cash tendered", "error");
-		return;
-	}
+	state.transactionLog.push({
+		transactionId: state.activeTransactionId,
+		date,
+		time,
+		items: transactionItems,
+		patientId: state.patientId,
+		subtotal: Number(totals.subtotal.toFixed(2)),
+		discount: Number(totals.discount.toFixed(2)),
+		vat: Number(totals.vat.toFixed(2)),
+		total: Number(totals.totalDue.toFixed(2)),
+		status: "COMPLETED"
+	});
 
-	showLoading("Processing payment...");
-
-	try {
-		const result = await completeTransaction(state.activeTransactionId, tendered);
-
-		// Refresh products to get updated stock
-		await loadProducts();
-
-		// Build success display data
-		const totals = computeSaleTotals();
-		state.lastCompletedSale = {
-			clinicName: CLINIC_NAME,
-			transactionId: result.transactionId,
-			patientId: state.patientId,
-			selected: totals.selected,
-			subtotal: totals.subtotal,
-			discount: totals.discount,
-			vat: totals.vat,
-			totalDue: totals.totalDue,
-		};
-
-		hideLoading();
-		showSuccessModal();
-		showToast("Sale completed successfully!", "success");
-	} catch (error) {
-		hideLoading();
-		showToast(error.message || "Failed to complete sale", "error");
-	}
-}
-
-function showSuccessModal() {
-	if (!state.lastCompletedSale) return;
+	state.lastCompletedSale = {
+		clinicName: CLINIC_NAME,
+		transactionId: state.activeTransactionId,
+		patientId: state.patientId,
+		selected: totals.selected,
+		subtotal: totals.subtotal,
+		discount: totals.discount,
+		vat: totals.vat,
+		totalDue: totals.totalDue
+	};
 
 	successClinic.textContent = state.lastCompletedSale.clinicName;
-	successTxnId.textContent = String(state.lastCompletedSale.transactionId).slice(-8).toUpperCase();
+	successTxnId.textContent = state.lastCompletedSale.transactionId;
 	successPatientId.textContent = state.lastCompletedSale.patientId;
 	successItems.innerHTML = state.lastCompletedSale.selected
-		.map((item) => `<p>${item.name} (${item.qty}) - ${formatPeso(item.qty * item.price)}</p>`)
+		.map(
+			(item) => `<p>${item.name} (${item.qty}) - ${formatPeso(item.qty * item.price)}</p>`
+		)
 		.join("");
 	successSubtotal.textContent = formatPeso(state.lastCompletedSale.subtotal);
 	successDiscount.textContent = formatPeso(state.lastCompletedSale.discount);
@@ -703,13 +694,13 @@ function showSuccessModal() {
 	openModal(successModal);
 }
 
-/* ===== Hold Transactions (UI-Only) ===== */
-
 function holdCurrentTransaction() {
 	const totals = computeSaleTotals();
-	if (!totals.itemCount) return;
+	if (!totals.itemCount) {
+		return;
+	}
 
-	state.heldTransactions.push({
+	heldTransactions.push({
 		heldId: generateHeldId(),
 		patientId: state.patientId,
 		items: totals.selected,
@@ -717,139 +708,42 @@ function holdCurrentTransaction() {
 		subtotal: totals.subtotal,
 		discount: totals.discount,
 		vat: totals.vat,
-		totalDue: totals.totalDue,
+		totalDue: totals.totalDue
 	});
 
 	resetActiveSale();
+	state.activeTransactionId = generateMockTxnId();
 	closeAllModals();
 	refreshUi();
-	showToast("Transaction held", "info");
 }
 
 function resumeHeldTransaction(heldId) {
-	const index = state.heldTransactions.findIndex((entry) => entry.heldId === heldId);
-	if (index < 0) return;
+	const index = heldTransactions.findIndex((entry) => entry.heldId === heldId);
+	if (index < 0) {
+		return;
+	}
 
-	const held = state.heldTransactions[index];
+	const held = heldTransactions[index];
 	resetActiveSale();
 	held.items.forEach((item) => {
 		state.quantities[item.id] = item.qty;
 	});
 	state.patientId = held.patientId;
-	state.heldTransactions.splice(index, 1);
+	heldTransactions.splice(index, 1);
 	closeAllModals();
 	refreshUi();
-	showToast("Transaction resumed", "info");
 }
-
-/* ===== History & Void ===== */
-
-function findTransaction(transactionId) {
-	return state.transactionLog.find((entry) => String(entry.transactionId) === String(transactionId));
-}
-
-function openHistoryTransactionModal(transactionId) {
-	const transaction = findTransaction(transactionId);
-	if (!transaction) return;
-
-	const { date, time } = formatDateTime(transaction.dateTime);
-
-	historyViewTxnId.textContent = String(transaction.transactionId).slice(-8).toUpperCase();
-	historyViewDateTime.textContent = `${date} ${time}`;
-	historyViewPatientId.textContent = transaction.patientId || "N/A";
-	historyViewStatus.textContent = transaction.status;
-	historyViewStatus.className =
-		transaction.status === "VOIDED"
-			? "rounded bg-rose-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-rose-700"
-			: "rounded bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-emerald-700";
-
-	historyViewItemsBody.innerHTML = (transaction.items || [])
-		.map(
-			(item) => `
-				<tr class="text-xs text-slate-700">
-					<td class="px-3 py-2">${item.name}</td>
-					<td class="px-3 py-2 text-center">${item.quantity}</td>
-					<td class="px-3 py-2 text-right">${formatPeso(item.unitPrice)}</td>
-					<td class="px-3 py-2 text-right">${formatPeso(item.lineTotal)}</td>
-				</tr>
-			`
-		)
-		.join("");
-
-	historyViewSubtotal.textContent = formatPeso(transaction.subtotal || 0);
-	historyViewDiscount.textContent = formatPeso(transaction.discountAmount || 0);
-	historyViewVat.textContent = formatPeso(transaction.vatAmount || 0);
-	historyViewTotal.textContent = formatPeso(transaction.totalAmount || 0);
-
-	openModal(historyViewModal);
-}
-
-function openVoidConfirmation(transactionId) {
-	const transaction = findTransaction(transactionId);
-	if (!transaction || transaction.status === "VOIDED") return;
-	state.pendingVoidTransactionId = transactionId;
-	openModal(voidConfirmModal);
-}
-
-async function handleVoidTransaction() {
-	if (!state.pendingVoidTransactionId) return;
-
-	const transaction = findTransaction(state.pendingVoidTransactionId);
-	if (!transaction || transaction.status === "VOIDED") {
-		state.pendingVoidTransactionId = null;
-		closeAllModals();
-		return;
-	}
-
-	showLoading("Voiding transaction...");
-
-	try {
-		await apiVoidTransaction(state.pendingVoidTransactionId);
-
-		// Refresh history and products
-		await Promise.all([loadHistory(), loadProducts()]);
-
-		state.pendingVoidTransactionId = null;
-		hideLoading();
-		closeAllModals();
-		refreshUi();
-		showToast("Transaction voided successfully", "success");
-	} catch (error) {
-		hideLoading();
-		showToast(error.message || "Failed to void transaction", "error");
-	}
-}
-
-/* ===== API Data Loading ===== */
-
-async function loadProducts() {
-	try {
-		const products = await fetchBillingProducts();
-		state.products = products;
-	} catch (error) {
-		showToast("Failed to load products: " + error.message, "error");
-		state.products = [];
-	}
-}
-
-async function loadHistory() {
-	try {
-		const history = await fetchHistory();
-		state.transactionLog = history;
-	} catch (error) {
-		showToast("Failed to load history: " + error.message, "error");
-		state.transactionLog = [];
-	}
-}
-
-/* ===== Event Handlers ===== */
 
 function attachEvents() {
 	categoryTabs.addEventListener("click", (event) => {
 		const target = event.target;
-		if (!(target instanceof HTMLElement)) return;
+		if (!(target instanceof HTMLElement)) {
+			return;
+		}
 		const selectedCategory = target.dataset.category;
-		if (!selectedCategory) return;
+		if (!selectedCategory) {
+			return;
+		}
 		state.activeCategory = selectedCategory;
 		renderTabs();
 		renderItemRows();
@@ -857,62 +751,80 @@ function attachEvents() {
 
 	searchInput.addEventListener("input", (event) => {
 		const target = event.target;
-		if (!(target instanceof HTMLInputElement)) return;
+		if (!(target instanceof HTMLInputElement)) {
+			return;
+		}
 		state.searchTerm = target.value;
 		renderItemRows();
 	});
 
 	itemsTableBody.addEventListener("click", (event) => {
 		const target = event.target;
-		if (!(target instanceof HTMLButtonElement)) return;
+		if (!(target instanceof HTMLButtonElement)) {
+			return;
+		}
 		const action = target.dataset.action;
-		const idValue = target.dataset.id;
-		if (!action || !idValue) return;
+		const idValue = Number(target.dataset.id);
+		if (!action || Number.isNaN(idValue)) {
+			return;
+		}
 		const currentQty = state.quantities[idValue] || 0;
 		const nextQty = action === "increment" ? currentQty + 1 : currentQty - 1;
 		setQuantity(idValue, nextQty);
 	});
 
-	menuPosButton.addEventListener("click", exitBillingMode);
+	menuPosButton.addEventListener("click", () => {
+		exitBillingMode();
+	});
 
 	holdTopButton.addEventListener("click", () => {
 		renderHeldModalList();
 		openModal(heldModal);
 	});
 
-	holdSummaryButton.addEventListener("click", holdCurrentTransaction);
-	heldCloseBtn.addEventListener("click", closeAllModals);
+	holdSummaryButton.addEventListener("click", () => {
+		holdCurrentTransaction();
+	});
+
+	heldCloseBtn.addEventListener("click", () => {
+		closeAllModals();
+	});
 
 	heldList.addEventListener("click", (event) => {
 		const target = event.target;
-		if (!(target instanceof HTMLButtonElement)) return;
+		if (!(target instanceof HTMLButtonElement)) {
+			return;
+		}
 		const heldId = target.dataset.resumeId;
-		if (!heldId) return;
+		if (!heldId) {
+			return;
+		}
 		resumeHeldTransaction(heldId);
 	});
 
-	newSaleButton.addEventListener("click", async () => {
+	newSaleButton.addEventListener("click", () => {
 		state.activeView = "sale";
 		resetActiveSale();
-		await loadProducts();
+		state.activeTransactionId = generateMockTxnId();
 		closeAllModals();
 		refreshUi();
 	});
 
-	historyButton.addEventListener("click", async () => {
+	historyButton.addEventListener("click", () => {
 		state.activeView = "history";
-		showLoading("Loading history...");
-		await loadHistory();
-		hideLoading();
 		renderActiveView();
 	});
 
 	historyTableBody.addEventListener("click", (event) => {
 		const target = event.target;
-		if (!(target instanceof HTMLButtonElement)) return;
+		if (!(target instanceof HTMLButtonElement)) {
+			return;
+		}
 		const action = target.dataset.action;
 		const transactionId = target.dataset.transactionId;
-		if (!action || !transactionId) return;
+		if (!action || !transactionId) {
+			return;
+		}
 		if (action === "view") {
 			openHistoryTransactionModal(transactionId);
 			return;
@@ -922,26 +834,21 @@ function attachEvents() {
 		}
 	});
 
-	historyViewCloseBtn.addEventListener("click", closeAllModals);
+	historyViewCloseBtn.addEventListener("click", () => {
+		closeAllModals();
+	});
 
 	voidCancelBtn.addEventListener("click", () => {
 		state.pendingVoidTransactionId = null;
 		closeAllModals();
 	});
 
-	voidConfirmBtn.addEventListener("click", handleVoidTransaction);
+	voidConfirmBtn.addEventListener("click", () => {
+		voidTransaction();
+	});
 
 	discountButton.addEventListener("click", () => {
-		const input = prompt("Enter discount percentage (0-100):", String(state.discountRate * 100));
-		if (input === null) return;
-		const percent = parseFloat(input);
-		if (isNaN(percent) || percent < 0 || percent > 100) {
-			showToast("Invalid discount percentage", "error");
-			return;
-		}
-		state.discountRate = percent / 100;
-		refreshUi();
-		showToast(`Discount set to ${percent}%`, "info");
+		console.log("Discount button clicked");
 	});
 
 	clearAllButton.addEventListener("click", () => {
@@ -950,59 +857,62 @@ function attachEvents() {
 	});
 
 	proceedButton.addEventListener("click", () => {
-		if (proceedButton.disabled) return;
+		if (proceedButton.disabled) {
+			return;
+		}
 		openSummaryModal();
 	});
 
-	summaryBackBtn.addEventListener("click", closeAllModals);
-	summaryProceedBtn.addEventListener("click", handleProceedToPayment);
+	summaryBackBtn.addEventListener("click", () => {
+		closeAllModals();
+	});
 
-	cashBackBtn.addEventListener("click", openSummaryModal);
+	summaryProceedBtn.addEventListener("click", () => {
+		openCashModal();
+	});
+
+	cashBackBtn.addEventListener("click", () => {
+		openSummaryModal();
+	});
+
 	cashTenderedInput.addEventListener("input", updateCashChange);
 
 	finalizeBtn.addEventListener("click", () => {
-		if (finalizeBtn.disabled) return;
-		handleCompleteSale();
+		if (finalizeBtn.disabled) {
+			return;
+		}
+		completeSale();
 	});
 
 	printSlipBtn.addEventListener("click", () => {
-		if (state.lastCompletedSale) {
-			window.print();
-		}
+		console.log("PRINT SLIP", state.lastCompletedSale);
 	});
 
-	nextSaleBtn.addEventListener("click", async () => {
+	nextSaleBtn.addEventListener("click", () => {
 		resetActiveSale();
-		await loadProducts();
+		state.activeTransactionId = generateMockTxnId();
 		closeAllModals();
 		state.activeView = "sale";
 		refreshUi();
 	});
 
 	modalOverlay.addEventListener("click", () => {
-		const closableModals = ["summaryModal", "heldModal", "historyViewModal", "voidConfirmModal"];
-		if (closableModals.includes(state.currentModal)) {
+		if (state.currentModal === "summaryModal" || state.currentModal === "heldModal" || state.currentModal === "historyViewModal" || state.currentModal === "voidConfirmModal") {
 			closeAllModals();
 		}
 	});
 }
 
-/* ===== Initialization ===== */
-
-async function init() {
-	if (!enforceStaffAccessOrRedirect()) return;
-
-	showLoading("Loading billing system...");
-
-	try {
-		await Promise.all([loadProducts(), loadHistory()]);
-		hideLoading();
-		refreshUi();
-		attachEvents();
-	} catch (error) {
-		hideLoading();
-		showToast("Failed to initialize billing system", "error");
+function init() {
+	if (!enforceStaffAccessOrRedirect()) {
+		return;
 	}
+
+	state.transactionLog = state.transactionLog.map(normalizeTransaction);
+	state.activeTransactionId = generateMockTxnId();
+	txnIdElement.textContent = state.activeTransactionId;
+	refreshUi();
+	attachEvents();
 }
 
 init();

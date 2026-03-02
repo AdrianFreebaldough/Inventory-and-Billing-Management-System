@@ -5,7 +5,9 @@ import {
   STAFF_getBillingHistory,
   STAFF_getBillingReceipt,
   STAFF_proceedPayment,
+  STAFF_voidBillingTransaction,
 } from "../services/STAFF_billingService.js";
+import Product from "../models/product.js";
 
 const STAFF_handleBillingError = (res, error) => {
   if (error instanceof STAFF_BillingError) {
@@ -20,6 +22,8 @@ export const STAFF_createTransaction = async (req, res) => {
     const transaction = await STAFF_createBillingTransaction({
       staffId: req.user.id,
       items: req.body.items,
+      patientId: req.body.patientId,
+      discountRate: req.body.discountRate,
     });
 
     return res.status(201).json({
@@ -27,7 +31,13 @@ export const STAFF_createTransaction = async (req, res) => {
       data: {
         transactionId: transaction._id,
         staffId: transaction.staffId,
+        patientId: transaction.patientId,
         items: transaction.items,
+        subtotal: transaction.subtotal,
+        discountRate: transaction.discountRate,
+        discountAmount: transaction.discountAmount,
+        vatRate: transaction.vatRate,
+        vatAmount: transaction.vatAmount,
         totalAmount: transaction.totalAmount,
         status: transaction.status,
         createdAt: transaction.createdAt,
@@ -88,14 +98,44 @@ export const STAFF_getHistory = async (req, res) => {
       data: history.map((transaction) => ({
         transactionId: transaction._id,
         staffId: transaction.staffId,
+        patientId: transaction.patientId,
         dateTime: transaction.completedAt || transaction.createdAt,
         items: transaction.items,
+        subtotal: transaction.subtotal,
+        discountRate: transaction.discountRate,
+        discountAmount: transaction.discountAmount,
+        vatRate: transaction.vatRate,
+        vatAmount: transaction.vatAmount,
         totalAmount: transaction.totalAmount,
         cashReceived: transaction.cashReceived,
         change: transaction.change,
         status: transaction.status,
+        voidedAt: transaction.voidedAt,
+        voidReason: transaction.voidReason,
         receiptSnapshot: transaction.receiptSnapshot,
       })),
+    });
+  } catch (error) {
+    return STAFF_handleBillingError(res, error);
+  }
+};
+
+export const STAFF_voidTransaction = async (req, res) => {
+  try {
+    const transaction = await STAFF_voidBillingTransaction({
+      transactionId: req.params.id,
+      staffId: req.user.id,
+      reason: req.body.reason,
+    });
+
+    return res.status(200).json({
+      message: "Transaction voided successfully",
+      data: {
+        transactionId: transaction._id,
+        status: transaction.status,
+        voidedAt: transaction.voidedAt,
+        voidReason: transaction.voidReason,
+      },
     });
   } catch (error) {
     return STAFF_handleBillingError(res, error);
@@ -110,6 +150,40 @@ export const STAFF_getReceipt = async (req, res) => {
     });
 
     return res.status(200).json({ data: receipt });
+  } catch (error) {
+    return STAFF_handleBillingError(res, error);
+  }
+};
+
+export const STAFF_getBillingProducts = async (req, res) => {
+  try {
+    const { category } = req.query;
+
+    const filter = {
+      isArchived: { $ne: true },
+    };
+
+    if (category && category !== "All Items") {
+      filter.category = String(category).trim();
+    }
+
+    const products = await Product.find(filter)
+      .sort({ name: 1 })
+      .select("_id name category quantity unitPrice")
+      .lean();
+
+    const data = products.map((product) => ({
+      id: product._id,
+      name: product.name,
+      category: product.category,
+      stock: product.quantity,
+      price: product.unitPrice ?? 0,
+    }));
+
+    return res.status(200).json({
+      count: data.length,
+      data,
+    });
   } catch (error) {
     return STAFF_handleBillingError(res, error);
   }

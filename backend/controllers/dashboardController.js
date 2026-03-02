@@ -1,14 +1,15 @@
 import User from "../models/user.js";
 import Product from "../models/product.js";
-import Transaction from "../models/transaction.js";
+import STAFF_BillingTransaction from "../models/STAFF_billingTransaction.js";
 import InventoryRequest from "../models/InventoryRequest.js";
 import ActivityLog from "../models/activityLog.js";
 
 /* ================= DASHBOARD STATS ================= */
 export const getDashboardStats = async (req, res) => {
   try {
-    // Total Revenue
-    const revenueResult = await Transaction.aggregate([
+    // Total Revenue from completed billing transactions
+    const revenueResult = await STAFF_BillingTransaction.aggregate([
+      { $match: { status: "COMPLETED" } },
       { $group: { _id: null, total: { $sum: "$totalAmount" } } },
     ]);
 
@@ -23,6 +24,7 @@ export const getDashboardStats = async (req, res) => {
     // Low Stock Items
     const lowStock = await Product.countDocuments({
       quantity: { $lte: 10 },
+      isArchived: { $ne: true },
     });
 
     // Pending Inventory Requests
@@ -44,11 +46,12 @@ export const getDashboardStats = async (req, res) => {
 /* ================= REVENUE OVERVIEW (CHART) ================= */
 export const getRevenueOverview = async (req, res) => {
   try {
-    const revenue = await Transaction.aggregate([
+    const revenue = await STAFF_BillingTransaction.aggregate([
+      { $match: { status: "COMPLETED" } },
       {
         $group: {
           _id: {
-            $dayOfWeek: "$createdAt",
+            $dayOfWeek: "$completedAt",
           },
           total: { $sum: "$totalAmount" },
         },

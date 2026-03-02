@@ -1,10 +1,9 @@
 import mongoose from "mongoose";
 import Product from "../models/product.js";
-import Transaction from "../models/transaction.js";
+import STAFF_BillingTransaction from "../models/STAFF_billingTransaction.js";
 import InventoryRequest from "../models/InventoryRequest.js";
 
-// Reuse existing transaction ownership field (`processedBy`) as the staff reference.
-// Reuse existing inventory request ownership field (`requestedBy`) for pending counts.
+// Uses STAFF_BillingTransaction for accurate billing data from POS system.
 
 const STAFF_parseLimit = (value, fallback = 5, max = 10) => {
   const parsed = Number.parseInt(value, 10);
@@ -30,11 +29,12 @@ export const STAFF_getDashboardSummary = async (req, res) => {
     const staffId = new mongoose.Types.ObjectId(req.user.id);
 
     const [summaryAggregation, pendingRestockRequests] = await Promise.all([
-      Transaction.aggregate([
+      STAFF_BillingTransaction.aggregate([
         {
           $match: {
-            processedBy: staffId,
-            createdAt: { $gte: start, $lt: end },
+            staffId: staffId,
+            status: "COMPLETED",
+            completedAt: { $gte: start, $lt: end },
           },
         },
         {
@@ -79,22 +79,25 @@ export const STAFF_getRecentTransactions = async (req, res) => {
   try {
     const limit = STAFF_parseLimit(req.query.limit, 5, 10);
 
-    const transactions = await Transaction.find({ processedBy: req.user.id })
+    const transactions = await STAFF_BillingTransaction.find({ 
+      staffId: req.user.id,
+      status: { $in: ["COMPLETED", "VOIDED"] },
+    })
       .sort({ createdAt: -1 })
       .limit(limit)
-      .select("transactionNo totalAmount items createdAt")
+      .select("patientId totalAmount items status completedAt createdAt")
       .lean();
 
     const data = transactions.map((transaction) => ({
-      transactionId: transaction.transactionNo,
-      // Keep customer id nullable because current Transaction schema does not require one.
-      customerId: transaction.patientId || transaction.customerId || null,
+      transactionId: transaction._id,
+      patientId: transaction.patientId || null,
       totalAmount: transaction.totalAmount,
       itemCount: (transaction.items || []).reduce(
         (sum, item) => sum + (item.quantity || 0),
         0
       ),
-      dateTime: transaction.createdAt,
+      status: transaction.status,
+      dateTime: transaction.completedAt || transaction.createdAt,
     }));
 
     return res.status(200).json({
@@ -140,46 +143,30 @@ export const STAFF_getTopItemsToday = async (req, res) => {
     const { start, end } = STAFF_getTodayRange();
     const staffId = new mongoose.Types.ObjectId(req.user.id);
 
-    const topItems = await Transaction.aggregate([
+    const topItems = await STAFF_BillingTransaction.aggregate([
       {
         $match: {
-          processedBy: staffId,
-          createdAt: { $gte: start, $lt: end },
+          staffId: staffId,
+          status: "COMPLETED",
+          completedAt: { $gte: start, $lt: end },
         },
       },
       { $unwind: "$items" },
       {
         $group: {
-          _id: "$items.product",
+          _id: "$items.productId",
+          itemName: { $first: "$items.name" },
           quantityDispensed: { $sum: "$items.quantity" },
-          totalSalesValue: {
-            $sum: {
-              $multiply: ["$items.quantity", "$items.price"],
-            },
-          },
+          totalSalesValue: { $sum: "$items.lineTotal" },
         },
       },
       { $sort: { quantityDispensed: -1, totalSalesValue: -1 } },
       { $limit: limit },
       {
-        $lookup: {
-          from: "products",
-          localField: "_id",
-          foreignField: "_id",
-          as: "product",
-        },
-      },
-      {
-        $unwind: {
-          path: "$product",
-          preserveNullAndEmptyArrays: true,
-        },
-      },
-      {
         $project: {
           _id: 0,
           productId: "$_id",
-          itemName: { $ifNull: ["$product.name", "Unknown Item"] },
+          itemName: 1,
           quantityDispensed: 1,
           totalSalesValue: 1,
         },
@@ -201,17 +188,19 @@ export const STAFF_getRecentItemUsage = async (req, res) => {
     const { start, end } = STAFF_getTodayRange();
     const staffId = new mongoose.Types.ObjectId(req.user.id);
 
-    const usage = await Transaction.aggregate([
+    const usage = await STAFF_BillingTransaction.aggregate([
       {
         $match: {
-          processedBy: staffId,
-          createdAt: { $gte: start, $lt: end },
+          staffId: staffId,
+          status: "COMPLETED",
+          completedAt: { $gte: start, $lt: end },
         },
       },
       { $unwind: "$items" },
       {
         $group: {
-          _id: "$items.product",
+          _id: "$items.productId",
+          itemName: { $first: "$items.name" },
           quantity: { $sum: "$items.quantity" },
         },
       },
@@ -235,7 +224,7 @@ export const STAFF_getRecentItemUsage = async (req, res) => {
         $project: {
           _id: 0,
           productId: "$_id",
-          itemName: { $ifNull: ["$product.name", "Unknown Item"] },
+          itemName: 1,
           quantity: 1,
           unitType: { $ifNull: ["$product.unit", "pcs"] },
         },

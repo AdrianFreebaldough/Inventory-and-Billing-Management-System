@@ -1052,9 +1052,15 @@ function showAddItemModal() {
             const category = (categoryEl?.value || '').trim();
             const qtyRaw = qtyEl?.value ?? '';
             const qty = qtyRaw === '' ? NaN : parseInt(qtyRaw, 10);
+            const priceRaw = priceEl?.value ?? '';
+            const price = priceRaw === '' ? NaN : parseFloat(priceRaw);
             const unit = (unitEl?.value || '').trim();
+            const minStockRaw = minStockEl?.value ?? '';
+            const minStock = minStockRaw === '' ? NaN : parseInt(minStockRaw, 10);
             const expiry = expiryEl?.value || '';
             const batch = (batchEl?.value || '').trim();
+            const descriptionEl = getElement(addItemModal, '#addDescription');
+            const description = (descriptionEl?.value || '').trim();
 
             /* Validate required fields */
             const requiredFields = {
@@ -1085,7 +1091,10 @@ function showAddItemModal() {
                         itemName: generic || brand,
                         category: category || 'general',
                         initialQuantity: isNaN(qty) ? 1 : qty,
+                        unitPrice: isNaN(price) ? 0 : price,
                         unit: unit || 'pcs',
+                        minStock: isNaN(minStock) ? 10 : minStock,
+                        description,
                         expiryDate: expiry || null,
                         batchNumber: batch || null,
                     }),

@@ -10,7 +10,7 @@ const Owner_StockLogSchema = new mongoose.Schema(
     },
     movementType: {
       type: String,
-      enum: ["SALE", "RESTOCK", "ADJUST"],
+      enum: ["SALE", "RESTOCK", "ADJUST", "VOID_REVERSAL"],
       required: true,
       index: true,
     },
@@ -46,6 +46,11 @@ const Owner_StockLogSchema = new mongoose.Schema(
       enum: ["POS", "MANUAL", "SYSTEM"],
       required: true,
       index: true,
+    },
+    notes: {
+      type: String,
+      trim: true,
+      default: null,
     },
     createdAt: {
       type: Date,

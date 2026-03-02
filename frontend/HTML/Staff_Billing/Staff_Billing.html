@@ -256,6 +256,17 @@
 		</div>
 	</section>
 
+	<!-- Toast Container -->
+	<div id="toastContainer" class="fixed bottom-4 right-4 z-[100] flex flex-col gap-2"></div>
+
+	<!-- Loading Overlay -->
+	<div id="loadingOverlay" class="fixed inset-0 z-[90] hidden items-center justify-center bg-black/40">
+		<div class="flex flex-col items-center gap-2 rounded bg-white p-6 shadow-lg">
+			<div class="h-8 w-8 animate-spin rounded-full border-4 border-slate-200 border-t-cyan-500"></div>
+			<p id="loadingText" class="text-sm text-slate-700">Processing...</p>
+		</div>
+	</div>
+
 	<script type="module" src="../../JS/Staff_Billing/Staff_Billing.js"></script>
 </body>
 </html>

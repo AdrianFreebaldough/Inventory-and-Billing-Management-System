@@ -4,7 +4,7 @@ import Product from "../models/product.js";
 import User from "../models/user.js";
 import Owner_StockLog from "../models/Owner_StockLog.model.js";
 
-const Owner_ALLOWED_MOVEMENT_TYPES = new Set(["SALE", "RESTOCK", "ADJUST"]);
+const Owner_ALLOWED_MOVEMENT_TYPES = new Set(["SALE", "RESTOCK", "ADJUST", "VOID_REVERSAL"]);
 const Owner_ALLOWED_SOURCES = new Set(["POS", "MANUAL", "SYSTEM"]);
 
 const Owner_escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -51,6 +51,7 @@ export const createStockLog = async ({
   quantityChange,
   performedBy,
   source,
+  notes = null,
   session = null,
 }) => {
   if (!mongoose.Types.ObjectId.isValid(productId)) {
@@ -76,6 +77,10 @@ export const createStockLog = async ({
 
   if (movementType === "RESTOCK" && parsedChange <= 0) {
     throw new Error("RESTOCK movement requires a positive quantityChange");
+  }
+
+  if (movementType === "VOID_REVERSAL" && parsedChange <= 0) {
+    throw new Error("VOID_REVERSAL movement requires a positive quantityChange");
   }
 
   const productQuery = Product.findById(productId).select("_id name quantity");
@@ -109,6 +114,7 @@ export const createStockLog = async ({
         performedBy: performer,
         referenceId,
         source,
+        notes: notes || null,
       },
     ],
     session ? { session } : undefined

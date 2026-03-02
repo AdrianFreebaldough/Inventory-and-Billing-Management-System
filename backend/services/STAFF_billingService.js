@@ -175,20 +175,42 @@ const STAFF_getTransactionForStaff = async (transactionId, staffId, session = nu
   return transaction;
 };
 
-export const STAFF_createBillingTransaction = async ({ staffId, items }) => {
+export const STAFF_createBillingTransaction = async ({ staffId, items, patientId, discountRate = 0 }) => {
+  if (!patientId || typeof patientId !== "string" || !patientId.trim()) {
+    throw new STAFF_BillingError("Patient ID is required", 400);
+  }
+
+  const parsedDiscountRate = Number(discountRate);
+  if (!Number.isFinite(parsedDiscountRate) || parsedDiscountRate < 0 || parsedDiscountRate > 1) {
+    throw new STAFF_BillingError("Discount rate must be a number between 0 and 1", 400);
+  }
+
   const snapshot = await STAFF_buildItemsSnapshot(items);
+  
+  const subtotal = snapshot.totalAmount;
+  const discountAmount = STAFF_roundCurrency(subtotal * parsedDiscountRate);
+  const taxableAmount = STAFF_roundCurrency(subtotal - discountAmount);
+  const vatRate = 0.12;
+  const vatAmount = STAFF_roundCurrency(taxableAmount * vatRate);
+  const totalAmount = STAFF_roundCurrency(taxableAmount + vatAmount);
 
   const transaction = await STAFF_BillingTransaction.create({
     staffId,
+    patientId: patientId.trim(),
     items: snapshot.items,
-    totalAmount: snapshot.totalAmount,
+    subtotal,
+    discountRate: parsedDiscountRate,
+    discountAmount,
+    vatRate,
+    vatAmount,
+    totalAmount,
     status: "PENDING_PAYMENT",
   });
 
   await STAFF_logBillingActivity({
     staffId,
     actionType: "billing-create",
-    description: `Created pending billing transaction ${transaction._id}`,
+    description: `Created pending billing transaction ${transaction._id} for patient ${patientId}`,
     status: "pending",
   });
 
@@ -268,6 +290,7 @@ export const STAFF_completeBillingTransaction = async ({ transactionId, staffId,
         name: process.env.CLINIC_NAME || "IBMS Clinic",
       },
       transactionDateTime: completedAt,
+      patientId: transaction.patientId,
       staffId: transaction.staffId,
       items: transaction.items.map((item) => ({
         productId: item.productId,
@@ -276,7 +299,11 @@ export const STAFF_completeBillingTransaction = async ({ transactionId, staffId,
         quantity: item.quantity,
         lineTotal: item.lineTotal,
       })),
-      subtotal: transaction.totalAmount,
+      subtotal: transaction.subtotal,
+      discountRate: transaction.discountRate,
+      discountAmount: transaction.discountAmount,
+      vatRate: transaction.vatRate,
+      vatAmount: transaction.vatAmount,
       totalAmount: transaction.totalAmount,
       cashReceived: STAFF_roundCurrency(parsedCashReceived),
       change,
@@ -306,7 +333,7 @@ export const STAFF_completeBillingTransaction = async ({ transactionId, staffId,
 export const STAFF_getBillingHistory = async ({ staffId }) => {
   return STAFF_BillingTransaction.find({
     staffId,
-    status: "COMPLETED",
+    status: { $in: ["COMPLETED", "VOIDED"] },
   })
     .sort({ createdAt: -1 })
     .lean();
@@ -315,8 +342,8 @@ export const STAFF_getBillingHistory = async ({ staffId }) => {
 export const STAFF_getBillingReceipt = async ({ transactionId, staffId }) => {
   const transaction = await STAFF_getTransactionForStaff(transactionId, staffId);
 
-  if (transaction.status !== "COMPLETED" || !transaction.receiptSnapshot) {
-    throw new STAFF_BillingError("Receipt is only available for completed transactions", 404);
+  if (!["COMPLETED", "VOIDED"].includes(transaction.status) || !transaction.receiptSnapshot) {
+    throw new STAFF_BillingError("Receipt is only available for completed or voided transactions", 404);
   }
 
   return {
@@ -324,6 +351,67 @@ export const STAFF_getBillingReceipt = async ({ transactionId, staffId }) => {
     status: transaction.status,
     receipt: transaction.receiptSnapshot,
   };
+};
+
+export const STAFF_voidBillingTransaction = async ({ transactionId, staffId, reason = "" }) => {
+  return STAFF_executeWithOptionalTransaction(async (session) => {
+    const transaction = await STAFF_getTransactionForStaff(transactionId, staffId, session);
+
+    if (transaction.status === "VOIDED") {
+      throw new STAFF_BillingError("Transaction has already been voided", 409);
+    }
+
+    if (transaction.status !== "COMPLETED") {
+      throw new STAFF_BillingError("Only completed transactions can be voided", 400);
+    }
+
+    // Restore inventory quantities
+    for (const item of transaction.items) {
+      const productQuery = Product.findById(item.productId);
+      if (session) {
+        productQuery.session(session);
+      }
+
+      const product = await productQuery;
+
+      if (!product) {
+        throw new STAFF_BillingError(`Product not found for item ${item.name}`, 404);
+      }
+
+      product.quantity = product.quantity + item.quantity;
+      await product.save({ session });
+
+      await createStockLog({
+        productId: product._id,
+        movementType: "VOID_REVERSAL",
+        quantityChange: item.quantity,
+        performedBy: {
+          userId: staffId,
+          role: "staff",
+        },
+        source: "POS",
+        notes: `Voided transaction ${transactionId}`,
+        session,
+      });
+    }
+
+    transaction.status = "VOIDED";
+    transaction.voidedAt = new Date();
+    transaction.voidedBy = staffId;
+    transaction.voidReason = reason || null;
+
+    await transaction.save({ session });
+
+    await STAFF_logBillingActivity({
+      staffId,
+      actionType: "billing-void",
+      description: `Voided billing transaction ${transaction._id}${reason ? `: ${reason}` : ""}`,
+      status: "completed",
+      session,
+    });
+
+    return transaction;
+  });
 };
 
 export { STAFF_BillingError };

@@ -29,9 +29,25 @@ export const OWNER_getActiveInventory = async (req, res) => {
   }
 };
 
+export const OWNER_getArchivedInventory = async (req, res) => {
+  try {
+    const products = await Product.find({ isArchived: true })
+      .sort({ archivedAt: -1 })
+      .lean();
+
+    return res.status(200).json({
+      message: "Archived inventory fetched successfully",
+      count: products.length,
+      data: products,
+    });
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+};
+
 export const OWNER_addProduct = async (req, res) => {
   try {
-    const { name, category, quantity, unit, unitPrice } = req.body;
+    const { name, category, quantity, unit, unitPrice, minStock, expiryDate, batchNumber, description, supplier } = req.body;
 
     const parsedQuantity = OWNER_parseNonNegativeNumber(quantity ?? 0);
     const parsedUnitPrice = Number(unitPrice ?? 0);
@@ -53,6 +69,11 @@ export const OWNER_addProduct = async (req, res) => {
       quantity: parsedQuantity,
       unitPrice: parsedUnitPrice,
       unit: unit ? String(unit).trim() : "pcs",
+      minStock: minStock != null ? Number(minStock) : 10,
+      expiryDate: expiryDate || null,
+      batchNumber: batchNumber ? String(batchNumber).trim() : null,
+      description: description ? String(description).trim() : "",
+      supplier: supplier ? String(supplier).trim() : null,
       isArchived: false,
       archivedAt: null,
       archivedBy: null,
@@ -133,6 +154,7 @@ export const OWNER_getPendingInventoryRequests = async (req, res) => {
 export const OWNER_approveInventoryRequest = async (req, res) => {
   const { requestId } = req.params;
   const ownerId = req.user?.id;
+  const { approvedQuantity } = req.body;
 
   if (!mongoose.Types.ObjectId.isValid(ownerId)) {
     return res.status(401).json({
@@ -156,12 +178,18 @@ export const OWNER_approveInventoryRequest = async (req, res) => {
       }
 
       if (request.requestType === "ADD_ITEM") {
+        /* Owner may override the requested initial quantity */
+        const finalQuantity =
+          approvedQuantity != null && Number.isFinite(Number(approvedQuantity)) && Number(approvedQuantity) >= 0
+            ? Number(approvedQuantity)
+            : request.initialQuantity;
+
         const createdProduct = await Product.create(
           [
             {
               name: request.itemName,
               category: request.category,
-              quantity: request.initialQuantity,
+              quantity: finalQuantity,
               unit: request.unit || "pcs",
               expiryDate: request.expiryDate || null,
               batchNumber: request.batchNumber || null,
@@ -194,9 +222,11 @@ export const OWNER_approveInventoryRequest = async (req, res) => {
                 requestType: request.requestType,
                 movement: {
                   quantityBefore: 0,
-                  quantityChange: request.initialQuantity,
+                  quantityChange: finalQuantity,
                   quantityAfter: product.quantity,
                 },
+                originalRequestedQuantity: request.initialQuantity,
+                approvedQuantity: finalQuantity,
                 notes: "Owner approved add-item inventory request",
               },
             },
@@ -204,11 +234,11 @@ export const OWNER_approveInventoryRequest = async (req, res) => {
           { session }
         );
 
-        if (request.initialQuantity > 0) {
+        if (finalQuantity > 0) {
           await createStockLog({
             productId: product._id,
             movementType: "RESTOCK",
-            quantityChange: request.initialQuantity,
+            quantityChange: finalQuantity,
             performedBy: {
               userId: ownerId,
               role: req.user.role,
@@ -223,7 +253,7 @@ export const OWNER_approveInventoryRequest = async (req, res) => {
           requestType: request.requestType,
           productId: product._id,
           quantityBefore: 0,
-          quantityAdded: request.initialQuantity,
+          quantityAdded: finalQuantity,
           quantityAfter: product.quantity,
         };
       } else if (request.requestType === "RESTOCK") {
@@ -236,8 +266,14 @@ export const OWNER_approveInventoryRequest = async (req, res) => {
           throw new Error("ACTIVE_PRODUCT_NOT_FOUND");
         }
 
+        /* Owner may override the requested restock quantity */
+        const finalQuantity =
+          approvedQuantity != null && Number.isFinite(Number(approvedQuantity)) && Number(approvedQuantity) >= 0
+            ? Number(approvedQuantity)
+            : request.requestedQuantity;
+
         const quantityBefore = product.quantity;
-        product.quantity += request.requestedQuantity;
+        product.quantity += finalQuantity;
         await product.save({ session });
 
         request.status = "approved";
@@ -258,9 +294,11 @@ export const OWNER_approveInventoryRequest = async (req, res) => {
                 requestType: request.requestType,
                 movement: {
                   quantityBefore,
-                  quantityChange: request.requestedQuantity,
+                  quantityChange: finalQuantity,
                   quantityAfter: product.quantity,
                 },
+                originalRequestedQuantity: request.requestedQuantity,
+                approvedQuantity: finalQuantity,
                 notes: "Owner approved restock inventory request",
               },
             },
@@ -271,7 +309,7 @@ export const OWNER_approveInventoryRequest = async (req, res) => {
         await createStockLog({
           productId: product._id,
           movementType: "RESTOCK",
-          quantityChange: request.requestedQuantity,
+          quantityChange: finalQuantity,
           performedBy: {
             userId: ownerId,
             role: req.user.role,
@@ -285,7 +323,7 @@ export const OWNER_approveInventoryRequest = async (req, res) => {
           requestType: request.requestType,
           productId: product._id,
           quantityBefore,
-          quantityAdded: request.requestedQuantity,
+          quantityAdded: finalQuantity,
           quantityAfter: product.quantity,
         };
       } else {
@@ -518,6 +556,92 @@ export const OWNER_adjustProductStock = async (req, res) => {
         quantityChange: parsedQuantityChange,
         quantityAfter,
       },
+    });
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+};
+
+export const OWNER_restoreProduct = async (req, res) => {
+  const { productId } = req.params;
+  const session = await mongoose.startSession();
+
+  try {
+    let responsePayload = null;
+
+    await session.withTransaction(async () => {
+      const product = await Product.findOne({
+        _id: productId,
+        isArchived: true,
+      }).session(session);
+
+      if (!product) {
+        throw new Error("ARCHIVED_PRODUCT_NOT_FOUND");
+      }
+
+      product.isArchived = false;
+      product.archivedAt = null;
+      product.archivedBy = null;
+      await product.save({ session });
+
+      /* Remove the snapshot from the archived collection */
+      await OWNER_ArchivedProduct.deleteOne({
+        originalProductId: product._id,
+      }).session(session);
+
+      await ActivityLog.create(
+        [
+          {
+            action: "RESTORE_PRODUCT",
+            performedBy: req.user.id,
+            entityType: "Product",
+            entityId: product._id,
+            details: {
+              movement: {
+                quantityBefore: product.quantity,
+                quantityChange: 0,
+                quantityAfter: product.quantity,
+              },
+              notes: "Owner restored product from archive",
+            },
+          },
+        ],
+        { session }
+      );
+
+      responsePayload = {
+        productId: product._id,
+        restoredAt: new Date(),
+      };
+    });
+
+    return res.status(200).json({
+      message: "Product restored successfully",
+      data: responsePayload,
+    });
+  } catch (error) {
+    if (error.message === "ARCHIVED_PRODUCT_NOT_FOUND") {
+      return res.status(404).json({ message: "Archived product not found" });
+    }
+
+    return res.status(500).json({ message: error.message });
+  } finally {
+    await session.endSession();
+  }
+};
+
+export const OWNER_getAllInventoryRequests = async (req, res) => {
+  try {
+    const requests = await InventoryRequest.find()
+      .populate("product", "name category quantity isArchived")
+      .populate("requestedBy", "email role")
+      .sort({ createdAt: -1 })
+      .lean();
+
+    return res.status(200).json({
+      message: "All inventory requests fetched successfully",
+      count: requests.length,
+      data: requests,
     });
   } catch (error) {
     return res.status(500).json({ message: error.message });

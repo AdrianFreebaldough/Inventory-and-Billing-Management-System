@@ -2,11 +2,14 @@ import express from "express";
 import { protect, authorizeRoles } from "../middleware/AuthMiddlewareUser.js";
 import {
   OWNER_getActiveInventory,
+  OWNER_getArchivedInventory,
   OWNER_addProduct,
   OWNER_getPendingInventoryRequests,
+  OWNER_getAllInventoryRequests,
   OWNER_approveInventoryRequest,
   OWNER_rejectInventoryRequest,
   OWNER_archiveProduct,
+  OWNER_restoreProduct,
   OWNER_adjustProductStock,
 } from "../controllers/OWNER_inventoryController.js";
 
@@ -17,12 +20,18 @@ OWNER_router.use(protect, authorizeRoles("owner"));
 
 /* 📦 INVENTORY */
 OWNER_router.get("/", OWNER_getActiveInventory);
+OWNER_router.get("/archived", OWNER_getArchivedInventory);
 OWNER_router.post("/", OWNER_addProduct);
 
 /* 📨 STAFF REQUESTS */
 OWNER_router.get(
   "/requests/pending",
   OWNER_getPendingInventoryRequests
+);
+
+OWNER_router.get(
+  "/requests/all",
+  OWNER_getAllInventoryRequests
 );
 
 OWNER_router.patch(
@@ -35,10 +44,15 @@ OWNER_router.patch(
   OWNER_rejectInventoryRequest
 );
 
-/* 🗄️ ARCHIVE */
+/* 🗄️ ARCHIVE & RESTORE */
 OWNER_router.patch(
   "/:productId/archive",
   OWNER_archiveProduct
+);
+
+OWNER_router.patch(
+  "/:productId/restore",
+  OWNER_restoreProduct
 );
 
 OWNER_router.patch("/:productId/adjust-stock", OWNER_adjustProductStock);

@@ -423,7 +423,7 @@ document.addEventListener("DOMContentLoaded", () => {
               throw new Error("initAdminInventory() missing");
           }
 
-          module.initAdminInventory();
+          await module.initAdminInventory();
           console.log("admin_Inventory.initAdminInventory() called");
 
       } catch (error) {

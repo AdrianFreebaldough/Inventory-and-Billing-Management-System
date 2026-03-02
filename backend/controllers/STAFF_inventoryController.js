@@ -123,10 +123,10 @@ export const STAFF_getInventory = async (req, res) => {
           stockStatus: "PENDING",
           currentQuantity: pr.initialQuantity || 0,
           unit: pr.unit || "pcs",
-          unitPrice: 0,
-          minStock: 0,
+          unitPrice: pr.unitPrice ?? 0,
+          minStock: pr.minStock ?? 10,
           supplier: null,
-          description: "",
+          description: pr.description || "",
           expiryDate: pr.expiryDate || null,
           batchNumber: pr.batchNumber || null,
           isArchived: false,
@@ -178,12 +178,26 @@ export const STAFF_getInventoryItemDetails = async (req, res) => {
 
 export const STAFF_createAddItemRequest = async (req, res) => {
   try {
-    const { itemName, category, initialQuantity, unit, expiryDate, batchNumber } = req.body;
+    const { itemName, category, initialQuantity, unitPrice, unit, minStock, description, expiryDate, batchNumber } = req.body;
 
     const parsedQuantity = STAFF_parsePositiveNumber(initialQuantity);
+    const parsedUnitPrice = Number(unitPrice ?? 0);
+    const parsedMinStock = Number(minStock ?? 10);
     if (!itemName || !category || parsedQuantity === null) {
       return res.status(400).json({
         message: "itemName, category, and positive initialQuantity are required",
+      });
+    }
+
+    if (!Number.isFinite(parsedUnitPrice) || parsedUnitPrice < 0) {
+      return res.status(400).json({
+        message: "unitPrice must be a valid non-negative number",
+      });
+    }
+
+    if (!Number.isFinite(parsedMinStock) || parsedMinStock < 0) {
+      return res.status(400).json({
+        message: "minStock must be a valid non-negative number",
       });
     }
 
@@ -193,7 +207,10 @@ export const STAFF_createAddItemRequest = async (req, res) => {
       itemName: String(itemName).trim(),
       category: String(category).trim(),
       initialQuantity: parsedQuantity,
+      unitPrice: parsedUnitPrice,
       unit: unit ? String(unit).trim() : "pcs",
+      minStock: parsedMinStock,
+      description: description ? String(description).trim() : "",
       expiryDate: expiryDate ? new Date(expiryDate) : null,
       batchNumber: batchNumber ? String(batchNumber).trim() : null,
       status: "pending",
@@ -214,7 +231,10 @@ export const STAFF_createAddItemRequest = async (req, res) => {
         itemName: request.itemName,
         category: request.category,
         initialQuantity: request.initialQuantity,
+        unitPrice: request.unitPrice,
         unit: request.unit,
+        minStock: request.minStock,
+        description: request.description,
         expiryDate: request.expiryDate,
         batchNumber: request.batchNumber,
         requestType: request.requestType,

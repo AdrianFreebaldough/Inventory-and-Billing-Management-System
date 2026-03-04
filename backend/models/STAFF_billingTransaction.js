@@ -197,6 +197,7 @@ const STAFF_billingTransactionSchema = new mongoose.Schema(
 );
 
 STAFF_billingTransactionSchema.index({ staffId: 1, createdAt: -1 });
+STAFF_billingTransactionSchema.index({ staffId: 1, status: 1, completedAt: -1 });
 STAFF_billingTransactionSchema.index({ "receiptSnapshot.receiptNumber": 1 }, { unique: true, sparse: true });
 
 export default mongoose.model("STAFF_BillingTransaction", STAFF_billingTransactionSchema);

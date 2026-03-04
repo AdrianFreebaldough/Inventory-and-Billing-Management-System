@@ -1,10 +1,11 @@
 import express from "express";
 import {
-  getDashboardStats,
-  getRevenueOverview,
+  getDashboardSummary,
+  getRevenueTrend,
   getPendingInventoryRequests,
   getLowStockItems,
   getRecentActivity,
+  getStockMovements,
 } from "../controllers/dashboardController.js";
 
 import { protect, authorizeRoles } from "../middleware/AuthMiddlewareUser.js";
@@ -13,17 +14,17 @@ const router = express.Router();
 
 /* ================= OWNER DASHBOARD ================= */
 router.get(
-  "/stats",
+  "/summary",
   protect,
   authorizeRoles("owner"),
-  getDashboardStats
+  getDashboardSummary
 );
 
 router.get(
-  "/revenue",
+  "/revenue-trend",
   protect,
   authorizeRoles("owner"),
-  getRevenueOverview
+  getRevenueTrend
 );
 
 router.get(
@@ -45,6 +46,13 @@ router.get(
   protect,
   authorizeRoles("owner"),
   getRecentActivity
+);
+
+router.get(
+  "/stock-movements",
+  protect,
+  authorizeRoles("owner"),
+  getStockMovements
 );
 
 export default router;

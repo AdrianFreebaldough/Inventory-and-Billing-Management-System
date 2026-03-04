@@ -55,6 +55,7 @@ export const STAFF_getDashboardSummary = async (req, res) => {
       InventoryRequest.countDocuments({
         requestedBy: staffId,
         status: "pending",
+        requestType: "RESTOCK",
       }),
     ]);
 

@@ -339,8 +339,10 @@ function renderItemRows() {
 	itemsTableBody.innerHTML = filtered
 		.map((item) => {
 			const currentQty = state.quantities[item.id] || 0;
-			const isMinusDisabled = currentQty <= 0;
-			const isPlusDisabled = currentQty >= item.stock;
+			const displayQty = currentQty > 0 ? currentQty : 1;
+			const isOutOfStock = item.stock <= 0;
+			const isMinusDisabled = isOutOfStock || currentQty <= 1;
+			const isPlusDisabled = isOutOfStock || currentQty >= item.stock;
 			return `
 				<tr class="text-sm text-slate-800">
 					<td class="px-3 py-3 font-medium">${item.name}</td>
@@ -359,7 +361,20 @@ function renderItemRows() {
 										: "border-slate-400 text-slate-700 hover:bg-slate-100"
 								}"
 							>−</button>
-							<span class="w-5 text-center text-xs font-semibold">${currentQty}</span>
+							<input
+								type="number"
+								data-role="qty-input"
+								data-id="${item.id}"
+								min="1"
+								max="${item.stock}"
+								step="1"
+								inputmode="numeric"
+								value="${isOutOfStock ? 0 : displayQty}"
+								${isOutOfStock ? "disabled" : ""}
+								class="pos-qty-input h-6 w-[55px] border border-slate-300 bg-white px-1 text-center text-xs font-semibold text-slate-800 outline-none focus:border-cyan-600${
+									isOutOfStock ? " cursor-not-allowed bg-slate-100 text-slate-400" : ""
+								}"
+							/>
 							<button
 								type="button"
 								data-action="increment"
@@ -377,6 +392,36 @@ function renderItemRows() {
 			`;
 		})
 		.join("");
+}
+
+function validateCommittedQuantity(item, rawValue, previousQty) {
+	const cleaned = String(rawValue ?? "").replace(/[^\d-]/g, "").trim();
+
+	if (!cleaned) {
+		return previousQty > 0 ? previousQty : 1;
+	}
+
+	const parsed = Number.parseInt(cleaned, 10);
+	if (!Number.isFinite(parsed) || parsed <= 0) {
+		return 1;
+	}
+
+	return Math.min(parsed, item.stock);
+}
+
+function commitQuantityInput(inputEl) {
+	if (!(inputEl instanceof HTMLInputElement) || inputEl.dataset.role !== "qty-input") return;
+
+	const idValue = inputEl.dataset.id;
+	if (!idValue) return;
+
+	const item = state.products.find((entry) => entry.id === idValue);
+	if (!item || item.stock <= 0) return;
+
+	const previousQty = state.quantities[idValue] || 0;
+	const committedQty = validateCommittedQuantity(item, inputEl.value, previousQty);
+	inputEl.value = String(committedQty);
+	setQuantity(idValue, committedQty);
 }
 
 function renderSummaryPanel() {
@@ -864,14 +909,66 @@ function attachEvents() {
 
 	itemsTableBody.addEventListener("click", (event) => {
 		const target = event.target;
+
+		if (target instanceof HTMLInputElement && target.dataset.role === "qty-input") {
+			target.select();
+			return;
+		}
+
 		if (!(target instanceof HTMLButtonElement)) return;
 		const action = target.dataset.action;
 		const idValue = target.dataset.id;
 		if (!action || !idValue) return;
+		const item = state.products.find((entry) => entry.id === idValue);
+		if (!item || item.stock <= 0) return;
 		const currentQty = state.quantities[idValue] || 0;
-		const nextQty = action === "increment" ? currentQty + 1 : currentQty - 1;
-		setQuantity(idValue, nextQty);
+
+		if (action === "increment") {
+			setQuantity(idValue, Math.min(currentQty + 1, item.stock));
+			return;
+		}
+
+		if (action === "decrement") {
+			if (currentQty <= 1) return;
+			setQuantity(idValue, currentQty - 1);
+		}
 	});
+
+	itemsTableBody.addEventListener("keydown", (event) => {
+		const target = event.target;
+		if (!(target instanceof HTMLInputElement) || target.dataset.role !== "qty-input") return;
+
+		if (["e", "E", "+", ".", ","].includes(event.key)) {
+			event.preventDefault();
+			return;
+		}
+
+		if (event.key === "Enter") {
+			event.preventDefault();
+			commitQuantityInput(target);
+			target.blur();
+		}
+	});
+
+	itemsTableBody.addEventListener(
+		"blur",
+		(event) => {
+			const target = event.target;
+			if (!(target instanceof HTMLInputElement) || target.dataset.role !== "qty-input") return;
+			commitQuantityInput(target);
+		},
+		true
+	);
+
+	itemsTableBody.addEventListener(
+		"wheel",
+		(event) => {
+			const target = event.target;
+			if (!(target instanceof HTMLInputElement) || target.dataset.role !== "qty-input") return;
+			target.blur();
+		},
+		{ passive: true }
+	);
 
 	menuPosButton.addEventListener("click", exitBillingMode);
 

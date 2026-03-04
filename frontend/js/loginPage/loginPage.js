@@ -324,6 +324,8 @@ function validateLogin() {
     .then((payload) => {
       localStorage.setItem("token", payload.token);
       localStorage.setItem("role", payload?.user?.role || "");
+      localStorage.setItem("userEmail", payload?.user?.email || "");
+      localStorage.setItem("userName", payload?.user?.name || "");
 
       const role = payload?.user?.role;
 

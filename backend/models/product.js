@@ -86,6 +86,8 @@ const productSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+productSchema.index({ status: 1, isArchived: 1, quantity: 1 });
+
 /* 🔄 Auto-update status based on quantity vs minStock threshold */
 productSchema.pre("save", function () {
   const threshold = this.minStock ?? 10;

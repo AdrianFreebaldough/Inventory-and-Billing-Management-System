@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+	<title>Owner - Expense Management</title>
+	<script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-100">
+	<div class="container mx-auto p-6">
+		<div class="mb-6">
+			<h1 class="text-2xl font-bold text-slate-900">Expense Management</h1>
+			<p class="text-slate-600">Monitor and approve staff expenses</p>
+		</div>
+
+		<!-- Summary Cards -->
+		<div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+			<div class="bg-white rounded-lg shadow-md p-6">
+				<div class="text-slate-600 text-sm mb-1">Total Today</div>
+				<div class="text-2xl font-bold text-blue-600" id="totalToday">₱0.00</div>
+			</div>
+			<div class="bg-white rounded-lg shadow-md p-6">
+				<div class="text-slate-600 text-sm mb-1">Total This Week</div>
+				<div class="text-2xl font-bold text-green-600" id="totalWeek">₱0.00</div>
+			</div>
+			<div class="bg-white rounded-lg shadow-md p-6">
+				<div class="text-slate-600 text-sm mb-1">Total This Month</div>
+				<div class="text-2xl font-bold text-purple-600" id="totalMonth">₱0.00</div>
+			</div>
+		</div>
+
+		<!-- Filters -->
+		<div class="bg-white rounded-lg shadow-md p-6 mb-6">
+			<h2 class="text-lg font-semibold mb-4">Filters</h2>
+			<div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+				<div>
+					<label class="block text-sm font-medium mb-2">Start Date</label>
+					<input type="date" id="filterStartDate" class="w-full border border-slate-300 rounded px-3 py-2" />
+				</div>
+				<div>
+					<label class="block text-sm font-medium mb-2">End Date</label>
+					<input type="date" id="filterEndDate" class="w-full border border-slate-300 rounded px-3 py-2" />
+				</div>
+				<div>
+					<label class="block text-sm font-medium mb-2">Category</label>
+					<select id="filterCategory" class="w-full border border-slate-300 rounded px-3 py-2">
+						<option value="">All Categories</option>
+						<option value="Meals">Meals</option>
+						<option value="Supplies">Supplies</option>
+						<option value="Transportation">Transportation</option>
+						<option value="Others">Others</option>
+					</select>
+				</div>
+				<div>
+					<label class="block text-sm font-medium mb-2">Status</label>
+					<select id="filterStatus" class="w-full border border-slate-300 rounded px-3 py-2">
+						<option value="">All Statuses</option>
+						<option value="Pending">Pending</option>
+						<option value="Reviewed">Reviewed</option>
+						<option value="Approved">Approved</option>
+					</select>
+				</div>
+			</div>
+			<button onclick="loadExpenses()" class="mt-4 bg-blue-600 text-white px-6 py-2 rounded hover:bg-blue-700">
+				Apply Filters
+			</button>
+		</div>
+
+		<!-- Expense List -->
+		<div class="bg-white rounded-lg shadow-md p-6">
+			<h2 class="text-lg font-semibold mb-4">All Expenses</h2>
+			<div class="overflow-x-auto">
+				<table class="w-full text-sm">
+					<thead class="bg-slate-100">
+						<tr>
+							<th class="px-4 py-2 text-left">Date</th>
+							<th class="px-4 py-2 text-left">Staff</th>
+							<th class="px-4 py-2 text-left">Title</th>
+							<th class="px-4 py-2 text-left">Category</th>
+							<th class="px-4 py-2 text-right">Amount</th>
+							<th class="px-4 py-2 text-center">Status</th>
+							<th class="px-4 py-2 text-center">Actions</th>
+						</tr>
+					</thead>
+					<tbody id="expenseList">
+						<tr>
+							<td colspan="7" class="text-center py-4 text-slate-500">Loading expenses...</td>
+						</tr>
+					</tbody>
+				</table>
+			</div>
+		</div>
+	</div>
+
+	<!-- Expense Detail Modal -->
+	<div id="expenseModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+		<div class="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+			<div class="p-6">
+				<h3 class="text-lg font-bold mb-4">Expense Details</h3>
+				<div id="expenseDetails" class="space-y-3 mb-4"></div>
+				
+				<div class="flex gap-2">
+					<button onclick="updateExpenseStatus('Reviewed')" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
+						Mark as Reviewed
+					</button>
+					<button onclick="updateExpenseStatus('Approved')" class="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700">
+						Approve
+					</button>
+					<button onclick="closeModal()" class="bg-slate-600 text-white px-4 py-2 rounded hover:bg-slate-700">
+						Close
+					</button>
+				</div>
+			</div>
+		</div>
+	</div>
+
+	<script>
+		const API_BASE = 'http://localhost:3000/api';
+		const TOKEN_KEYS = ['token', 'authToken', 'jwtToken', 'ibmsToken'];
+		const token = TOKEN_KEYS.map(k => localStorage.getItem(k)).find(v => v && v.trim()) || '';
+		let currentExpenseId = null;
+
+		// Load summary
+		async function loadSummary() {
+			try {
+				const response = await fetch(`${API_BASE}/owner/expenses/summary`, {
+					headers: { 'Authorization': `Bearer ${token}` }
+				});
+				const result = await response.json();
+				
+				if (response.ok) {
+					document.getElementById('totalToday').textContent = `₱${result.data.today.toFixed(2)}`;
+					document.getElementById('totalWeek').textContent = `₱${result.data.thisWeek.toFixed(2)}`;
+					document.getElementById('totalMonth').textContent = `₱${result.data.thisMonth.toFixed(2)}`;
+				}
+			} catch (error) {
+				console.error('Error loading summary:', error);
+			}
+		}
+
+		// Load expenses
+		async function loadExpenses() {
+			const params = new URLSearchParams();
+			const startDate = document.getElementById('filterStartDate').value;
+			const endDate = document.getElementById('filterEndDate').value;
+			const category = document.getElementById('filterCategory').value;
+			const status = document.getElementById('filterStatus').value;
+
+			if (startDate) params.append('startDate', startDate);
+			if (endDate) params.append('endDate', endDate);
+			if (category) params.append('category', category);
+			if (status) params.append('status', status);
+
+			try {
+				const response = await fetch(`${API_BASE}/owner/expenses?${params}`, {
+					headers: { 'Authorization': `Bearer ${token}` }
+				});
+				const result = await response.json();
+
+				if (response.ok) {
+					const tbody = document.getElementById('expenseList');
+					
+					if (result.data.length === 0) {
+						tbody.innerHTML = '<tr><td colspan="7" class="text-center py-4 text-slate-500">No expenses found</td></tr>';
+						return;
+					}
+
+					tbody.innerHTML = result.data.map(expense => {
+						const statusColor = {
+							'Pending': 'bg-yellow-100 text-yellow-800',
+							'Reviewed': 'bg-blue-100 text-blue-800',
+							'Approved': 'bg-green-100 text-green-800'
+						}[expense.status];
+
+						return `
+							<tr class="border-b hover:bg-slate-50">
+								<td class="px-4 py-2">${new Date(expense.date).toLocaleDateString()}</td>
+								<td class="px-4 py-2">${expense.staffName}</td>
+								<td class="px-4 py-2">${expense.title}</td>
+								<td class="px-4 py-2">${expense.category}</td>
+								<td class="px-4 py-2 text-right">₱${expense.amount.toFixed(2)}</td>
+								<td class="px-4 py-2 text-center">
+									<span class="px-2 py-1 rounded text-xs font-medium ${statusColor}">
+										${expense.status}
+									</span>
+								</td>
+								<td class="px-4 py-2 text-center">
+									<button onclick='showExpenseDetails(${JSON.stringify(expense)})' class="text-blue-600 hover:underline text-sm">
+										View
+									</button>
+								</td>
+							</tr>
+						`;
+					}).join('');
+				}
+			} catch (error) {
+				console.error('Error loading expenses:', error);
+			}
+		}
+
+		// Show expense details
+		function showExpenseDetails(expense) {
+			currentExpenseId = expense._id;
+			const details = document.getElementById('expenseDetails');
+			
+			details.innerHTML = `
+				<div><strong>Staff:</strong> ${expense.staffName}</div>
+				<div><strong>Title:</strong> ${expense.title}</div>
+				<div><strong>Category:</strong> ${expense.category}</div>
+				<div><strong>Amount:</strong> ₱${expense.amount.toFixed(2)}</div>
+				<div><strong>Date:</strong> ${new Date(expense.date).toLocaleDateString()}</div>
+				<div><strong>Description:</strong> ${expense.description || 'N/A'}</div>
+				<div><strong>Status:</strong> ${expense.status}</div>
+				<div><strong>Submitted:</strong> ${new Date(expense.createdAt).toLocaleString()}</div>
+			`;
+
+			document.getElementById('expenseModal').classList.remove('hidden');
+		}
+
+		// Update expense status
+		async function updateExpenseStatus(status) {
+			if (!currentExpenseId) return;
+
+			try {
+				const response = await fetch(`${API_BASE}/owner/expenses/${currentExpenseId}/status`, {
+					method: 'PATCH',
+					headers: {
+						'Content-Type': 'application/json',
+						'Authorization': `Bearer ${token}`
+					},
+					body: JSON.stringify({ status })
+				});
+
+				const result = await response.json();
+
+				if (response.ok) {
+					alert(`Expense ${status.toLowerCase()} successfully!`);
+					closeModal();
+					loadExpenses();
+					loadSummary();
+				} else {
+					alert(`Error: ${result.message}`);
+				}
+			} catch (error) {
+				alert(`Error: ${error.message}`);
+			}
+		}
+
+		// Close modal
+		function closeModal() {
+			document.getElementById('expenseModal').classList.add('hidden');
+			currentExpenseId = null;
+		}
+
+		// Load data on page load
+		loadSummary();
+		loadExpenses();
+	</script>
+</body>
+</html>

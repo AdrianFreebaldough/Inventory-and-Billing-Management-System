@@ -23,6 +23,7 @@ export const STAFF_createTransaction = async (req, res) => {
       staffId: req.user.id,
       items: req.body.items,
       patientId: req.body.patientId,
+      patientName: req.body.patientName,
       discountRate: req.body.discountRate,
     });
 
@@ -32,12 +33,15 @@ export const STAFF_createTransaction = async (req, res) => {
         transactionId: transaction._id,
         staffId: transaction.staffId,
         patientId: transaction.patientId,
+        patientName: transaction.patientName,
         items: transaction.items,
         subtotal: transaction.subtotal,
         discountRate: transaction.discountRate,
         discountAmount: transaction.discountAmount,
         vatRate: transaction.vatRate,
         vatAmount: transaction.vatAmount,
+        vatIncluded: transaction.vatIncluded,
+        netAmount: transaction.netAmount,
         totalAmount: transaction.totalAmount,
         status: transaction.status,
         createdAt: transaction.createdAt,
@@ -126,6 +130,7 @@ export const STAFF_voidTransaction = async (req, res) => {
       transactionId: req.params.id,
       staffId: req.user.id,
       reason: req.body.reason,
+      editedData: req.body.editedData,
     });
 
     return res.status(200).json({
@@ -135,6 +140,10 @@ export const STAFF_voidTransaction = async (req, res) => {
         status: transaction.status,
         voidedAt: transaction.voidedAt,
         voidReason: transaction.voidReason,
+        editedPatientId: transaction.editedPatientId,
+        editedPatientName: transaction.editedPatientName,
+        editedItems: transaction.editedItems,
+        voidNotes: transaction.voidNotes,
       },
     });
   } catch (error) {

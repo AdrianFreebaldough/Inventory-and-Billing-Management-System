@@ -51,6 +51,11 @@ const STAFF_receiptSnapshotSchema = new mongoose.Schema(
       type: String,
       required: true,
     },
+    patientName: {
+      type: String,
+      required: true,
+      trim: true,
+    },
     staffId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
@@ -82,6 +87,16 @@ const STAFF_receiptSnapshotSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    vatIncluded: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    netAmount: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
     totalAmount: {
       type: Number,
       required: true,
@@ -110,6 +125,11 @@ const STAFF_billingTransactionSchema = new mongoose.Schema(
       index: true,
     },
     patientId: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+    patientName: {
       type: String,
       required: true,
       trim: true,
@@ -144,10 +164,39 @@ const STAFF_billingTransactionSchema = new mongoose.Schema(
       default: 0,
       min: 0,
     },
+    vatIncluded: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    netAmount: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
     totalAmount: {
       type: Number,
       required: true,
       min: 0,
+    },
+    editedPatientId: {
+      type: String,
+      trim: true,
+      default: null,
+    },
+    editedPatientName: {
+      type: String,
+      trim: true,
+      default: null,
+    },
+    editedItems: {
+      type: [STAFF_billingItemSchema],
+      default: null,
+    },
+    voidNotes: {
+      type: String,
+      trim: true,
+      default: null,
     },
     cashReceived: {
       type: Number,

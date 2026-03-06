@@ -1,4 +1,5 @@
 import { apiFetch } from "../utils/apiClient.js";
+import { NotificationWidget } from "../components/notificationWidget.js";
 
 /* ════════════════════════════════════════════════════════════════
    API endpoints
@@ -170,6 +171,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const navInventory      = document.getElementById("navInventory");
   const navUserManagement = document.getElementById("navUserManagement");
   const navReports        = document.getElementById("navReports");
+  const navExpenses       = document.getElementById("navExpenses");
   const navStockLogs      = document.getElementById("navStockLogs");
 
   const staffNameEl       = document.getElementById("staffName");
@@ -795,6 +797,11 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
+  function goToOwnerExpensesPage() {
+    clearInterval(refreshTimer);
+    window.location.href = "../../HTML/OWNER_Expenses/OWNER_Expenses.html";
+  }
+
   /* ================= EVENTS ================= */
   navDashboard.addEventListener("click", (e) => {
     e.preventDefault();
@@ -816,6 +823,11 @@ document.addEventListener("DOMContentLoaded", () => {
     loadReports();
   });
 
+  navExpenses?.addEventListener("click", (e) => {
+    e.preventDefault();
+    goToOwnerExpensesPage();
+  });
+
   profileBtn.addEventListener("click", (e) => {
     e.preventDefault();
     loadUserProfile();
@@ -828,4 +840,14 @@ document.addEventListener("DOMContentLoaded", () => {
 
   /* ================= DEFAULT ================= */
   loadDashboard();
+
+  // Initialize notification widget
+  const notifToken = ["token", "authToken", "jwtToken", "ibmsToken"]
+    .map(k => localStorage.getItem(k))
+    .find(v => v && v.trim()) || "";
+  if (notifToken) {
+    const notificationWidget = new NotificationWidget("http://localhost:3000/api", notifToken);
+    window.notificationWidget = notificationWidget;
+    notificationWidget.init();
+  }
 });

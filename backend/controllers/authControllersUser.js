@@ -29,6 +29,8 @@ export const login = async (req, res) => {
       {
         id: user._id, // MongoDB ID
         role: user.role,
+        name: user.name,
+        email: user.email,
       },
       process.env.JWT_SECRET,
       { expiresIn: "1d" }

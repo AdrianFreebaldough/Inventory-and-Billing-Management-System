@@ -20,6 +20,7 @@ const API = {
     ADD_ITEM_REQUEST: "/api/staff/inventory/requests/add-item",
     MY_REQUESTS: "/api/staff/inventory/requests/my",
     ACTIVITY_LOGS: "/api/staff/activity-logs",
+    QUANTITY_ADJUSTMENT: "/api/staff/quantity-adjustments",
 };
 
 /* ================= STATUS VOCABULARY MAPPING ================= */
@@ -349,18 +350,7 @@ function renderInventory() {
     inventoryGrid.innerHTML = "";
 
     if (showLowStockOnly) {
-        const lowStockCountEl = document.getElementById("lowStockItemCount");
-        const bulkSubmitBtn = document.getElementById("bulkSubmitRestock");
-        if (lowStockCountEl) lowStockCountEl.textContent = filteredItems.length;
-        if (bulkSubmitBtn) {
-            if (filteredItems.length === 0) {
-                bulkSubmitBtn.disabled = true;
-                bulkSubmitBtn.classList.add("opacity-50", "cursor-not-allowed");
-            } else {
-                bulkSubmitBtn.disabled = false;
-                bulkSubmitBtn.classList.remove("opacity-50", "cursor-not-allowed");
-            }
-        }
+        filteredItems = filteredItems.filter(item => item.status === "low-stock" || item.status === "out-of-stock");
     }
 
     if (filteredItems.length === 0) {
@@ -400,6 +390,14 @@ function renderInventory() {
                 <div class="text-gray-500 flex items-center gap-2">
                     <img src="../../assets/calendar_icon.png" alt="Calendar" class="w-4 h-4">
                     <span>Expires: ${item.expiryDate}</span>
+                    ${(() => {
+                        if (!item.expiryDateISO) return '';
+                        const diff = Math.ceil((new Date(item.expiryDateISO) - new Date()) / 86400000);
+                        if (diff < 0) return '<span class="w-3 h-3 rounded-full bg-red-600 inline-block ml-1" title="Expired"></span>';
+                        if (diff <= 7) return `<span class="w-3 h-3 rounded-full bg-red-500 inline-block ml-1" title="Expires in ${diff} day(s)"></span>`;
+                        if (diff <= 30) return `<span class="w-3 h-3 rounded-full bg-orange-400 inline-block ml-1" title="Expires in ${diff} day(s)"></span>`;
+                        return '';
+                    })()}
                 </div>
                 <div class="text-gray-500">Batch: ${item.batchNumber}</div>
                 <div class="flex justify-between items-center pt-2 border-t border-gray-100 mt-2">
@@ -416,7 +414,8 @@ function renderInventory() {
                     `<button class="restore-btn flex-1 bg-blue-600 text-white py-2 rounded text-xs font-medium hover:bg-blue-700 transition-colors" data-item-id="${item.id}">Restore</button>` :
                     (item.isPendingRequest ?
                         `<span class="flex-1 bg-yellow-100 text-yellow-700 py-2 rounded text-xs font-medium text-center border border-yellow-300">Awaiting Approval</span>` :
-                        `<button class="restock-btn flex-1 bg-blue-600 text-white py-2 rounded text-xs font-medium hover:bg-blue-700 transition-colors">Request Restock</button>`
+                        `<button class="restock-btn flex-1 bg-blue-600 text-white py-2 rounded text-xs font-medium hover:bg-blue-700 transition-colors">Request Restock</button>
+                        <button class="adjust-btn flex-1 bg-amber-500 text-white py-2 rounded text-xs font-medium hover:bg-amber-600 transition-colors" data-item-id="${item.id}" data-item-name="${item.name}" data-current-qty="${item.currentQuantity}" data-unit="${item.unit}">Report Discrepancy</button>`
                     )
                 }
             </div>
@@ -453,18 +452,12 @@ async function showItemDetails(item) {
     };
 
     setText("detailsItemName", detailItem.name);
-    setText("detailsBrand", `Brand: ${detailItem.type}`);
-    setText("detailsStock", `${detailItem.currentQuantity} ${detailItem.unit}`);
-    const stockEl = getElement(modal, '#detailsStock');
-    if (stockEl) stockEl.className = `px-4 py-3 text-left font-semibold ${colors.quantity}`;
-    setText("detailsMinStock", `${detailItem.minStock} ${detailItem.unit}`);
-    setText("detailsUnit", detailItem.unit || '');
-    setText("detailsPrice", `₱${(detailItem.price || 0).toFixed(2)}`);
-    setText("detailsExpiry", detailItem.expiryDate || '');
-    setText("detailsDescription", detailItem.description || 'No description available.');
     setText("detailsCategory", formatCategory(detailItem.category));
-    const criticalText = (detailItem.minStock || detailItem.minStock === 0) ? `${detailItem.minStock} ${detailItem.unit || ''}` : '\u2014';
-    setText("detailsCriticalText", criticalText);
+    setText("detailsStock", `${detailItem.currentQuantity} ${detailItem.unit}`);
+    setText("detailsMinStock", `${detailItem.minStock} ${detailItem.unit}`);
+    setText("detailsSellingPrice", `₱${(detailItem.price || 0).toFixed(2)}`);
+    setText("detailsCostPrice", `₱${(detailItem.price || 0).toFixed(2)}`);
+    setText("detailsExpiry", detailItem.expiryDate || "N/A");
 
     const statusTextContainer = getElement(modal, '#detailsStatusText');
     if (statusTextContainer) {
@@ -510,7 +503,8 @@ async function showItemDetails(item) {
     /* ---- Modal buttons ---- */
     const btnCloseTop = getElement(modal, '#closeItemDetails');
     const btnCancel = getElement(modal, '#closeDetails');
-    const btnMove = getElement(modal, '#moveToArchive');
+    const btnRequestRestock = getElement(modal, '#detailsRequestRestockBtn');
+    const btnReportDiscrepancy = getElement(modal, '#detailsReportDiscrepancyBtn');
 
     if (btnCloseTop) {
         const newBtn = btnCloseTop.cloneNode(true);
@@ -522,17 +516,22 @@ async function showItemDetails(item) {
         btnCancel.parentNode.replaceChild(newBtn, btnCancel);
         newBtn.onclick = () => { modal.classList.add('hidden'); modal.style.display = ''; };
     }
-    if (btnMove) {
-        if (detailItem.archived) {
-            btnMove.style.display = 'none';
-        } else {
-            const newBtn = btnMove.cloneNode(true);
-            btnMove.parentNode.replaceChild(newBtn, btnMove);
-            newBtn.style.display = 'block';
-            newBtn.textContent = 'Move to Archive';
-            newBtn.className = 'w-full bg-red-600 text-white py-2.5 rounded-lg text-sm font-semibold hover:bg-red-700 transition-colors';
-            newBtn.onclick = (e) => { e?.stopPropagation?.(); showArchiveConfirm(detailItem); };
-        }
+    if (btnRequestRestock) {
+        const newBtn = btnRequestRestock.cloneNode(true);
+        btnRequestRestock.parentNode.replaceChild(newBtn, btnRequestRestock);
+        newBtn.onclick = (e) => {
+            e?.stopPropagation?.();
+            requestRestock(detailItem);
+        };
+    }
+
+    if (btnReportDiscrepancy) {
+        const newBtn = btnReportDiscrepancy.cloneNode(true);
+        btnReportDiscrepancy.parentNode.replaceChild(newBtn, btnReportDiscrepancy);
+        newBtn.onclick = (e) => {
+            e?.stopPropagation?.();
+            openQuantityAdjustmentModal(detailItem);
+        };
     }
 
     modal.classList.remove('hidden');
@@ -654,6 +653,91 @@ function showRestoreConfirm(item) {
             hide();
         };
     }
+}
+
+/* ================= QUANTITY ADJUSTMENT ================= */
+
+function openQuantityAdjustmentModal(item) {
+    // Create or reuse modal
+    let modal = document.getElementById("quantityAdjustmentModal");
+    if (!modal) {
+        modal = document.createElement("div");
+        modal.id = "quantityAdjustmentModal";
+        modal.className = "fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4";
+        document.body.appendChild(modal);
+    }
+
+    modal.innerHTML = `
+        <div class="w-full max-w-md bg-white rounded-xl shadow-sm p-6 relative">
+            <button id="adjustCloseBtn" class="absolute top-4 right-4 text-gray-400 hover:text-gray-700 text-2xl leading-none">&times;</button>
+            <h2 class="text-lg font-semibold text-gray-900 mb-1">Report Discrepancy</h2>
+            <p class="text-sm text-gray-600 mb-4">Submit quantity mismatch for approval before any inventory change.</p>
+            <div class="mb-4">
+                <label class="block text-sm font-semibold mb-1">Item Name</label>
+                <input type="text" value="${item.name}" readonly class="w-full border border-gray-300 rounded px-3 py-2 text-sm bg-gray-50 text-gray-700" />
+            </div>
+            <div class="mb-4">
+                <label class="block text-sm font-semibold mb-1">System Quantity</label>
+                <input type="text" value="${item.currentQuantity} ${item.unit}" readonly class="w-full border border-gray-300 rounded px-3 py-2 text-sm bg-gray-50 text-gray-700" />
+            </div>
+            <div class="mb-4">
+                <label class="block text-sm font-semibold mb-1">Actual Quantity on Hand <span class="text-red-600">*</span></label>
+                <input id="actualQtyInput" type="number" min="0" placeholder="Enter actual count" class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500" />
+                <p id="adjustQtyError" class="text-red-600 text-xs mt-1 hidden">Actual quantity is required.</p>
+            </div>
+            <div class="mb-4">
+                <label class="block text-sm font-semibold mb-1">Reason <span class="text-red-600">*</span></label>
+                <textarea id="adjustReasonInput" rows="3" placeholder="Describe the discrepancy reason..." class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 resize-none"></textarea>
+                <p id="adjustReasonError" class="text-red-600 text-xs mt-1 hidden">Reason is required.</p>
+            </div>
+            <div class="flex gap-2">
+                <button id="adjustCancelBtn" class="flex-1 border border-gray-300 py-2 rounded bg-white text-sm font-semibold hover:bg-gray-50">Cancel</button>
+                <button id="adjustSubmitBtn" class="flex-1 bg-amber-500 text-white py-2 rounded text-sm font-semibold hover:bg-amber-600">Submit</button>
+            </div>
+        </div>
+    `;
+
+    modal.style.display = "flex";
+
+    const close = () => { modal.style.display = "none"; };
+    modal.querySelector("#adjustCloseBtn").addEventListener("click", close);
+    modal.querySelector("#adjustCancelBtn").addEventListener("click", close);
+
+    modal.querySelector("#adjustSubmitBtn").addEventListener("click", async () => {
+        const actualQtyEl = modal.querySelector("#actualQtyInput");
+        const reasonEl = modal.querySelector("#adjustReasonInput");
+        const qtyErrorEl = modal.querySelector("#adjustQtyError");
+        const reasonErrorEl = modal.querySelector("#adjustReasonError");
+
+        qtyErrorEl.classList.add("hidden");
+        reasonErrorEl.classList.add("hidden");
+
+        const actualQuantity = actualQtyEl.value.trim();
+        const reason = reasonEl.value.trim();
+        let valid = true;
+
+        if (actualQuantity === "" || isNaN(Number(actualQuantity)) || Number(actualQuantity) < 0) {
+            qtyErrorEl.classList.remove("hidden");
+            valid = false;
+        }
+        if (!reason) {
+            reasonErrorEl.classList.remove("hidden");
+            valid = false;
+        }
+        if (!valid) return;
+
+        try {
+            await apiFetch(API.QUANTITY_ADJUSTMENT, {
+                method: "POST",
+                body: JSON.stringify({ productId: item.id, actualQuantity: Number(actualQuantity), reason }),
+            });
+            showToast("Discrepancy report submitted successfully", "success");
+            close();
+            await refreshAllData();
+        } catch (error) {
+            showToast("Failed to submit discrepancy: " + error.message, "error");
+        }
+    });
 }
 
 /* ================= REQUEST RESTOCK ================= */
@@ -1120,9 +1204,8 @@ async function refreshAllData() {
     await fetchInventoryItems();
     applyFilters();
 
-    /* Refresh tabs in background (non-blocking) */
+    /* Refresh activity log in background (non-blocking) */
     fetchActivityLogs().then(() => renderActivityLog());
-    fetchMyRequests().then(() => renderRestockRequests());
 }
 
 /* ================= INIT ================= */
@@ -1132,12 +1215,6 @@ export async function initInventory() {
 
     const inventoryGrid = document.getElementById("inventoryGrid");
     const searchInput = document.getElementById("searchInventory");
-    const tabInventory = document.getElementById("tabInventory");
-    const tabRestock = document.getElementById("tabRestock");
-    const tabActivity = document.getElementById("tabActivity");
-    const inventorySection = document.getElementById("inventorySection");
-    const restockSection = document.getElementById("restockSection");
-    const activitySection = document.getElementById("activitySection");
     const addItemBtn = document.getElementById("addItemBtn");
     const archivedBtn = document.getElementById("archivedBtn");
     const itemDetailsModal = document.getElementById("itemDetailsModal");
@@ -1154,7 +1231,6 @@ export async function initInventory() {
     /* ================= FETCH INITIAL DATA FROM BACKEND ================= */
     await fetchInventoryItems();
     fetchActivityLogs().then(() => renderActivityLog());
-    fetchMyRequests().then(() => renderRestockRequests());
 
     /* ================= EVENT LISTENERS - SEARCH & FILTER ================= */
     const debouncedApplyFilters = debounce(applyFilters, 300);
@@ -1208,18 +1284,15 @@ export async function initInventory() {
         showLowStockOnly = !showLowStockOnly;
 
         const textSpan = lowStockToggle.querySelector("span");
-        const bottomBar = document.getElementById("lowStockBottomBar");
         if (showLowStockOnly) {
             lowStockToggle.classList.remove("bg-red-50", "border-red-300", "text-red-600");
             lowStockToggle.classList.add("bg-red-600", "border-red-700", "text-white");
             if (textSpan) { textSpan.textContent = "Showing Low Stock Only"; textSpan.classList.add("text-white"); textSpan.classList.remove("text-red-600"); }
-            if (bottomBar) bottomBar.classList.remove("hidden");
             if (archivedBtn) { archivedBtn.classList.add("opacity-50", "cursor-not-allowed"); archivedBtn.disabled = true; }
         } else {
             lowStockToggle.classList.remove("bg-red-600", "border-red-700");
             lowStockToggle.classList.add("bg-red-50", "border-red-300");
             if (textSpan) { textSpan.textContent = "Show Low Stock Only"; textSpan.classList.remove("text-white"); textSpan.classList.add("text-red-600"); }
-            if (bottomBar) bottomBar.classList.add("hidden");
             if (archivedBtn) { archivedBtn.classList.remove("opacity-50", "cursor-not-allowed"); archivedBtn.disabled = false; }
         }
         /* Re-fetch with low stock filter applied server-side */
@@ -1250,45 +1323,7 @@ export async function initInventory() {
     closeItemDetails?.addEventListener("click", () => itemDetailsModal.classList.add("hidden"));
     closeDetails?.addEventListener("click", () => itemDetailsModal.classList.add("hidden"));
 
-    /* ================= TAB SWITCHING ================= */
-    function switchTab(showSection) {
-        inventorySection.classList.toggle("hidden", showSection !== inventorySection);
-        restockSection.classList.toggle("hidden", showSection !== restockSection);
-        activitySection.classList.toggle("hidden", showSection !== activitySection);
-
-        tabInventory.classList.toggle("bg-blue-700", showSection === inventorySection);
-        tabInventory.classList.toggle("text-white", showSection === inventorySection);
-        tabInventory.classList.toggle("bg-gray-200", showSection !== inventorySection);
-        tabInventory.classList.toggle("text-gray-700", showSection !== inventorySection);
-
-        tabRestock.classList.toggle("bg-blue-700", showSection === restockSection);
-        tabRestock.classList.toggle("text-white", showSection === restockSection);
-        tabRestock.classList.toggle("bg-gray-200", showSection !== restockSection);
-        tabRestock.classList.toggle("text-gray-700", showSection !== restockSection);
-
-        tabActivity.classList.toggle("bg-blue-700", showSection === activitySection);
-        tabActivity.classList.toggle("text-white", showSection === activitySection);
-        tabActivity.classList.toggle("bg-gray-200", showSection !== activitySection);
-        tabActivity.classList.toggle("text-gray-700", showSection !== activitySection);
-    }
-
-    tabInventory?.addEventListener("click", e => { e.preventDefault(); switchTab(inventorySection); });
-    tabRestock?.addEventListener("click", async (e) => {
-        e.preventDefault();
-        switchTab(restockSection);
-        await fetchMyRequests();
-        renderRestockRequests();
-    });
-    tabActivity?.addEventListener("click", async (e) => {
-        e.preventDefault();
-        switchTab(activitySection);
-        await fetchActivityLogs();
-        renderActivityLog();
-    });
-
     /* ================= BUTTON ACTIONS ================= */
-    const bulkSubmitBtn = document.getElementById('bulkSubmitRestock');
-    bulkSubmitBtn?.addEventListener("click", () => showBulkRestockModal());
     addItemBtn?.addEventListener("click", () => showAddItemModal());
 
     /* ================= INITIAL RENDER ================= */
@@ -1307,6 +1342,7 @@ if (!window.inventoryGridListenerAttached) {
         const viewDetailsBtn = e.target.closest(".view-details-btn");
         const restockBtn = e.target.closest(".restock-btn");
         const restoreBtn = e.target.closest(".restore-btn");
+        const adjustBtn = e.target.closest(".adjust-btn");
 
         if (viewDetailsBtn) {
             const card = viewDetailsBtn.closest("[data-card-id]");
@@ -1326,6 +1362,12 @@ if (!window.inventoryGridListenerAttached) {
             const itemId = restoreBtn.getAttribute("data-item-id");
             const item = inventoryItems.find(i => String(i.id) === String(itemId));
             if (item) showRestoreConfirm(item);
+        } else if (adjustBtn) {
+            e.preventDefault();
+            e.stopPropagation();
+            const itemId = adjustBtn.getAttribute("data-item-id");
+            const item = inventoryItems.find(i => String(i.id) === String(itemId));
+            if (item) openQuantityAdjustmentModal(item);
         }
     }, false);
 

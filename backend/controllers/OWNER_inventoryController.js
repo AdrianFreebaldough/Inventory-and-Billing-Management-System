@@ -4,6 +4,7 @@ import InventoryRequest from "../models/InventoryRequest.js";
 import ActivityLog from "../models/activityLog.js";
 import OWNER_ArchivedProduct from "../models/OWNER_archivedProduct.js";
 import { createStockLog } from "../services/Owner_StockLog.service.js";
+import { getExpirationStatus, getDaysUntilExpiry } from "../services/expirationService.js";
 
 const OWNER_parseNonNegativeNumber = (value) => {
   const parsed = Number(value);
@@ -13,16 +14,44 @@ const OWNER_parseNonNegativeNumber = (value) => {
   return parsed;
 };
 
+const OWNER_enrichProductWithExpiration = (product) => {
+  return {
+    ...product,
+    expirationStatus: getExpirationStatus(product.expiryDate),
+    daysUntilExpiry: getDaysUntilExpiry(product.expiryDate),
+  };
+};
+
 export const OWNER_getActiveInventory = async (req, res) => {
   try {
-    const products = await Product.find({ isArchived: { $ne: true } })
+    const { expirationFilter } = req.query;
+    
+    const filter = { isArchived: { $ne: true } };
+
+    // Expiration filters
+    if (expirationFilter) {
+      const now = new Date();
+      if (expirationFilter === "expiring_week") {
+        const weekFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+        filter.expiryDate = { $ne: null, $lte: weekFromNow, $gte: now };
+      } else if (expirationFilter === "expiring_month") {
+        const monthFromNow = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+        filter.expiryDate = { $ne: null, $lte: monthFromNow, $gte: now };
+      } else if (expirationFilter === "out_of_stock") {
+        filter.status = "out";
+      }
+    }
+
+    const products = await Product.find(filter)
       .sort({ name: 1 })
       .lean();
 
+    const enrichedProducts = products.map(OWNER_enrichProductWithExpiration);
+
     return res.status(200).json({
       message: "Active inventory fetched successfully",
-      count: products.length,
-      data: products,
+      count: enrichedProducts.length,
+      data: enrichedProducts,
     });
   } catch (error) {
     return res.status(500).json({ message: error.message });

@@ -4,6 +4,7 @@ import STAFF_ActivityLog from "../models/STAFF_activityLog.js";
 import OWNER_ArchivedProduct from "../models/OWNER_archivedProduct.js";
 import ActivityLog from "../models/activityLog.js";
 import mongoose from "mongoose";
+import { getExpirationStatus, getDaysUntilExpiry } from "../services/expirationService.js";
 
 // Reuse existing InventoryRequest schema so staff can request restocks without direct stock edits.
 
@@ -34,21 +35,28 @@ const STAFF_mapStockStatus = (dbStatus) => {
 /**
  * Build the normalized item response shape used by all inventory endpoints.
  */
-const STAFF_buildItemPayload = (item) => ({
-  itemId: item._id,
-  itemName: item.name,
-  category: item.category,
-  stockStatus: STAFF_mapStockStatus(item.status),
-  currentQuantity: item.quantity,
-  unit: item.unit || "pcs",
-  unitPrice: item.unitPrice ?? 0,
-  minStock: item.minStock ?? 10,
-  supplier: item.supplier || null,
-  description: item.description || "",
-  expiryDate: item.expiryDate || null,
-  batchNumber: item.batchNumber || null,
-  isArchived: !!item.isArchived,
-});
+const STAFF_buildItemPayload = (item) => {
+  const expirationStatus = getExpirationStatus(item.expiryDate);
+  const daysUntilExpiry = getDaysUntilExpiry(item.expiryDate);
+
+  return {
+    itemId: item._id,
+    itemName: item.name,
+    category: item.category,
+    stockStatus: STAFF_mapStockStatus(item.status),
+    currentQuantity: item.quantity,
+    unit: item.unit || "pcs",
+    unitPrice: item.unitPrice ?? 0,
+    minStock: item.minStock ?? 10,
+    supplier: item.supplier || null,
+    description: item.description || "",
+    expiryDate: item.expiryDate || null,
+    batchNumber: item.batchNumber || null,
+    isArchived: !!item.isArchived,
+    expirationStatus,
+    daysUntilExpiry,
+  };
+};
 
 const STAFF_logActivity = async ({
   staffId,
@@ -70,7 +78,7 @@ const STAFF_logActivity = async ({
 
 export const STAFF_getInventory = async (req, res) => {
   try {
-    const { category } = req.query;
+    const { category, expirationFilter } = req.query;
     const lowStockOnly = STAFF_toBoolean(req.query.lowStockOnly);
     const includeArchived = STAFF_toBoolean(req.query.includeArchived);
     const includePending = STAFF_toBoolean(req.query.includePending);
@@ -90,6 +98,20 @@ export const STAFF_getInventory = async (req, res) => {
 
     if (lowStockOnly) {
       filter.$or = [{ status: "low" }, { status: "out" }, { quantity: { $lte: 10 } }];
+    }
+
+    // Expiration filters
+    if (expirationFilter) {
+      const now = new Date();
+      if (expirationFilter === "expiring_week") {
+        const weekFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+        filter.expiryDate = { $ne: null, $lte: weekFromNow, $gte: now };
+      } else if (expirationFilter === "expiring_month") {
+        const monthFromNow = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+        filter.expiryDate = { $ne: null, $lte: monthFromNow, $gte: now };
+      } else if (expirationFilter === "out_of_stock") {
+        filter.status = "out";
+      }
     }
 
     const items = await Product.find(filter)

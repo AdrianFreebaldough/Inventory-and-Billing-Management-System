@@ -1,4 +1,5 @@
 import { apiFetch } from "../utils/apiClient.js";
+import { NotificationWidget } from "../components/notificationWidget.js";
 
 /* ════════════════════════════════════════════════════════════════
    API endpoints
@@ -139,6 +140,8 @@ document.addEventListener("DOMContentLoaded", () => {
   const navDashboard     = document.getElementById("navDashboard");
   const navBilling       = document.getElementById("navBilling");
   const navInventory     = document.getElementById("navInventory");
+  const navStockRequest  = document.getElementById("navStockRequest");
+  const navExpenses      = document.getElementById("navExpenses");
   const staffNameEl      = document.getElementById("staffName");
   const staffUsernameEl  = document.getElementById("staffUsername");
   const staffAvatarEl    = document.getElementById("staffAvatar");
@@ -508,6 +511,34 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
+  function loadRequestStock() {
+    stopAutoRefresh();
+    setCurrentStaffRoute("stock-request");
+    if (navStockRequest) setActive(navStockRequest);
+
+    mainContent.innerHTML = `
+      <div class="mx-auto max-w-7xl">
+        <div class="mb-4">
+          <h1 class="text-lg font-semibold text-gray-900">Request Stock</h1>
+          <p class="text-sm text-gray-500">Submit and track multi-item restock requests</p>
+        </div>
+        <div class="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+          <iframe
+            title="Request Stock"
+            src="../../HTML/STAFF_StockRequest/STAFF_StockRequest.html"
+            class="h-[calc(100vh-220px)] min-h-[560px] w-full border-0"
+          ></iframe>
+        </div>
+      </div>
+    `;
+  }
+
+  function goToExpensesPage() {
+    stopAutoRefresh();
+    sessionStorage.setItem(STAFF_CURRENT_ROUTE_KEY, "expenses");
+    window.location.href = "../../HTML/STAFF_Expenses/STAFF_Expenses.html";
+  }
+
   /* ─────────────────────────────────────────────
      Navigation event listeners
      ───────────────────────────────────────────── */
@@ -526,6 +557,16 @@ document.addEventListener("DOMContentLoaded", () => {
     loadInventory();
   });
 
+  navStockRequest?.addEventListener("click", e => {
+    e.preventDefault();
+    loadRequestStock();
+  });
+
+  navExpenses?.addEventListener("click", e => {
+    e.preventDefault();
+    goToExpensesPage();
+  });
+
   menuPosHeaderBtn?.addEventListener("click", e => {
     e.preventDefault();
     if (currentRole !== "staff") return;
@@ -542,17 +583,29 @@ document.addEventListener("DOMContentLoaded", () => {
      ───────────────────────────────────────────── */
   const hashRoute  = window.location.hash.replace("#", "").toLowerCase();
   const storedRoute = (sessionStorage.getItem(STAFF_CURRENT_ROUTE_KEY) || "").toLowerCase();
-  const initialRoute = ["dashboard", "inventory", "profile"].includes(hashRoute)
+  const initialRoute = ["dashboard", "inventory", "profile", "stock-request"].includes(hashRoute)
     ? hashRoute
-    : ["dashboard", "inventory", "profile"].includes(storedRoute)
+    : ["dashboard", "inventory", "profile", "stock-request"].includes(storedRoute)
       ? storedRoute
       : "dashboard";
 
   if (initialRoute === "inventory") {
     loadInventory();
+  } else if (initialRoute === "stock-request") {
+    loadRequestStock();
   } else if (initialRoute === "profile") {
     loadUserProfile();
   } else {
     loadDashboard();
+  }
+
+  // Initialize notification widget
+  const notifToken = ["token", "authToken", "jwtToken", "ibmsToken"]
+    .map(k => localStorage.getItem(k))
+    .find(v => v && v.trim()) || "";
+  if (notifToken) {
+    const notificationWidget = new NotificationWidget("http://localhost:3000/api", notifToken);
+    window.notificationWidget = notificationWidget;
+    notificationWidget.init();
   }
 });

@@ -16,6 +16,8 @@ document.addEventListener("DOMContentLoaded", () => {
   const navUserManagement = document.getElementById("navUserManagement");
   const navReports = document.getElementById("navReports");
   const navStockLogs = document.getElementById("navStockLogs");
+  const navSettings = document.getElementById("navSettings");
+
 
   const staffNameEl     = document.getElementById("staffName");
   const staffUsernameEl = document.getElementById("staffUsername");
@@ -577,6 +579,34 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
+  /* ================= SETTINGS ================= */
+  async function loadSettings() {
+
+    try {
+      const res = await fetch("../../HTML/admin_Settings/admin_Settings.html");
+      if (!res.ok) throw new Error("Settings HTML not found");
+
+      mainContent.innerHTML = await res.text();
+      await new Promise(r => setTimeout(r, 50));
+
+      const module = await import("../admin_Settings/admin_Settings.js");
+      
+      if (typeof module.initSettings !== "function") {
+        throw new Error("initSettings() missing");
+      }
+
+      module.initSettings();
+
+    } catch (error) {
+      console.error(error);
+      mainContent.innerHTML = `
+        <div class="text-red-500 p-4 font-medium">
+          Failed to load Settings module: ${error.message}
+        </div>
+      `;
+    }
+  }
+
 /* ================= EVENTS ================= */
   navDashboard.addEventListener("click", e => {
     e.preventDefault();
@@ -605,10 +635,16 @@ document.addEventListener("DOMContentLoaded", () => {
     e.preventDefault();
     loadUserProfile();
   });
+    
 
   navStockLogs.addEventListener("click", e => {
     e.preventDefault();
     loadStockLogs();
+  });
+  
+  navSettings.addEventListener("click", e => {
+    e.preventDefault();
+    loadSettings();
   });
 
   /* ================= DEFAULT ================= */

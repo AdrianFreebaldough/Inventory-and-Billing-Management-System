@@ -203,14 +203,14 @@
       <div class="mb-4 flex items-center justify-between">
         <div>
           <h3 class="text-lg font-semibold text-slate-900">Monthly Inventory Report Table</h3>
-          <p class="text-sm text-slate-500">Enter variance values to record physical inventory discrepancies. All other fields are system-generated.</p>
+          <p class="text-sm text-slate-500">Enter physical count values to verify inventory. Variance is auto-calculated.</p>
         </div>
         <button id="saveVarianceBtn" class="rounded-lg bg-emerald-600 px-5 py-2.5 text-sm font-medium text-white shadow-sm transition-all hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed hidden">
-          Save Variance
+          Save Physical Count
         </button>
       </div>
       <div class="overflow-x-auto max-h-[600px] overflow-y-auto rounded-lg border border-slate-200">
-        <table class="min-w-full text-sm">
+        <table class="min-w-full text-sm table-fixed">
           <thead class="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-600 sticky top-0 z-10">
             <tr>
               <th class="px-3 py-2">Item Name</th>
@@ -218,10 +218,9 @@
               <th class="px-3 py-2">Batch Number</th>
               <th class="px-3 py-2 text-right">System Stock</th>
               <th class="px-3 py-2">Expiration Date</th>
-              <th class="px-3 py-2 text-right">Physical Count</th>
-              <th class="px-3 py-2 text-center">Variance</th>
-              <th class="px-3 py-2">Date Checked</th>
-              <th class="px-3 py-2">Checked By</th>
+              <th class="px-3 py-2 text-right w-28" style="width: 7rem; min-width: 7rem; max-width: 7rem;">Physical Count</th>
+              <th class="px-3 py-2 text-center w-28" style="width: 7rem; min-width: 7rem; max-width: 7rem;">Variance</th>
+              <th class="px-3 py-2">Date Added</th>
               <th class="px-3 py-2 text-center">Status</th>
             </tr>
           </thead>

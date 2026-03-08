@@ -1,4 +1,5 @@
 import Product from "../models/product.js";
+import InventoryBatch from "../models/InventoryBatch.js";
 import InventoryRequest from "../models/InventoryRequest.js";
 import STAFF_ActivityLog from "../models/STAFF_activityLog.js";
 import OWNER_ArchivedProduct from "../models/OWNER_archivedProduct.js";
@@ -32,12 +33,77 @@ const STAFF_mapStockStatus = (dbStatus) => {
   return map[dbStatus] || "IN_STOCK";
 };
 
+const STAFF_buildLegacyBatch = (product) => {
+  if (!product || Number(product.quantity ?? 0) <= 0) {
+    return null;
+  }
+
+  const fallbackBatchNumber = product.batchNumber || `BATCH-INITIAL-${String(product._id).slice(-6).toUpperCase()}`;
+
+  return {
+    _id: `legacy-${product._id}`,
+    product: product._id,
+    batchNumber: fallbackBatchNumber,
+    quantity: Number(product.quantity ?? 0),
+    expiryDate: product.expiryDate || null,
+    supplier: product.supplier || null,
+    createdAt: product.createdAt || null,
+    isLegacy: true,
+  };
+};
+
+const STAFF_attachBatchDataToItems = async (items) => {
+  if (!items.length) return items;
+
+  const productIds = items.map((item) => item._id);
+  const batches = await InventoryBatch.find({
+    product: { $in: productIds },
+  })
+    .sort({ expiryDate: 1, createdAt: 1 })
+    .lean();
+
+  const batchesByProduct = new Map();
+  for (const batch of batches) {
+    const key = String(batch.product);
+    if (!batchesByProduct.has(key)) {
+      batchesByProduct.set(key, []);
+    }
+    batchesByProduct.get(key).push(batch);
+  }
+
+  return items.map((item) => {
+    const key = String(item._id);
+    const existingBatches = batchesByProduct.get(key) || [];
+    const availableBatches = existingBatches.filter((batch) => Number(batch.quantity) > 0);
+    const fallbackLegacyBatch = availableBatches.length === 0 ? STAFF_buildLegacyBatch(item) : null;
+    const finalBatches = fallbackLegacyBatch ? [fallbackLegacyBatch] : availableBatches;
+    const totalBatchQuantity = finalBatches.reduce((sum, batch) => sum + Number(batch.quantity || 0), 0);
+    const resolvedQuantity = finalBatches.length > 0 ? totalBatchQuantity : Number(item.quantity ?? 0);
+
+    const nearestBatch = finalBatches
+      .filter((batch) => batch.expiryDate)
+      .sort((a, b) => new Date(a.expiryDate) - new Date(b.expiryDate))[0] || null;
+
+    return {
+      ...item,
+      quantity: resolvedQuantity,
+      batches: finalBatches,
+      batchCount: finalBatches.length,
+      totalBatchQuantity: resolvedQuantity,
+      nearestExpiryDate: nearestBatch?.expiryDate || item.expiryDate || null,
+      nearestBatchNumber: nearestBatch?.batchNumber || item.batchNumber || null,
+      nearestBatchSupplier: nearestBatch?.supplier || item.supplier || null,
+    };
+  });
+};
+
 /**
  * Build the normalized item response shape used by all inventory endpoints.
  */
 const STAFF_buildItemPayload = (item) => {
-  const expirationStatus = getExpirationStatus(item.expiryDate);
-  const daysUntilExpiry = getDaysUntilExpiry(item.expiryDate);
+  const referenceExpiryDate = item.nearestExpiryDate || item.expiryDate;
+  const expirationStatus = getExpirationStatus(referenceExpiryDate);
+  const daysUntilExpiry = getDaysUntilExpiry(referenceExpiryDate);
 
   return {
     itemId: item._id,
@@ -48,10 +114,20 @@ const STAFF_buildItemPayload = (item) => {
     unit: item.unit || "pcs",
     unitPrice: item.unitPrice ?? 0,
     minStock: item.minStock ?? 10,
-    supplier: item.supplier || null,
+    supplier: item.nearestBatchSupplier || item.supplier || null,
     description: item.description || "",
-    expiryDate: item.expiryDate || null,
-    batchNumber: item.batchNumber || null,
+    expiryDate: referenceExpiryDate || null,
+    batchNumber: item.nearestBatchNumber || item.batchNumber || null,
+    batchCount: Number(item.batchCount ?? (item.batches || []).length ?? 0),
+    batches: Array.isArray(item.batches) ? item.batches.map((batch) => ({
+      batchId: batch._id,
+      batchNumber: batch.batchNumber || null,
+      quantity: Number(batch.quantity ?? 0),
+      expiryDate: batch.expiryDate || null,
+      supplier: batch.supplier || null,
+      createdAt: batch.createdAt || null,
+      isLegacy: !!batch.isLegacy,
+    })) : [],
     isArchived: !!item.isArchived,
     expirationStatus,
     daysUntilExpiry,
@@ -116,10 +192,11 @@ export const STAFF_getInventory = async (req, res) => {
 
     const items = await Product.find(filter)
       .sort({ name: 1 })
-      .select("name category status quantity unit unitPrice minStock supplier description expiryDate batchNumber isArchived")
+      .select("name category status quantity unit unitPrice minStock supplier description expiryDate batchNumber isArchived createdAt")
       .lean();
 
-    const data = items.map(STAFF_buildItemPayload);
+    const itemsWithBatches = await STAFF_attachBatchDataToItems(items);
+    const data = itemsWithBatches.map(STAFF_buildItemPayload);
 
     /* ---- Optionally include pending ADD_ITEM requests as virtual items ---- */
     if (includePending && !includeArchived) {
@@ -173,23 +250,17 @@ export const STAFF_getInventoryItemDetails = async (req, res) => {
     const { itemId } = req.params;
 
     const item = await Product.findById(itemId)
-      .select("name category status quantity unit unitPrice minStock supplier description expiryDate batchNumber isArchived")
+      .select("name category status quantity unit unitPrice minStock supplier description expiryDate batchNumber isArchived createdAt")
       .lean();
 
     if (!item) {
       return res.status(404).json({ message: "Inventory item not found" });
     }
 
-    await STAFF_logActivity({
-      staffId: req.user.id,
-      actionType: "view-item-details",
-      targetItemId: item._id,
-      description: `Viewed details for ${item.name}`,
-      status: "viewed",
-    });
+    const [itemWithBatches] = await STAFF_attachBatchDataToItems([item]);
 
     return res.status(200).json({
-      data: STAFF_buildItemPayload(item),
+      data: STAFF_buildItemPayload(itemWithBatches),
     });
   } catch (error) {
     return res.status(500).json({ message: error.message });

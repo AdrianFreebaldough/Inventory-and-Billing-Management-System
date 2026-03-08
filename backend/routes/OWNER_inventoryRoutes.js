@@ -11,6 +11,7 @@ import {
   OWNER_archiveProduct,
   OWNER_restoreProduct,
   OWNER_adjustProductStock,
+  OWNER_updateDiscrepancy,
 } from "../controllers/OWNER_inventoryController.js";
 
 const OWNER_router = express.Router();
@@ -56,5 +57,6 @@ OWNER_router.patch(
 );
 
 OWNER_router.patch("/:productId/adjust-stock", OWNER_adjustProductStock);
+OWNER_router.patch("/:productId/discrepancy", OWNER_updateDiscrepancy);
 
 export default OWNER_router;

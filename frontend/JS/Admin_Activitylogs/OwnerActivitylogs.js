@@ -209,64 +209,44 @@ export function initOwnerActivitylogs() {
 
 		return rawItems.map((item) => ({
 			itemId: item?.itemId || "",
+			batchId: item?.batchId || null,
 			itemName: item?.itemName || item?.productName || "Unknown Item",
 			genericName: item?.genericName || "",
-			category: item?.category || "Uncategorized",
 			batchNumber: item?.batchNumber || "",
+			systemStock: Number(item?.systemStock) || 0,
 			expiryDate: item?.expiryDate || null,
-			beginningQty: Number(item?.beginningQty) || 0,
-			itemsRestocked: Number(item?.itemsRestocked) || 0,
-			itemsIssued: Number(item?.itemsIssued) || 0,
-			systemQty: Number(item?.systemQty) || 0,
-			physicalCount: Number(item?.physicalCount) || 0,
-			actualBalance: Number(item?.actualBalance) || 0,
+			dateAdded: item?.dateAdded || null,
+			physicalCount: item?.physicalCount,
 			variance: Number(item?.variance) || 0,
-			checkedBy: item?.checkedBy || null,
-			dateChecked: item?.dateChecked || null,
 		}));
 	};
 
 	const computeReportRow = (item) => {
-		const systemStock = Number(item?.systemQty) || 0;
-		const variance = Number(item?.variance) || 0;
-		const physicalCount = systemStock + variance;
-		const status = variance === 0 ? "Balanced" : "With Variance";
+		const systemStock = Number(item?.systemStock) || 0;
+		const physicalCount = item?.physicalCount != null ? Number(item.physicalCount) : null;
+		const variance = physicalCount != null ? physicalCount - systemStock : 0;
+		const status = physicalCount == null ? "Pending" : variance === 0 ? "Balanced" : "With Variance";
 
 		const formatDate = (d) => {
-			if (!d) return "—";
+			if (!d) return "\u2014";
 			const date = new Date(d);
-			if (isNaN(date.getTime())) return "—";
+			if (isNaN(date.getTime())) return "\u2014";
 			return date.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "2-digit" });
-		};
-
-		const formatDateTime = (d) => {
-			if (!d) return "—";
-			const date = new Date(d);
-			if (isNaN(date.getTime())) return "—";
-			return date.toLocaleString(undefined, { year: "numeric", month: "short", day: "2-digit", hour: "2-digit", minute: "2-digit" });
 		};
 
 		return {
 			itemId: item?.itemId || "",
+			batchId: item?.batchId || null,
 			itemName: item?.itemName || "Unknown Item",
 			genericName: item?.genericName || "",
-			category: item?.category || "Uncategorized",
 			batchNumber: item?.batchNumber || "",
-			expiryDate: formatDate(item?.expiryDate),
 			systemStock,
+			expiryDate: formatDate(item?.expiryDate),
+			dateAdded: formatDate(item?.dateAdded),
 			physicalCount,
 			variance,
 			status,
-			checkedBy: item?.checkedBy || "—",
-			dateChecked: formatDateTime(item?.dateChecked),
 		};
-	};
-
-	const getAuthEmail = () => {
-		const auth = window.IBMSAuth;
-		if (!auth) return "";
-		const payload = auth.getTokenPayload ? auth.getTokenPayload() : null;
-		return payload?.email || localStorage.getItem("userEmail") || "";
 	};
 
 	const renderReportTable = (reportData) => {
@@ -285,14 +265,14 @@ export function initOwnerActivitylogs() {
 					<div class="mb-4 flex items-center justify-between">
 						<div>
 							<h3 class="text-lg font-semibold text-slate-900">Monthly Inventory Report Table</h3>
-							<p class="text-sm text-slate-500">Enter variance values to record physical inventory discrepancies. All other fields are system-generated.</p>
+							<p class="text-sm text-slate-500">Enter physical count values to verify inventory. Variance is auto-calculated.</p>
 						</div>
 						<button id="saveVarianceBtn" class="rounded-lg bg-emerald-600 px-5 py-2.5 text-sm font-medium text-white shadow-sm transition-all hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed hidden">
-							Save Variance
+							Save Physical Count
 						</button>
 					</div>
 					<div class="overflow-x-auto max-h-[600px] overflow-y-auto rounded-lg border border-slate-200">
-						<table class="min-w-full text-sm">
+						<table class="min-w-full text-sm table-fixed">
 							<thead class="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-600 sticky top-0 z-10">
 								<tr>
 									<th class="px-3 py-2">Item Name</th>
@@ -300,10 +280,9 @@ export function initOwnerActivitylogs() {
 									<th class="px-3 py-2">Batch Number</th>
 									<th class="px-3 py-2 text-right">System Stock</th>
 									<th class="px-3 py-2">Expiration Date</th>
-									<th class="px-3 py-2 text-right">Physical Count</th>
-									<th class="px-3 py-2 text-center">Variance</th>
-									<th class="px-3 py-2">Date Checked</th>
-									<th class="px-3 py-2">Checked By</th>
+									<th class="px-3 py-2 text-right w-28" style="width: 7rem; min-width: 7rem; max-width: 7rem;">Physical Count</th>
+									<th class="px-3 py-2 text-center w-28" style="width: 7rem; min-width: 7rem; max-width: 7rem;">Variance</th>
+									<th class="px-3 py-2">Date Added</th>
 									<th class="px-3 py-2 text-center">Status</th>
 								</tr>
 							</thead>
@@ -318,103 +297,107 @@ export function initOwnerActivitylogs() {
 		}
 
 		if (!section || !tbody) {
-			console.error("[LogsReport] renderReportTable: Critical - DOM elements not found even after recovery", {
-				section: Boolean(section),
-				body: Boolean(tbody),
-				domReady: document.readyState,
-			});
+			console.error("[LogsReport] renderReportTable: DOM elements not found even after recovery");
 			return;
 		}
 
 		console.log("[LogsReport] renderReportTable called with", reportData?.length || 0, "items");
 
 		if (!Array.isArray(reportData) || reportData.length === 0) {
-			console.warn("[LogsReport] No data to render");
 			tbody.innerHTML = `
 				<tr>
-					<td colspan="10" class="px-4 py-8 text-center text-sm text-slate-500">
+					<td colspan="9" class="px-4 py-8 text-center text-sm text-slate-500">
 						No inventory data found for the selected month.
 					</td>
 				</tr>
 			`;
 			section.classList.remove("hidden");
 			if (saveBtn) saveBtn.classList.add("hidden");
-			console.log("[LogsReport] Empty state displayed");
 			return;
 		}
 
-		const userEmail = getAuthEmail();
-
-		// Build table rows HTML with editable variance
+		// Build table rows: Physical Count = editable input, Variance = auto-computed
 		const tableRowsHTML = reportData
 			.map((item, index) => {
 				const row = computeReportRow(item);
-				const statusClass = row.status === "Balanced"
-					? "bg-emerald-100 text-emerald-700"
-					: "bg-rose-100 text-rose-700";
+				const statusBadge = (status) => {
+					if (status === "Balanced") return "bg-emerald-100 text-emerald-700";
+					if (status === "Pending") return "bg-slate-100 text-slate-600";
+					return "bg-rose-100 text-rose-700";
+				};
 				const rowClass = row.variance !== 0
 					? "hover:bg-rose-50 bg-rose-50/40"
 					: index % 2 === 1 ? "bg-slate-50/60 hover:bg-slate-100" : "hover:bg-slate-50";
 
+				const pcValue = row.physicalCount != null ? row.physicalCount : "";
+
 				return `
-					<tr class="${rowClass}" data-item-id="${escapeHtml(row.itemId)}" data-system-stock="${row.systemStock}">
+					<tr class="${rowClass}" data-item-id="${escapeHtml(row.itemId)}" data-batch-id="${escapeHtml(row.batchId || "")}" data-system-stock="${row.systemStock}">
 						<td class="px-3 py-2 font-medium text-slate-900">${escapeHtml(row.itemName)}</td>
 						<td class="px-3 py-2 text-slate-700">${escapeHtml(row.genericName)}</td>
-						<td class="px-3 py-2 text-slate-700">${escapeHtml(row.batchNumber) || '<span class="text-slate-400">—</span>'}</td>
-						<td class="px-3 py-2 text-right text-slate-700">${row.systemStock}</td>
+						<td class="px-3 py-2 text-slate-700">${escapeHtml(row.batchNumber) || '<span class="text-slate-400">\u2014</span>'}</td>
+						<td class="px-3 py-2 text-right text-slate-700 font-medium">${row.systemStock}</td>
 						<td class="px-3 py-2 text-slate-700">${row.expiryDate}</td>
-						<td class="px-3 py-2 text-right text-slate-700 physical-count-cell">${row.physicalCount}</td>
-						<td class="px-3 py-2 text-center">
-							<input type="number" 
-								class="variance-input w-20 rounded border border-slate-300 px-2 py-1 text-sm text-center focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-300" 
-								value="${row.variance}" 
-								data-original="${row.variance}"
+						<td class="px-3 py-2 text-right w-28 overflow-hidden" style="width: 7rem; min-width: 7rem; max-width: 7rem;">
+							<input type="number"
+								class="physical-count-input w-full min-w-0 rounded border border-slate-300 bg-white px-2 py-1 text-sm text-right font-medium text-slate-900 focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-300 [appearance:textfield] overflow-x-auto overflow-y-hidden whitespace-nowrap [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+								style="max-width: 100%; min-width: 0; box-sizing: border-box;"
+								value="${pcValue}"
+								placeholder="\u2014"
+								data-original="${pcValue}"
+								min="0"
 								step="1" />
 						</td>
-						<td class="px-3 py-2 text-slate-600 date-checked-cell text-xs">${row.checkedBy !== "—" ? row.dateChecked : '<span class="text-slate-400">—</span>'}</td>
-						<td class="px-3 py-2 text-slate-600 checked-by-cell text-xs">${row.checkedBy !== "—" ? escapeHtml(row.checkedBy) : '<span class="text-slate-400">—</span>'}</td>
+						<td class="px-3 py-2 text-center w-28 variance-cell font-medium whitespace-nowrap overflow-hidden text-ellipsis overflow-x-auto ${row.variance !== 0 ? "text-rose-700" : "text-slate-600"}" style="width: 7rem; min-width: 7rem; max-width: 7rem;">${row.physicalCount != null ? Math.round(row.variance) : "\u2014"}</td>
+						<td class="px-3 py-2 text-slate-600 text-xs">${row.dateAdded}</td>
 						<td class="px-3 py-2 text-center status-cell">
-							<span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${statusClass}">${row.status}</span>
+							<span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${statusBadge(row.status)}">${row.status}</span>
 						</td>
 					</tr>
 				`;
 			})
 			.join("");
 
-		// Insert the HTML into the table body
 		tbody.innerHTML = tableRowsHTML;
 
-		// Attach variance input listeners for real-time Physical Count computation
-		tbody.querySelectorAll(".variance-input").forEach((input) => {
+		// Attach Physical Count input listeners for real-time Variance computation
+		tbody.querySelectorAll(".physical-count-input").forEach((input) => {
 			input.addEventListener("input", () => {
 				const tr = input.closest("tr");
 				const systemStock = Number(tr.dataset.systemStock) || 0;
-				const varianceVal = Number(input.value) || 0;
-				const physicalCount = systemStock + varianceVal;
+				const pcVal = input.value !== "" ? Math.round(Number(input.value)) : null;
+				const variance = pcVal != null ? pcVal - systemStock : null;
 
-				// Update Physical Count cell
-				const pcCell = tr.querySelector(".physical-count-cell");
-				if (pcCell) pcCell.textContent = physicalCount;
+				// Update Variance cell
+				const varCell = tr.querySelector(".variance-cell");
+				if (varCell) {
+					if (variance != null) {
+						varCell.textContent = Math.round(variance);
+						varCell.className = `px-3 py-2 text-center w-28 variance-cell font-medium whitespace-nowrap overflow-hidden text-ellipsis overflow-x-auto ${variance !== 0 ? "text-rose-700" : "text-slate-600"}`;
+						varCell.style.width = "7rem";
+						varCell.style.minWidth = "7rem";
+						varCell.style.maxWidth = "7rem";
+					} else {
+						varCell.textContent = "\u2014";
+						varCell.className = "px-3 py-2 text-center w-28 variance-cell font-medium whitespace-nowrap overflow-hidden text-ellipsis overflow-x-auto text-slate-600";
+						varCell.style.width = "7rem";
+						varCell.style.minWidth = "7rem";
+						varCell.style.maxWidth = "7rem";
+					}
+				}
 
 				// Update status
 				const statusCell = tr.querySelector(".status-cell");
 				if (statusCell) {
-					const isBalanced = varianceVal === 0;
-					const statusClass = isBalanced ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700";
-					statusCell.innerHTML = `<span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${statusClass}">${isBalanced ? "Balanced" : "With Variance"}</span>`;
-				}
-
-				// Update date checked and checked by preview
-				const dateCell = tr.querySelector(".date-checked-cell");
-				const checkedByCell = tr.querySelector(".checked-by-cell");
-				const original = Number(input.dataset.original) || 0;
-				if (varianceVal !== original) {
-					if (dateCell) dateCell.innerHTML = `<span class="text-blue-600 italic">On save</span>`;
-					if (checkedByCell) checkedByCell.innerHTML = `<span class="text-blue-600 italic">${escapeHtml(userEmail)}</span>`;
+					let status, cls;
+					if (variance == null) { status = "Pending"; cls = "bg-slate-100 text-slate-600"; }
+					else if (variance === 0) { status = "Balanced"; cls = "bg-emerald-100 text-emerald-700"; }
+					else { status = "With Variance"; cls = "bg-rose-100 text-rose-700"; }
+					statusCell.innerHTML = `<span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${cls}">${status}</span>`;
 				}
 
 				// Update row styling
-				if (varianceVal !== 0) {
+				if (variance != null && variance !== 0) {
 					tr.className = "hover:bg-rose-50 bg-rose-50/40";
 				} else {
 					const idx = Array.from(tbody.children).indexOf(tr);
@@ -423,17 +406,13 @@ export function initOwnerActivitylogs() {
 			});
 		});
 
-		// Show Save Variance button
+		// Show Save button
 		if (saveBtn) saveBtn.classList.remove("hidden");
 
 		// Force the section to be visible
 		section.classList.remove("hidden");
-		
-		console.log("[LogsReport] ✓ Table rendered successfully:", {
-			rows: reportData.length,
-			sectionVisible: !section.classList.contains("hidden"),
-			tbodyHasContent: tbody.children.length > 0
-		});
+
+		console.log("[LogsReport] Table rendered:", reportData.length, "rows");
 	};
 
 	const parseMonthlyReportResponse = (response) => {
@@ -457,13 +436,13 @@ export function initOwnerActivitylogs() {
 
 		const summary = {
 			totalItems: Number(rawSummary.totalItems),
-			totalIssued: Number(rawSummary.totalIssued),
+			totalSystemStock: Number(rawSummary.totalSystemStock),
 			itemsWithVariance: Number(rawSummary.itemsWithVariance),
 		};
 
 		if (!Number.isFinite(summary.totalItems)) summary.totalItems = reportData.length;
-		if (!Number.isFinite(summary.totalIssued)) {
-			summary.totalIssued = reportData.reduce((sum, item) => sum + item.itemsIssued, 0);
+		if (!Number.isFinite(summary.totalSystemStock)) {
+			summary.totalSystemStock = reportData.reduce((sum, item) => sum + item.systemStock, 0);
 		}
 		if (!Number.isFinite(summary.itemsWithVariance)) {
 			summary.itemsWithVariance = reportData.filter((item) => item.variance !== 0).length;
@@ -545,7 +524,7 @@ export function initOwnerActivitylogs() {
 				if (currentReportData.length === 0) {
 					fallbackBody.innerHTML = `
 						<tr>
-							<td colspan="10" class="px-4 py-8 text-center text-sm text-slate-500">
+							<td colspan="9" class="px-4 py-8 text-center text-sm text-slate-500">
 								No inventory data found for the selected month.
 							</td>
 						</tr>
@@ -561,10 +540,9 @@ export function initOwnerActivitylogs() {
 									<td class="px-3 py-2 text-slate-700">${escapeHtml(row.batchNumber || "-")}</td>
 									<td class="px-3 py-2 text-right text-slate-700">${row.systemStock}</td>
 									<td class="px-3 py-2 text-slate-700">${row.expiryDate}</td>
-									<td class="px-3 py-2 text-right text-slate-700">${row.physicalCount}</td>
-									<td class="px-3 py-2 text-right text-slate-700">${row.variance}</td>
-									<td class="px-3 py-2 text-slate-600 text-xs">${row.dateChecked}</td>
-									<td class="px-3 py-2 text-slate-600 text-xs">${escapeHtml(row.checkedBy)}</td>
+									<td class="px-3 py-2 text-right text-slate-700">${row.physicalCount != null ? row.physicalCount : "\u2014"}</td>
+									<td class="px-3 py-2 text-center text-slate-700">${row.physicalCount != null ? row.variance : "\u2014"}</td>
+									<td class="px-3 py-2 text-slate-600 text-xs">${row.dateAdded}</td>
 									<td class="px-3 py-2 text-center text-xs">${row.status}</td>
 								</tr>
 							`;
@@ -583,9 +561,9 @@ export function initOwnerActivitylogs() {
 		if (_chartTitle) _chartTitle.textContent = `Inventory Overview — ${selectedMonthText}`;
 		if (_chartSubtitle) {
 			const itemCount = summary.totalItems || currentReportData.length;
-			const issuedCount = summary.totalIssued || 0;
+			const stockCount = summary.totalSystemStock || 0;
 			const varianceCount = summary.itemsWithVariance || 0;
-			_chartSubtitle.textContent = `${itemCount} items tracked  \u2022  ${issuedCount} total issued  \u2022  ${varianceCount} with variance`;
+			_chartSubtitle.textContent = `${itemCount} batch rows  \u2022  ${stockCount} total system stock  \u2022  ${varianceCount} with variance`;
 		}
 
 		// ── STEP 4: Render TABLE FIRST (guaranteed to show even if charts fail) ──
@@ -699,21 +677,18 @@ export function initOwnerActivitylogs() {
 				return false;
 			}
 
-			// Prepare data arrays
-			const labels = reportData.map((item) => item.itemName);
-			const beginningData = reportData.map((item) => item.beginningQty);
-			const issuedData = reportData.map((item) => item.itemsIssued);
-			const systemData = reportData.map((item) => item.systemQty);
-			const actualData = reportData.map((item) => item.actualBalance);
+			// Prepare data arrays (batch-level)
+			const labels = reportData.map((item) => `${item.itemName}${item.batchNumber ? " (" + item.batchNumber + ")" : ""}`);
+			const systemData = reportData.map((item) => item.systemStock);
+			const physicalData = reportData.map((item) => item.physicalCount != null ? item.physicalCount : 0);
 			const varianceData = reportData.map((item) => item.variance);
 
 			// ── Inventory Overview (grouped bar) ──
 			if (overviewCanvas) {
 			const parentW = overviewCanvas.parentElement.clientWidth;
 			const parentH = overviewCanvas.parentElement.clientHeight;
-			console.log("[LogsReport] Overview canvas parent:", parentW, "×", parentH);
 
-			const maxVal = Math.max(...beginningData, ...issuedData, ...systemData, ...actualData, 10);
+			const maxVal = Math.max(...systemData, ...physicalData, 10);
 			const yMax = Math.ceil(maxVal * 1.2 / 10) * 10;
 
 			inventoryChartInstance = new ChartJS(overviewCanvas, {
@@ -722,23 +697,7 @@ export function initOwnerActivitylogs() {
 					labels,
 					datasets: [
 						{
-							label: "Beginning Qty",
-							data: beginningData,
-							backgroundColor: "rgba(99, 102, 241, 0.75)",
-							borderColor: "rgba(99, 102, 241, 1)",
-							borderWidth: 1,
-							borderRadius: 4,
-						},
-						{
-							label: "Items Issued",
-							data: issuedData,
-							backgroundColor: "rgba(244, 63, 94, 0.75)",
-							borderColor: "rgba(244, 63, 94, 1)",
-							borderWidth: 1,
-							borderRadius: 4,
-						},
-						{
-							label: "System Qty",
+							label: "System Stock",
 							data: systemData,
 							backgroundColor: "rgba(14, 165, 233, 0.75)",
 							borderColor: "rgba(14, 165, 233, 1)",
@@ -746,8 +705,8 @@ export function initOwnerActivitylogs() {
 							borderRadius: 4,
 						},
 						{
-							label: "Actual Balance",
-							data: actualData,
+							label: "Physical Count",
+							data: physicalData,
 							backgroundColor: "rgba(16, 185, 129, 0.75)",
 							borderColor: "rgba(16, 185, 129, 1)",
 							borderWidth: 1,
@@ -915,13 +874,12 @@ export function initOwnerActivitylogs() {
 					<tr>
 						<td>${escapeHtml(row.itemName)}</td>
 						<td>${escapeHtml(row.genericName)}</td>
-						<td>${escapeHtml(row.batchNumber) || "—"}</td>
+						<td>${escapeHtml(row.batchNumber) || "\u2014"}</td>
 						<td class="num">${row.systemStock}</td>
 						<td>${row.expiryDate}</td>
-						<td class="num">${row.physicalCount}</td>
-						<td class="num">${row.variance}</td>
-						<td>${row.dateChecked}</td>
-						<td>${escapeHtml(row.checkedBy)}</td>
+						<td class="num">${row.physicalCount != null ? row.physicalCount : "\u2014"}</td>
+						<td class="num">${row.physicalCount != null ? row.variance : "\u2014"}</td>
+						<td>${row.dateAdded}</td>
 						<td>${row.status}</td>
 					</tr>
 				`;
@@ -1038,8 +996,7 @@ export function initOwnerActivitylogs() {
 								<th>Expiration Date</th>
 								<th>Physical Count</th>
 								<th>Variance</th>
-								<th>Date Checked</th>
-								<th>Checked By</th>
+								<th>Date Added</th>
 								<th>Status</th>
 							</tr>
 						</thead>
@@ -1081,21 +1038,22 @@ export function initOwnerActivitylogs() {
 		const changedItems = [];
 
 		rows.forEach((tr) => {
-			const input = tr.querySelector(".variance-input");
-			if (!input) return;
-			const currentVal = Number(input.value) || 0;
-			const originalVal = Number(input.dataset.original) || 0;
+			const input = tr.querySelector(".physical-count-input");
+			if (!input || input.value === "") return;
+			const currentVal = Number(input.value);
+			const originalVal = input.dataset.original !== "" ? Number(input.dataset.original) : null;
 			if (currentVal !== originalVal) {
 				changedItems.push({
 					itemId: tr.dataset.itemId,
-					variance: currentVal,
+					batchId: tr.dataset.batchId || null,
+					physicalCount: currentVal,
 					systemStock: Number(tr.dataset.systemStock) || 0,
 				});
 			}
 		});
 
 		if (changedItems.length === 0) {
-			alert("No variance changes to save.");
+			alert("No physical count changes to save.");
 			return;
 		}
 
@@ -1114,17 +1072,19 @@ export function initOwnerActivitylogs() {
 				}),
 			});
 
-			console.log("[LogsReport] Variance saved:", response);
+			console.log("[LogsReport] Physical count saved:", response);
 
 			// Update local data with saved results
 			if (Array.isArray(response?.data)) {
 				response.data.forEach((saved) => {
-					const idx = currentReportData.findIndex((d) => d.itemId === saved.itemId?.toString());
+					const idx = currentReportData.findIndex((d) => {
+						const matchItem = d.itemId === saved.itemId?.toString();
+						const matchBatch = (d.batchId || null) === (saved.batchId || null);
+						return matchItem && matchBatch;
+					});
 					if (idx !== -1) {
 						currentReportData[idx].variance = saved.variance;
 						currentReportData[idx].physicalCount = saved.physicalCount;
-						currentReportData[idx].checkedBy = saved.checkedBy;
-						currentReportData[idx].dateChecked = saved.dateChecked;
 					}
 				});
 			}
@@ -1132,14 +1092,14 @@ export function initOwnerActivitylogs() {
 			// Re-render table with updated data
 			renderReportTable(currentReportData);
 
-			alert(`Variance saved for ${changedItems.length} item(s) successfully.`);
+			alert(`Physical count saved for ${changedItems.length} item(s) successfully.`);
 		} catch (error) {
-			console.error("[LogsReport] Failed to save variance:", error);
-			alert("Failed to save variance: " + (error.message || "Unknown error"));
+			console.error("[LogsReport] Failed to save physical count:", error);
+			alert("Failed to save: " + (error.message || "Unknown error"));
 		} finally {
 			if (saveBtn) {
 				saveBtn.disabled = false;
-				saveBtn.textContent = "Save Variance";
+				saveBtn.textContent = "Save Physical Count";
 			}
 		}
 	};
@@ -1150,9 +1110,8 @@ export function initOwnerActivitylogs() {
 	// Generate Report Button
 	generateReportBtn?.addEventListener("click", generateLogsReport);
 
-	// Save Variance Button
+	// Save Physical Count Button
 	document.getElementById("saveVarianceBtn")?.addEventListener("click", saveVariance);
-	generateReportBtn?.addEventListener("click", generateLogsReport);
 
 	const renderSummary = (summary) => {
 		if (totalSaleEl) totalSaleEl.textContent = String(summary?.totalSale || 0);

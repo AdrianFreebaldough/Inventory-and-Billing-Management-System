@@ -185,6 +185,17 @@ document.addEventListener("DOMContentLoaded", () => {
   const profileBtn        = document.getElementById("profileBtn");
   const logoutBtn         = document.getElementById("logoutBtn");
 
+  const MAIN_CONTENT_BASE_CLASSES = "flex-1 overflow-y-auto p-6 pt-20";
+
+  function ensureOwnerLayoutShell() {
+    if (!mainContent) return;
+    mainContent.className = MAIN_CONTENT_BASE_CLASSES;
+    mainContent.style.position = "relative";
+    mainContent.style.top = "";
+    mainContent.style.marginTop = "";
+    mainContent.style.transform = "";
+  }
+
   /* ================= OWNER INFO ================= */
   const ownerInfo = getOwnerDisplayInfo();
   if (staffNameEl)     staffNameEl.textContent     = ownerInfo.fullName;
@@ -236,6 +247,7 @@ document.addEventListener("DOMContentLoaded", () => {
   async function loadDashboard() {
     setActive(navDashboard);
     clearInterval(refreshTimer);
+    ensureOwnerLayoutShell();
     renderLoadingSkeleton();
 
     try {
@@ -701,6 +713,7 @@ document.addEventListener("DOMContentLoaded", () => {
   /* ================= INVENTORY ================= */
   async function loadInventory() {
     setActive(navInventory);
+    ensureOwnerLayoutShell();
 
     try {
       const res = await fetch("../../HTML/admin_Inventory/admin_Inventory.html");
@@ -721,6 +734,7 @@ document.addEventListener("DOMContentLoaded", () => {
   /* ================= USER MANAGEMENT ================= */
   async function loadUserManagement() {
     setActive(navUserManagement);
+    ensureOwnerLayoutShell();
 
     try {
       const res = await fetch("../../HTML/Owner_UserManagement/UserManagement.html");
@@ -741,6 +755,7 @@ document.addEventListener("DOMContentLoaded", () => {
   /* ================= REPORTS ================= */
   async function loadReports() {
     setActive(navReports);
+    ensureOwnerLayoutShell();
 
     try {
       const res = await fetch("../../HTML/admin_Reports/admin_Reports_Sales/admin_Reports_Sales.html");
@@ -760,6 +775,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   /* ================= USER PROFILE ================= */
   async function loadUserProfile() {
+    ensureOwnerLayoutShell();
     try {
       mainContent.innerHTML = `
         <div class="flex items-center justify-center p-8">
@@ -786,6 +802,7 @@ document.addEventListener("DOMContentLoaded", () => {
   /* ================= STOCK LOGS ================= */
   async function loadStockLogs() {
     setActive(navStockLogs);
+    ensureOwnerLayoutShell();
 
     try {
       const res = await fetch(`../../HTML/Admin_Activitylogs/OwnerActivitylogs.html?v=${Date.now()}`);
@@ -806,9 +823,10 @@ document.addEventListener("DOMContentLoaded", () => {
   function loadExpenses() {
     setActive(navExpenses);
     clearInterval(refreshTimer);
+    ensureOwnerLayoutShell();
 
     mainContent.innerHTML = `
-      <div class="mx-auto max-w-7xl">
+      <div class="w-full">
         <div class="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
           <iframe
             title="Owner Expenses"

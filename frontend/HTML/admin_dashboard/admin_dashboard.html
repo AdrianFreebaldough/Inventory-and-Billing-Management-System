@@ -72,14 +72,10 @@
 
 
 <!-- ===== MAIN ===== -->
-<main class="ml-64 flex flex-col w-full">
-
+<main class="ml-64 flex min-h-screen flex-1 flex-col">
 
   <!-- HEADER -->
-  <header class="relative z-20 h-16 flex justify-end items-center px-4 bg-white border-b">
-
-
-  <header class="h-16 flex justify-end items-center px-4 bg-white border-b">
+  <header class="fixed left-64 right-0 top-0 z-20 h-16 flex justify-end items-center px-4 bg-white border-b">
 
     <div class="flex items-center gap-3">
       <div id="notificationWidget" class="relative"></div>
@@ -96,12 +92,12 @@
   <!-- 🔥 DYNAMIC CONTENT -->
   <section
     id="mainContent"
-    class="p-6 flex-1 overflow-y-auto">
+    class="flex-1 overflow-y-auto p-6 pt-20">
     <!-- Dashboard content will be injected here by JavaScript -->
   </section>
 
 </main>
 
-<script type="module" src="../../js/admin_dashboard/admin_dashboard.js?v=20260308-logsfix"></script>
+<script type="module" src="../../js/admin_dashboard/admin_dashboard.js?v=20260308-layoutfix2"></script>
 </body>
 </html>

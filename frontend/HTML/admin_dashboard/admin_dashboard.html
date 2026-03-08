@@ -4,7 +4,12 @@
   <meta charset="UTF-8" />
   <title>Admin Dashboard</title>
   <link rel="stylesheet" href="../../css/output.css" />
+  <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="../../JS/utils/authSession.js"></script>
+  <script>
+    window.IBMSAuth?.protectPage({ requiredRole: "owner" });
+  </script>
 </head>
 
 <body class="flex min-h-screen bg-gray-50">
@@ -13,11 +18,10 @@
 <aside class="w-64 bg-white border-r flex flex-col fixed h-screen">
 
   <!-- Logo -->
-  <div class="p-6 flex items-center gap-3 border-b">
-    <img src="../../assets/cross_icon.png" alt="Medical Cross" class="w-15 h-15 bg-blue-600 mb-6 rounded-lg">
+  <div class="h-16 px-4 flex items-center gap-2 border-b">
+    <img src="../../assets/zealLogo.png" alt="ZCMMF Logo" class="h-9 w-9 object-contain rounded-md shrink-0">
     <div>
-      <p class="font-semibold">Zeal Community Medical Mission Foundation</p>
-      <p class="text-sm text-gray-500">Admin Portal</p>
+      <p class="text-base font-semibold text-gray-900 leading-tight">ZCMMF</p>
     </div>
   </div>
 
@@ -44,6 +48,11 @@
   <span>Reports</span>
 </a>
 
+<!-- Expenses -->
+    <a href="#" id="navExpenses" class="nav-link flex items-center gap-3 px-4 py-2 rounded-lg text-gray-700 hover:bg-gray-100">
+  <span>Expenses</span>
+</a>
+
 <!-- Stock Logs (placeholder) -->
     <a href="#" id="navStockLogs" class="nav-link flex items-center gap-3 px-4 py-2 rounded-lg text-gray-700 hover:bg-gray-100">
   <span>Stock Logs</span>
@@ -65,14 +74,11 @@
 <!-- ===== MAIN ===== -->
 <main class="ml-64 flex flex-col w-full">
 
-  <!-- HEADER -->
-  <header class="flex justify-end items-center px-6 py-4 bg-white border-b">
-    <div class="flex items-center gap-5">
-      <a href="#" id="navSettings" class="relative p-2 rounded-full hover:bg-gray-100 transition-colors">
-        <img src="../../assets/settings_icon.png" alt="Settings" class="w-11 h-11 object-contain">
-      </a>
-      <button id="profileBtn" class="flex items-center gap-5 hover:bg-gray-50 rounded-lg px-3 py-2 transition-colors cursor-pointer">
-        <div id="staffAvatar" class="w-9 h-9 bg-blue-600 rounded-full text-white flex items-center justify-center font-semibold">A</div>
+  <header class="h-16 flex justify-end items-center px-4 bg-white border-b">
+    <div class="flex items-center gap-3">
+      <div id="notificationWidget" class="scale-90 origin-center"></div>
+      <button id="profileBtn" class="flex items-center gap-3 hover:bg-gray-50 rounded-lg px-2 py-1 transition-colors cursor-pointer">
+        <div id="staffAvatar" class="w-8 h-8 bg-blue-600 rounded-full text-white flex items-center justify-center font-semibold text-sm">A</div>
         <div>
           <p id="staffName" class="font-medium">Staff Name</p>
           <p id="staffUsername" class="text-xs text-left text-gray-500">username</p>
@@ -90,6 +96,6 @@
 
 </main>
 
-<script type="module" src="../../js/admin_dashboard/admin_dashboard.js"></script>
+<script type="module" src="../../js/admin_dashboard/admin_dashboard.js?v=20260308-logsfix"></script>
 </body>
 </html>

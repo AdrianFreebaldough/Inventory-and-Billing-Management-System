@@ -5,14 +5,13 @@
 	<meta name="viewport" content="width=device-width, initial-scale=1.0" />
 	<title>Staff - Expenses</title>
 	<script src="https://cdn.tailwindcss.com"></script>
+	<script src="../../JS/utils/authSession.js"></script>
+	<script>
+		window.IBMSAuth?.protectPage({ requiredRole: "staff" });
+	</script>
 </head>
 <body class="bg-slate-100">
 	<div class="container mx-auto p-6">
-		<div class="mb-6">
-			<h1 class="text-2xl font-bold text-slate-900">My Expenses</h1>
-			<p class="text-slate-600">Submit and track your expense requests</p>
-		</div>
-
 		<!-- Submit Expense Form -->
 		<div class="bg-white rounded-lg shadow-md p-6 mb-6">
 			<h2 class="text-lg font-semibold mb-4">Submit New Expense</h2>

@@ -405,7 +405,7 @@ export const STAFF_createRestockRequest = async (req, res) => {
 
 export const STAFF_archiveItem = async (req, res) => {
   const { productId } = req.params;
-  const { reason } = req.body;
+  const reason = typeof req.body?.reason === "string" ? req.body.reason.trim() : "";
   const session = await mongoose.startSession();
 
   try {
@@ -434,7 +434,7 @@ export const STAFF_archiveItem = async (req, res) => {
             statusAtArchive: product.status,
             archivedBy: req.user.id,
             archivedAt: new Date(),
-            archiveReason: reason ? String(reason).trim() : "Staff archived product",
+            archiveReason: reason || "Staff archived product",
             snapshot,
           },
         ],
@@ -459,7 +459,7 @@ export const STAFF_archiveItem = async (req, res) => {
                 quantityChange: 0,
                 quantityAfter: product.quantity,
               },
-              notes: reason ? String(reason).trim() : "Staff archived product",
+              notes: reason || "Staff archived product",
               metadata: { archivedCollection: "archived_products" },
             },
           },

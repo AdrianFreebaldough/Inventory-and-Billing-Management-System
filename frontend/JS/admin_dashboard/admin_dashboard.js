@@ -164,6 +164,11 @@ function movementBadge(type) {
    MAIN  – DOMContentLoaded
    ════════════════════════════════════════════════════════════════════ */
 document.addEventListener("DOMContentLoaded", () => {
+  const auth = window.IBMSAuth;
+  if (auth) {
+    auth.protectPage({ requiredRole: "owner" });
+    if (!auth.isSessionValid("owner")) return;
+  }
 
   /* ================= ELEMENTS ================= */
   const mainContent       = document.getElementById("mainContent");
@@ -178,6 +183,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const staffUsernameEl   = document.getElementById("staffUsername");
   const staffAvatarEl     = document.getElementById("staffAvatar");
   const profileBtn        = document.getElementById("profileBtn");
+  const logoutBtn         = document.getElementById("logoutBtn");
 
   /* ================= OWNER INFO ================= */
   const ownerInfo = getOwnerDisplayInfo();
@@ -788,7 +794,7 @@ document.addEventListener("DOMContentLoaded", () => {
       mainContent.innerHTML = await res.text();
       await new Promise((r) => setTimeout(r, 150));
 
-      const module = await import("../Admin_Activitylogs/OwnerActivitylogs.js");
+      const module = await import(`../Admin_Activitylogs/OwnerActivitylogs.js?v=${Date.now()}`);
       if (typeof module.initOwnerActivitylogs !== "function") throw new Error("initOwnerActivitylogs() missing");
       module.initOwnerActivitylogs();
     } catch (error) {
@@ -797,9 +803,21 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  function goToOwnerExpensesPage() {
+  function loadExpenses() {
+    setActive(navExpenses);
     clearInterval(refreshTimer);
-    window.location.href = "../../HTML/OWNER_Expenses/OWNER_Expenses.html";
+
+    mainContent.innerHTML = `
+      <div class="mx-auto max-w-7xl">
+        <div class="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+          <iframe
+            title="Owner Expenses"
+            src="../../HTML/OWNER_Expenses/OWNER_Expenses.html"
+            class="h-[calc(100vh-220px)] min-h-[560px] w-full border-0"
+          ></iframe>
+        </div>
+      </div>
+    `;
   }
 
   /* ================= EVENTS ================= */
@@ -825,7 +843,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   navExpenses?.addEventListener("click", (e) => {
     e.preventDefault();
-    goToOwnerExpensesPage();
+    loadExpenses();
   });
 
   profileBtn.addEventListener("click", (e) => {
@@ -837,6 +855,18 @@ document.addEventListener("DOMContentLoaded", () => {
     e.preventDefault();
     loadStockLogs();
   });
+
+  if (auth) {
+    auth.bindLogoutButton(logoutBtn, {
+      redirectTo: "../../HTML/loginPage/loginPage.html",
+      replace: true,
+      confirmBeforeLogout: true,
+      confirmTitle: "Confirm Logout",
+      confirmMessage: "Are you sure you want to log out?",
+      confirmButtonText: "Logout",
+      cancelButtonText: "Cancel",
+    });
+  }
 
   /* ================= DEFAULT ================= */
   loadDashboard();
@@ -850,4 +880,12 @@ document.addEventListener("DOMContentLoaded", () => {
     window.notificationWidget = notificationWidget;
     notificationWidget.init();
   }
+
+  // Expose navigation functions globally for notification widget
+  window.loadInventory = loadInventory;
+  window.loadExpenses = loadExpenses;
+  window.loadReports = loadReports;
+  window.loadUserManagement = loadUserManagement;
+  window.loadStockLogs = loadStockLogs;
+  window.loadDashboard = loadDashboard;
 });

@@ -17,6 +17,7 @@ const API = {
   archiveProduct:    (id) => `/api/owner/inventory/${id}/archive`,
   restoreProduct:    (id) => `/api/owner/inventory/${id}/restore`,
   adjustStock:       (id) => `/api/owner/inventory/${id}/adjust-stock`,
+  updateDiscrepancy: (id) => `/api/owner/inventory/${id}/discrepancy`,
 };
 
 /* ================= LOCAL UI STATE ================= */
@@ -30,6 +31,8 @@ let currentRestockStatusFilter = "all";
 let currentRestockCategoryFilter = "all";
 let showArchivedItems = false;
 let showLowStockOnly = false;
+let currentInventoryPage = 1;
+const INVENTORY_ITEMS_PER_PAGE = 8;
 
 /* ================= STATUS MAPS  (DB → UI) ================= */
 const DB_STATUS_TO_UI = {
@@ -70,10 +73,33 @@ const STATUS_DISPLAY = {
   'out-of-stock': 'Out of Stock', archived: 'Archived', approved: 'Approved', denied: 'Denied',
 };
 
+const STATUS_SORT_PRIORITY = {
+  pending: 0,
+  'out-of-stock': 1,
+  'low-stock': 2,
+  'in-stock': 3,
+};
+
 const Z_INDEX = { MODAL_BASE: 10000, MODAL_OVERLAY: 9999, TOAST: 20000 };
+const EXPIRY_WARNING_DAYS = 7;
 
 /* ================= DATA MAPPING (backend → UI) ================= */
 function mapBackendItemToUI(p) {
+  const batches = Array.isArray(p.batches)
+    ? p.batches.map((batch) => ({
+        id: batch._id,
+        batchNumber: batch.batchNumber || "—",
+        quantity: Number(batch.quantity ?? 0),
+        supplier: batch.supplier || "—",
+        createdAt: batch.createdAt || null,
+        expiryDateISO: batch.expiryDate ? new Date(batch.expiryDate).toISOString().split("T")[0] : "",
+        expiryDate: batch.expiryDate ? formatDateDisplay(batch.expiryDate, "N/A") : "N/A",
+      }))
+    : [];
+
+  const nearestExpiry = p.nearestExpiryDate || p.expiryDate || null;
+  const batchCount = Number.isFinite(Number(p.batchCount)) ? Number(p.batchCount) : batches.length;
+
   return {
     id:              p._id,
     name:            p.name || "",
@@ -82,14 +108,31 @@ function mapBackendItemToUI(p) {
     currentQuantity: p.quantity ?? 0,
     minStock:        p.minStock ?? 10,
     unit:            p.unit || "pcs",
-    supplier:        p.supplier || "—",
+    supplier:        p.nearestBatchSupplier || p.supplier || "—",
     status:          p.isArchived ? "archived" : (DB_STATUS_TO_UI[p.status] || "in-stock"),
-    expiryDate:      p.expiryDate ? new Date(p.expiryDate).toLocaleDateString("en-US") : "—",
-    expiryDateISO:   p.expiryDate ? new Date(p.expiryDate).toISOString().split("T")[0] : "",
-    batchNumber:     p.batchNumber || "—",
+    expiryDate:      nearestExpiry ? formatDateDisplay(nearestExpiry, "—") : "—",
+    expiryDateISO:   nearestExpiry ? new Date(nearestExpiry).toISOString().split("T")[0] : "",
+    batchNumber:     p.nearestBatchNumber || p.batchNumber || "—",
+    batchCount,
+    batches,
     archived:        !!p.isArchived,
     price:           p.unitPrice ?? 0,
     description:     p.description || "",
+    genericName:     p.genericName || "",
+    brandName:       p.brandName || p.name || "",
+    medicineName:    p.medicineName || p.name || "",
+    dosageForm:      p.dosageForm || "",
+    strength:        p.strength || "",
+    expectedRemaining: Number.isFinite(Number(p.expectedRemaining))
+      ? Number(p.expectedRemaining)
+      : Number(p.quantity ?? 0),
+    physicalCount: Number.isFinite(Number(p.physicalCount))
+      ? Number(p.physicalCount)
+      : Number(p.expectedRemaining ?? p.quantity ?? 0),
+    variance: Number.isFinite(Number(p.variance))
+      ? Number(p.variance)
+      : Number(p.physicalCount ?? p.quantity ?? 0) - Number(p.expectedRemaining ?? p.quantity ?? 0),
+    discrepancyStatus: p.discrepancyStatus || "Balanced",
   };
 }
 
@@ -188,6 +231,116 @@ function getFilterConfig(status)     { return FILTER_CONFIG[normalizeStatus(stat
 function getStatusColors(status)     { return STATUS_COLORS[normalizeStatus(status)]  || STATUS_COLORS["in-stock"]; }
 function getStatusDisplayText(status){ return STATUS_DISPLAY[normalizeStatus(status)] || "In Stock"; }
 function formatCategory(cat)         { return cat ? cat.split(/[-_\s]+/).map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(" ") : ""; }
+function getStatusSortPriority(status){
+  const normalized = normalizeStatus(status);
+  return Object.prototype.hasOwnProperty.call(STATUS_SORT_PRIORITY, normalized)
+    ? STATUS_SORT_PRIORITY[normalized]
+    : Number.MAX_SAFE_INTEGER;
+}
+
+function formatDateDisplay(value, fallback = "N/A") {
+  if (!value) return fallback;
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return fallback;
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+
+function getExpiryMeta(expiryValue) {
+  if (!expiryValue) {
+    return {
+      date: null,
+      diffDays: null,
+      badgeText: "Unknown",
+      badgeClass: "text-xs font-medium text-gray-600",
+      dotHtml: "",
+    };
+  }
+
+  const date = new Date(expiryValue);
+  if (Number.isNaN(date.getTime())) {
+    return {
+      date: null,
+      diffDays: null,
+      badgeText: "Unknown",
+      badgeClass: "text-xs font-medium text-gray-600",
+      dotHtml: "",
+    };
+  }
+
+  const diffDays = Math.ceil((date - new Date()) / 86400000);
+  if (diffDays < 0) {
+    return {
+      date,
+      diffDays,
+      badgeText: "Expired",
+      badgeClass: "text-xs font-medium text-red-700",
+      dotHtml: '<span class="w-3 h-3 rounded-full bg-red-600 inline-block ml-1" title="Expired"></span>',
+    };
+  }
+
+  if (diffDays <= EXPIRY_WARNING_DAYS) {
+    return {
+      date,
+      diffDays,
+      badgeText: "Expiring Soon",
+      badgeClass: "text-xs font-medium text-red-600",
+      dotHtml: '<span class="w-3 h-3 rounded-full bg-red-500 inline-block ml-1" title="Expiring soon"></span>',
+    };
+  }
+
+  if (diffDays <= 30) {
+    return {
+      date,
+      diffDays,
+      badgeText: "Expiring Soon",
+      badgeClass: "text-xs font-medium text-orange-600",
+      dotHtml: '<span class="w-3 h-3 rounded-full bg-orange-400 inline-block ml-1" title="Expiring soon"></span>',
+    };
+  }
+
+  return {
+    date,
+    diffDays,
+    badgeText: "Safe",
+    badgeClass: "text-xs font-medium text-green-600",
+    dotHtml: "",
+  };
+}
+
+function getModalStatusTextClass(status) {
+  const normalized = normalizeStatus(status);
+  if (normalized === "in-stock") return "text-sm font-medium text-green-600";
+  if (normalized === "low-stock") return "text-sm font-medium text-orange-600";
+  if (normalized === "out-of-stock") return "text-sm font-medium text-red-700";
+  if (normalized === "pending") return "text-sm font-medium text-yellow-600";
+  if (normalized === "archived") return "text-sm font-medium text-gray-600";
+  return "text-sm font-medium text-gray-700";
+}
+
+function escapeHtml(text) {
+  return String(text ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+function generateBatchNumber(request) {
+  const now = new Date();
+  const stamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}${String(now.getHours()).padStart(2, "0")}${String(now.getMinutes()).padStart(2, "0")}`;
+  const key = (request?.itemName || "ITEM").replace(/[^A-Za-z0-9]/g, "").slice(0, 4).toUpperCase() || "ITEM";
+  return `RST-${key}-${stamp}`;
+}
+
+function hasExpiringSoonBatch(batches) {
+  if (!Array.isArray(batches) || !batches.length) return false;
+  return batches.some((batch) => {
+    if (!batch?.expiryDateISO) return false;
+    const meta = getExpiryMeta(batch.expiryDateISO);
+    return Number.isFinite(meta.diffDays) && meta.diffDays >= 0 && meta.diffDays <= EXPIRY_WARNING_DAYS;
+  });
+}
 
 /* ================= TOAST ================= */
 function ensureToastContainer() {
@@ -242,6 +395,115 @@ function createModal(options) {
   return wrapper;
 }
 
+/* ================= VOICE RECOGNITION HELPER ================= */
+function initVoiceRecognitionForModal(modal) {
+  const voiceBtn = getElement(modal, '#voiceInputBtn');
+  const descriptionField = getElement(modal, '#addDescription');
+  const micIcon = getElement(modal, '#micIcon');
+  const statusText = getElement(modal, '#voiceStatusText');
+  const errorText = getElement(modal, '#voiceErrorText');
+
+  if (!voiceBtn || !descriptionField) return;
+
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+  if (!SpeechRecognition) {
+    voiceBtn.style.display = 'none';
+    return;
+  }
+
+  const recognition = new SpeechRecognition();
+  recognition.continuous = true;
+  recognition.interimResults = true;
+  recognition.lang = 'en-PH';
+
+  let isListening = false;
+  // Text that was in the field before recording started
+  let baseText = '';
+  // Accumulated finalized transcripts from previous result segments
+  let finalizedText = '';
+
+  function setListeningUI(active) {
+    isListening = active;
+    if (active) {
+      micIcon.classList.remove('text-gray-500');
+      micIcon.classList.add('text-red-600', 'animate-pulse');
+      statusText.classList.remove('hidden');
+    } else {
+      micIcon.classList.remove('text-red-600', 'animate-pulse');
+      micIcon.classList.add('text-gray-500');
+      statusText.classList.add('hidden');
+    }
+  }
+
+  voiceBtn.addEventListener('click', () => {
+    if (isListening) {
+      recognition.stop();
+      errorText.classList.add('hidden');
+    } else {
+      try {
+        // Capture whatever text the user has already typed
+        baseText = descriptionField.value;
+        finalizedText = '';
+        recognition.start();
+        setListeningUI(true);
+        errorText.classList.add('hidden');
+      } catch (err) {
+        errorText.textContent = 'Failed to start voice recognition';
+        errorText.classList.remove('hidden');
+      }
+    }
+  });
+
+  recognition.onresult = (event) => {
+    let interimTranscript = '';
+    let newFinal = '';
+
+    for (let i = event.resultIndex; i < event.results.length; i++) {
+      const text = event.results[i][0].transcript;
+      if (event.results[i].isFinal) {
+        newFinal += text;
+      } else {
+        interimTranscript += text;
+      }
+    }
+
+    if (newFinal) {
+      finalizedText += newFinal;
+    }
+
+    // Build the full textarea value: base text + finalized speech + live interim
+    const separator = baseText && !baseText.endsWith(' ') ? ' ' : '';
+    descriptionField.value = baseText + separator + (finalizedText + interimTranscript).trimStart();
+  };
+
+  recognition.onend = () => {
+    setListeningUI(false);
+  };
+
+  recognition.onerror = (event) => {
+    setListeningUI(false);
+
+    // 'aborted' fires when user clicks stop – not a real error
+    if (event.error === 'aborted') return;
+
+    let errorMessage = 'Voice recognition error';
+    if (event.error === 'no-speech') {
+      errorMessage = 'No speech detected. Please try again.';
+    } else if (event.error === 'audio-capture') {
+      errorMessage = 'No microphone found or permission denied.';
+    } else if (event.error === 'not-allowed') {
+      errorMessage = 'Microphone access denied. Please allow microphone access.';
+    } else if (event.error === 'network') {
+      errorMessage = 'Network error. Please check your connection.';
+    }
+
+    errorText.textContent = errorMessage;
+    errorText.classList.remove('hidden');
+    setTimeout(() => { errorText.classList.add('hidden'); }, 5000);
+  };
+}
+
 /* ================= FILTER BUTTONS ================= */
 function updateFilterButtonStyles(containerSelector, activeStatus) {
   document.querySelectorAll(`${containerSelector} .status-filter, ${containerSelector} .status-filter-restock`).forEach(btn => {
@@ -267,9 +529,16 @@ function applyFilters() {
                         (item.id   || "").toLowerCase().includes(search);
     const matchStatus   = currentStatusFilter   === "all" || item.status   === currentStatusFilter;
     const matchCategory = currentCategoryFilter === "all" || item.category === currentCategoryFilter;
-    return matchSearch && matchStatus && matchCategory;
+    const matchStockFilter = !showLowStockOnly || item.status === "low-stock" || item.status === "out-of-stock";
+    return matchSearch && matchStatus && matchCategory && matchStockFilter;
   });
-  filteredItems.sort((a, b) => (a.status === "pending" ? -1 : b.status === "pending" ? 1 : 0));
+  filteredItems.sort((a, b) => getStatusSortPriority(a.status) - getStatusSortPriority(b.status));
+
+  const totalPages = Math.max(1, Math.ceil(filteredItems.length / INVENTORY_ITEMS_PER_PAGE));
+  if (currentInventoryPage > totalPages) {
+    currentInventoryPage = totalPages;
+  }
+
   updateFilterButtonStyles("#statusFiltersContainer", currentStatusFilter);
   renderInventory();
 }
@@ -294,24 +563,22 @@ function renderInventory() {
   if (!grid) return;
   grid.innerHTML = "";
 
+  const startIndex = (currentInventoryPage - 1) * INVENTORY_ITEMS_PER_PAGE;
+  const endIndex = startIndex + INVENTORY_ITEMS_PER_PAGE;
+  const pagedItems = filteredItems.slice(startIndex, endIndex);
+
   if (!filteredItems.length) {
     grid.innerHTML = `<div class="col-span-full text-center py-8 text-gray-500"><p>No items found matching your criteria.</p></div>`;
+    renderInventoryPagination(0, 0, 0, 1);
     return;
   }
 
-  filteredItems.forEach(item => {
+  pagedItems.forEach(item => {
+      const hasBatchWarning = hasExpiringSoonBatch(item.batches || []);
+
     const colors = getStatusColors(item.status);
     const statusText = getStatusDisplayText(item.status);
     const archivedPill = item.archived ? `<span class="ml-2 inline-block px-2 py-1 rounded text-xs font-medium bg-gray-200 text-gray-700">Archived</span>` : "";
-
-    let buttonsHtml;
-    if (item.archived) {
-      buttonsHtml = `
-        <button class="restore-btn flex-1 bg-emerald-600 text-white py-2 rounded text-xs font-medium hover:bg-emerald-700 transition-colors" data-item-id="${item.id}">Restore</button>
-        <button class="view-details-btn flex-1 border border-gray-300 py-2 rounded text-xs font-medium hover:bg-gray-100 transition-colors">View Details</button>`;
-    } else {
-      buttonsHtml = `<button class="view-details-btn w-full border border-gray-300 py-2 rounded text-xs font-medium hover:bg-gray-100 transition-colors">View Details</button>`;
-    }
 
     const card = document.createElement("div");
     card.className = "border border-gray-200 rounded-lg p-4 bg-white shadow-md hover:shadow-lg transition-all duration-200 h-full flex flex-col transform hover:-translate-y-1";
@@ -332,17 +599,52 @@ function renderInventory() {
         <div class="text-gray-500">Min: ${item.minStock} ${item.unit}</div>
         <div class="text-gray-500 flex items-center gap-2">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
-          <span>Expires: ${item.expiryDate}</span>
+          <span>Next Expiry: ${item.expiryDate}</span>
+          ${hasBatchWarning ? '<span class="w-3 h-3 rounded-full bg-red-600 inline-block ml-1" title="Contains batch expiring soon"></span>' : ''}
         </div>
-        <div class="text-gray-500">Batch: ${item.batchNumber}</div>
+        <div class="text-gray-500">Batches: ${item.batchCount || 0}</div>
         <div class="flex justify-between items-center pt-2 border-t border-gray-100 mt-2">
           <span class="text-gray-600">Price</span>
           <span class="font-bold text-blue-700 text-sm">₱${Number(item.price).toFixed(2)}</span>
         </div>
       </div>
-      <div class="flex gap-2 mt-auto">${buttonsHtml}</div>`;
+      <div class="flex flex-col gap-2 mt-auto">
+        <div class="flex gap-2">
+          <button class="view-details-btn flex-1 border border-gray-300 py-2 rounded text-xs font-medium hover:bg-gray-100 transition-colors">View Details</button>
+          ${item.archived
+            ? `<button class="restore-btn flex-1 bg-emerald-600 text-white py-2 rounded text-xs font-medium hover:bg-emerald-700 transition-colors" data-item-id="${item.id}">Restore</button>`
+            : `<button class="edit-discrepancy-btn flex-1 bg-amber-500 text-white py-2 rounded text-xs font-medium hover:bg-amber-600 transition-colors" data-item-id="${item.id}">Edit Discrepancy</button>`
+          }
+        </div>
+        ${!item.archived
+          ? `<button class="archive-btn w-full border border-gray-400 bg-gray-50 text-gray-700 py-2 rounded text-xs font-medium hover:bg-gray-100 transition-colors" data-item-id="${item.id}">Archive</button>`
+          : ''
+        }
+      </div>`;
     grid.appendChild(card);
   });
+
+  renderInventoryPagination(startIndex + 1, Math.min(endIndex, filteredItems.length), filteredItems.length, Math.ceil(filteredItems.length / INVENTORY_ITEMS_PER_PAGE));
+}
+
+function renderInventoryPagination(start, end, total, totalPages) {
+  const pageInfo = document.getElementById("inventoryPageInfo");
+  const pageNumber = document.getElementById("inventoryPageNumber");
+  const prevBtn = document.getElementById("inventoryPrevPage");
+  const nextBtn = document.getElementById("inventoryNextPage");
+
+  if (pageInfo) {
+    pageInfo.textContent = `Showing ${start} to ${end} of ${total} items`;
+  }
+  if (pageNumber) {
+    pageNumber.textContent = `Page ${currentInventoryPage} of ${Math.max(1, totalPages)}`;
+  }
+  if (prevBtn) {
+    prevBtn.disabled = currentInventoryPage <= 1 || total === 0;
+  }
+  if (nextBtn) {
+    nextBtn.disabled = currentInventoryPage >= Math.max(1, totalPages) || total === 0;
+  }
 }
 
 /* ================= RENDER: Restock Grid ================= */
@@ -402,75 +704,164 @@ function showItemDetails(item) {
   modal.currentItem = item;
   const colors = getStatusColors(item.status);
 
-  document.getElementById("detailsItemName").textContent = item.name;
-  document.getElementById("detailsBrand").textContent = `Brand: ${item.type}`;
-  document.getElementById("detailsStock").textContent = `${item.currentQuantity} ${item.unit}`;
-  document.getElementById("detailsStock").className = `px-4 py-3 text-left font-semibold ${colors.quantity}`;
-  document.getElementById("detailsMinStock").textContent = `${item.minStock} ${item.unit}`;
-  document.getElementById("detailsUnit").textContent = item.unit || "";
-  document.getElementById("detailsPrice").textContent = `₱${Number(item.price || 0).toFixed(2)}`;
-  document.getElementById("detailsExpiry").textContent = item.expiryDate || "";
-  document.getElementById("detailsDescription").textContent = item.description || "No description available.";
-  document.getElementById("detailsCategory").textContent = formatCategory(item.category);
-  document.getElementById("detailsCriticalText").textContent = `${item.minStock} ${item.unit || ""}`;
+  const setText = (id, value) => {
+    const el = getElement(modal, '#' + id);
+    if (el) el.textContent = value || "N/A";
+  };
 
-  const statusBadge = document.getElementById("detailsStatusBadge");
-  const statusTextContainer = document.getElementById("detailsStatusText");
-  if (statusBadge) {
-    statusBadge.textContent = getStatusDisplayText(item.status);
-    statusBadge.className = `inline-block px-3 py-1 rounded-full text-sm font-medium ${colors.bg} ${colors.text} border ${colors.border}`;
-  }
+  // Header information
+  setText("detailsItemName", item.name);
+  setText("detailsGenericName", item.genericName || item.generic);
+  setText("detailsBrandName", item.brandName || item.brand || item.type);
+  setText("detailsCategory", formatCategory(item.category));
+  setText("detailsSellingPrice", `₱${(item.price || 0).toFixed(2)}`);
+
+  // Medicine Information section
+  setText("detailsMedicineName", item.medicineName || item.name);
+  setText("detailsMedicineGeneric", item.genericName || item.generic);
+  setText("detailsMedicineBrand", item.brandName || item.brand || item.type);
+  setText("detailsDosageForm", item.dosageForm);
+  setText("detailsStrength", item.strength);
+  setText("detailsMedicineUnit", item.unit);
+  setText("detailsMedicineDescription", item.description);
+
+  // Inventory Details — Stock Information
+  setText("detailsStock", `${item.currentQuantity} ${item.unit}`);
+  setText("detailsMinStock", `${item.minStock} ${item.unit}`);
+  setText("detailsBatchCount", String(item.batchCount || (item.batches || []).length || 0));
+  setText("detailsExpiry", item.expiryDate || "N/A");
+  setText("detailsSupplier", item.supplier);
+
+  const statusTextContainer = getElement(modal, '#detailsStatusText');
   if (statusTextContainer) {
-    statusTextContainer.innerHTML = `<span class="inline-block px-2 py-1 rounded-full text-xs font-medium ${colors.bg} ${colors.text} border ${colors.border}">${getStatusDisplayText(item.status)}</span>`;
+    statusTextContainer.innerHTML = `<span class="${getModalStatusTextClass(item.status)}">${getStatusDisplayText(item.status)}</span>`;
   }
 
-  /* Expiry badge logic */
-  const expiryTextEl = document.getElementById("detailsExpiresIn");
-  const expiryBadge = document.getElementById("detailsExpiryBadge");
-  const parseDate = (str) => { if (!str) return null; return new Date(str); };
-  const expDate = parseDate(item.expiryDateISO || item.expiryDate);
-  if (expiryTextEl && expiryBadge && expDate && !isNaN(expDate)) {
-    const diff = Math.ceil((expDate - new Date()) / (1000 * 60 * 60 * 24));
-    expiryTextEl.textContent = `Expires in ${diff} days`;
-    if (diff < 0) {
-      expiryBadge.textContent = "Expired";
-      expiryBadge.className = "inline-block px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-700 border border-red-200";
-    } else if (diff <= 30) {
-      expiryBadge.textContent = "Expiring Soon";
-      expiryBadge.className = "inline-block px-2 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-700 border border-orange-200";
+  // Discrepancy Details
+  const expectedRemainingEl = getElement(modal, '#detailsExpectedRemaining');
+  const physicalCountEl = getElement(modal, '#detailsPhysicalCount');
+  const varianceEl = getElement(modal, '#detailsVariance');
+  const discrepancyStatusEl = getElement(modal, '#detailsVarianceStatus');
+
+  if (expectedRemainingEl) {
+    expectedRemainingEl.textContent = `${Number(item.expectedRemaining ?? item.currentQuantity ?? 0)} ${item.unit}`;
+  }
+  if (physicalCountEl) {
+    physicalCountEl.textContent = `${Number(item.physicalCount ?? item.currentQuantity ?? 0)} ${item.unit}`;
+  }
+  if (varianceEl) {
+    const variance = Number(item.variance ?? 0);
+    const varianceClass = variance === 0 ? "text-green-700" : "text-amber-700";
+    varianceEl.textContent = `${variance >= 0 ? "+" : ""}${variance} ${item.unit}`;
+    varianceEl.className = `font-semibold ${varianceClass}`;
+  }
+  if (discrepancyStatusEl) {
+    const discrepancyStatus = item.discrepancyStatus || (Number(item.variance || 0) === 0 ? "Balanced" : "With Variance");
+    const textClass = discrepancyStatus === "Balanced"
+      ? "text-xs font-medium text-green-600"
+      : "text-xs font-medium text-orange-600";
+    discrepancyStatusEl.innerHTML = `<span class="${textClass}">${discrepancyStatus}</span>`;
+  }
+
+  const batchRows = getElement(modal, "#detailsBatchRows");
+  if (batchRows) {
+    const rows = (item.batches || []).map((batch) => {
+      const expiryMeta = getExpiryMeta(batch.expiryDateISO);
+      const expiryLabel = batch.expiryDateISO ? formatDateDisplay(batch.expiryDateISO, "N/A") : "N/A";
+      const statusHtml = (() => {
+        if (!batch.expiryDateISO) {
+          return '<span class="text-xs font-medium text-gray-600">Unknown</span>';
+        }
+
+        if (expiryMeta.diffDays < 0) {
+          return '<span class="text-xs font-medium text-red-700">Expired</span>';
+        }
+
+        if (expiryMeta.diffDays <= EXPIRY_WARNING_DAYS) {
+          return '<span class="inline-flex items-center gap-1 text-xs font-medium text-red-600"><span class="w-2 h-2 rounded-full bg-red-600 inline-block"></span>Expiring Soon</span>';
+        }
+
+        return '<span class="text-xs font-medium text-green-600">Normal</span>';
+      })();
+
+      return `
+        <tr>
+          <td class="px-3 py-2 text-gray-900 font-semibold break-words whitespace-normal">${escapeHtml(batch.batchNumber || "—")}</td>
+          <td class="px-3 py-2 text-gray-900 font-medium">${Number(batch.quantity || 0)} ${escapeHtml(item.unit)}</td>
+          <td class="px-3 py-2 text-gray-900 font-medium">${escapeHtml(expiryLabel)}</td>
+          <td class="px-3 py-2 text-gray-900">${statusHtml}</td>
+        </tr>`;
+    });
+
+    batchRows.innerHTML = rows.length
+      ? rows.join("")
+      : '<tr><td colspan="4" class="px-3 py-3 text-gray-600">No batch records available.</td></tr>';
+  }
+
+  /* ---- Expiry calculation ---- */
+  const expiryTextEl = getElement(modal, '#detailsExpiresIn');
+  const expiryBadge = getElement(modal, '#detailsExpiryBadge');
+  const expiryMeta = getExpiryMeta(item.expiryDateISO || item.expiryDate);
+  if (expiryTextEl && expiryBadge) {
+    if (expiryMeta.date) {
+      expiryTextEl.textContent = `Expires in ${expiryMeta.diffDays} days`;
+      expiryBadge.textContent = expiryMeta.badgeText;
+      expiryBadge.className = expiryMeta.badgeClass;
     } else {
-      expiryBadge.textContent = "Safe";
-      expiryBadge.className = "inline-block px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700 border border-green-200";
+      expiryTextEl.textContent = "Expiry date not available";
+      expiryBadge.textContent = expiryMeta.badgeText;
+      expiryBadge.className = expiryMeta.badgeClass;
     }
   }
 
-  /* Detail modal buttons */
+  /* ---- Detail modal buttons ---- */
   const btnCloseTop = getElement(modal, "#closeItemDetails");
   const btnCancel   = getElement(modal, "#closeDetails");
+  const btnEditDiscrepancy = getElement(modal, "#detailsEditDiscrepancyBtn");
   const btnMove     = getElement(modal, "#moveToArchive");
 
   const hideDetails = () => { modal.classList.add("hidden"); modal.style.display = ""; };
 
   if (btnCloseTop) { const n = btnCloseTop.cloneNode(true); btnCloseTop.parentNode.replaceChild(n, btnCloseTop); n.onclick = hideDetails; }
   if (btnCancel)   { const n = btnCancel.cloneNode(true); btnCancel.parentNode.replaceChild(n, btnCancel); n.onclick = hideDetails; }
+  if (btnEditDiscrepancy) {
+    const n = btnEditDiscrepancy.cloneNode(true);
+    btnEditDiscrepancy.parentNode.replaceChild(n, btnEditDiscrepancy);
+    n.onclick = (e) => {
+      e?.stopPropagation?.();
+      hideDetails();
+      showEditDiscrepancyModal(item);
+    };
+  }
   if (btnMove) {
     const n = btnMove.cloneNode(true);
     btnMove.parentNode.replaceChild(n, btnMove);
     if (item.archived) {
       n.textContent = "Restore from Archive";
-      n.className = "w-full bg-emerald-600 text-white py-2.5 rounded-lg text-sm font-semibold hover:bg-emerald-700 transition-colors";
+      n.className = "w-full bg-emerald-600 text-white py-2 rounded text-sm font-semibold hover:bg-emerald-700 transition-colors";
       n.onclick = (e) => { e?.stopPropagation?.(); showRestoreConfirm(item); };
     } else {
       n.textContent = "Move to Archive";
-      n.className = "w-full bg-red-600 text-white py-2.5 rounded-lg text-sm font-semibold hover:bg-red-700 transition-colors";
+      n.className = "w-full bg-red-600 text-white py-2 rounded text-sm font-semibold hover:bg-red-700 transition-colors";
       n.onclick = (e) => { e?.stopPropagation?.(); showArchiveConfirm(item); };
     }
   }
   modal.classList.remove("hidden");
+  modal.style.display = "flex";
 }
 
 /* ================= REVIEW RESTOCK MODAL ================= */
 function showReviewRestockModal(request) {
+  const defaultBatchNumber = request.batchNumber && request.batchNumber !== "—"
+    ? request.batchNumber
+    : generateBatchNumber(request);
+
+  const defaultExpiryDate = (() => {
+    const plusMonth = new Date();
+    plusMonth.setMonth(plusMonth.getMonth() + 1);
+    return plusMonth.toISOString().split("T")[0];
+  })();
+
   const content = `
     <h3 class="text-lg font-semibold mb-1">Review Request Restock</h3>
     <p class="text-sm text-gray-600 mb-4">${request.requestType}</p>
@@ -487,6 +878,23 @@ function showReviewRestockModal(request) {
       <div class="py-2">
         <label class="block text-xs text-gray-700 mb-1">Notes</label>
         <textarea id="adminNotesInput" rows="3" class="w-full border border-gray-300 rounded px-3 py-2" placeholder="Add admin notes..."></textarea>
+      </div>
+      <div class="pt-2 border-t border-gray-100">
+        <p class="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-2">New Batch Details (For Approved Stock Only)</p>
+        <div class="space-y-2">
+          <div>
+            <label class="block text-xs text-gray-700 mb-1">Batch Number</label>
+            <input id="approvalBatchNumber" type="text" value="${defaultBatchNumber}" class="w-full border border-gray-300 rounded px-3 py-2" />
+          </div>
+          <div>
+            <label class="block text-xs text-gray-700 mb-1">Expiration Date</label>
+            <input id="approvalExpirationDate" type="date" value="${defaultExpiryDate}" class="w-full border border-gray-300 rounded px-3 py-2" />
+          </div>
+          <div>
+            <label class="block text-xs text-gray-700 mb-1">Supplier (Optional)</label>
+            <input id="approvalSupplier" type="text" value="${request.supplier && request.supplier !== "—" ? request.supplier : ""}" placeholder="Supplier name" class="w-full border border-gray-300 rounded px-3 py-2" />
+          </div>
+        </div>
       </div>
     </div>
     <div class="mt-5 flex gap-5 justify-between">
@@ -524,13 +932,27 @@ function showReviewRestockModal(request) {
   getElement(reviewModal, "#reviewApproveBtn")?.addEventListener("click", () => {
     const approvedQty = parseInt(getElement(reviewModal, "#approvedQuantity")?.value || request.requestQuantity, 10);
     const adminNotes  = getElement(reviewModal, "#adminNotesInput")?.value || "";
+    const approvalBatchNumber = (getElement(reviewModal, "#approvalBatchNumber")?.value || "").trim();
+    const approvalExpirationDate = (getElement(reviewModal, "#approvalExpirationDate")?.value || "").trim();
+    const approvalSupplier = (getElement(reviewModal, "#approvalSupplier")?.value || "").trim();
+
+    if (!approvalExpirationDate) {
+      showToast("Expiration Date is required for approved restock batches", "error");
+      return;
+    }
+
     showApproveConfirmModal(request, approvedQty, adminNotes, async () => {
       try {
         await apiFetch(API.approveRequest(request.id), {
           method: "PATCH",
-          body: JSON.stringify({ approvedQuantity: approvedQty }),
+          body: JSON.stringify({
+            approvedQuantity: approvedQty,
+            batchNumber: approvalBatchNumber || generateBatchNumber(request),
+            expirationDate: approvalExpirationDate,
+            supplier: approvalSupplier || null,
+          }),
         });
-        showToast("Request Approved & Stock Updated", "success");
+        showToast("Request Approved and New Batch Added", "success");
         hide();
         await refreshAll();
       } catch (err) {
@@ -600,6 +1022,99 @@ function showDenyConfirmModal(request, adminNotes, onConfirm) {
   getElement(m, "#denyConfirmBtn")?.addEventListener("click", () => { hide(); onConfirm(); });
 }
 
+/* ================= EDIT DISCREPANCY MODAL ================= */
+function showEditDiscrepancyModal(item) {
+  const expectedRemaining = Number(item.expectedRemaining ?? item.currentQuantity ?? 0);
+  const initialPhysicalCount = Number(item.physicalCount ?? expectedRemaining);
+
+  const content = `
+    <h3 class="text-lg font-semibold mb-1">Edit Discrepancy</h3>
+    <p class="text-sm text-gray-600 mb-4">Update discrepancy values directly for <span class="font-semibold text-gray-800">${item.name}</span>.</p>
+
+    <div class="space-y-3 text-sm">
+      <div class="flex justify-between py-2 border-b border-gray-100">
+        <span class="text-gray-600">Expected Remaining</span>
+        <span class="font-semibold text-gray-900">${expectedRemaining} ${item.unit}</span>
+      </div>
+      <div>
+        <label class="block text-xs text-gray-700 mb-1">Physical Count</label>
+        <input id="discrepancyPhysicalCountInput" type="number" min="0" value="${initialPhysicalCount}" class="w-full border border-gray-300 rounded px-3 py-2" />
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div class="border border-gray-200 rounded-lg p-3 bg-gray-50">
+          <p class="text-xs text-gray-500">Variance</p>
+          <p id="discrepancyVariancePreview" class="text-sm font-semibold text-gray-800 mt-1">0 ${item.unit}</p>
+        </div>
+        <div class="border border-gray-200 rounded-lg p-3 bg-gray-50">
+          <p class="text-xs text-gray-500">Status</p>
+          <p id="discrepancyStatusPreview" class="text-sm font-semibold text-gray-800 mt-1">Balanced</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="mt-5 grid grid-cols-2 gap-3">
+      <button id="editDiscrepancyCancelBtn" class="w-full border border-gray-300 py-2.5 rounded-lg bg-white text-sm font-semibold hover:bg-gray-50 transition-colors text-gray-700">Cancel</button>
+      <button id="editDiscrepancySaveBtn" class="w-full bg-amber-500 text-white py-2.5 rounded-lg text-sm font-semibold hover:bg-amber-600 transition-colors">Save Changes</button>
+    </div>`;
+
+  const modal = createModal({ id: "editDiscrepancyModal", content, width: "480px" });
+
+  const hide = () => {
+    modal.classList.add("hidden");
+    modal.style.display = "";
+    setTimeout(() => modal.remove(), 200);
+  };
+
+  const physicalCountInput = getElement(modal, "#discrepancyPhysicalCountInput");
+  const variancePreview = getElement(modal, "#discrepancyVariancePreview");
+  const statusPreview = getElement(modal, "#discrepancyStatusPreview");
+
+  const updatePreview = () => {
+    const physicalCount = Number(physicalCountInput?.value ?? initialPhysicalCount);
+    const variance = physicalCount - expectedRemaining;
+    const status = variance === 0 ? "Balanced" : "With Variance";
+
+    if (variancePreview) {
+      variancePreview.textContent = `${variance >= 0 ? "+" : ""}${variance} ${item.unit}`;
+      variancePreview.className = `text-sm font-semibold mt-1 ${variance === 0 ? "text-green-700" : "text-amber-700"}`;
+    }
+    if (statusPreview) {
+      statusPreview.textContent = status;
+      statusPreview.className = `text-sm font-semibold mt-1 ${status === "Balanced" ? "text-green-700" : "text-amber-700"}`;
+    }
+  };
+
+  updatePreview();
+  physicalCountInput?.addEventListener("input", updatePreview);
+
+  getElement(modal, "#closeEditDiscrepancyModal")?.addEventListener("click", hide);
+  getElement(modal, "#editDiscrepancyCancelBtn")?.addEventListener("click", hide);
+
+  getElement(modal, "#editDiscrepancySaveBtn")?.addEventListener("click", async () => {
+    const physicalCount = Number(physicalCountInput?.value);
+    if (!Number.isFinite(physicalCount) || physicalCount < 0) {
+      showToast("Physical count must be a non-negative number", "error");
+      return;
+    }
+
+    try {
+      await apiFetch(API.updateDiscrepancy(item.id), {
+        method: "PATCH",
+        body: JSON.stringify({ physicalCount }),
+      });
+
+      showToast("Discrepancy updated successfully", "success");
+      hide();
+      await refreshInventory();
+    } catch (err) {
+      showToast(`Discrepancy update failed: ${err.message}`, "error");
+    }
+  });
+
+  modal.classList.remove("hidden");
+  modal.style.display = "flex";
+}
+
 /* ================= ARCHIVE CONFIRM ================= */
 function showArchiveConfirm(item) {
   const detailsModal = document.getElementById("itemDetailsModal");
@@ -646,46 +1161,143 @@ function showArchiveConfirm(item) {
 /* ================= ADD ITEM MODAL ================= */
 function showAddItemModal() {
   const content = `
-    <h3 class="text-lg font-semibold mb-1">Add Item</h3>
+    <h3 class="text-lg font-semibold text-gray-900 mb-1">Add Item</h3>
     <p class="text-sm text-gray-600 mb-4">Items will be added directly to inventory</p>
-    <div class="space-y-3 text-sm">
-      <div><label class="block text-xs text-gray-700 mb-1">Brand :</label>
-        <input id="addBrand" class="w-full border border-gray-300 rounded px-3 py-2" />
-        <p id="addBrandError" class="text-red-600 text-xs mt-1 hidden">Required</p></div>
-      <div><label class="block text-xs text-gray-700 mb-1">Generic :</label>
-        <input id="addGeneric" class="w-full border border-gray-300 rounded px-3 py-2" />
-        <p id="addGenericError" class="text-red-600 text-xs mt-1 hidden">Required</p></div>
-      <div><label class="block text-xs text-gray-700 mb-1">Category :</label>
-        <select id="addCategory" class="w-full border border-gray-300 rounded px-3 py-2 bg-white">
-          <option value="">Select category</option><option value="medicine">Medicine</option>
-          <option value="first-aid">First Aid & Medical Supplies</option><option value="vitamins">Vitamins</option>
-          <option value="personal-care">Personal Care</option>
-        </select>
-        <p id="addCategoryError" class="text-red-600 text-xs mt-1 hidden">Required</p></div>
-      <div><label class="block text-xs text-gray-700 mb-1">Quantity :</label>
-        <input id="addQuantity" type="number" min="0" class="w-full border border-gray-300 rounded px-3 py-2" />
-        <p id="addQuantityError" class="text-red-600 text-xs mt-1 hidden">Required</p></div>
-      <div><label class="block text-xs text-gray-700 mb-1">Unit :</label>
-        <input id="addUnit" placeholder="e.g., tablets, bottles, pieces" class="w-full border border-gray-300 rounded px-3 py-2" />
-        <p id="addUnitError" class="text-red-600 text-xs mt-1 hidden">Required</p></div>
-      <div><label class="block text-xs text-gray-700 mb-1">Min Stock Level :</label>
-        <input id="addMinStock" type="number" min="0" class="w-full border border-gray-300 rounded px-3 py-2" />
-        <p id="addMinStockError" class="text-red-600 text-xs mt-1 hidden">Required</p></div>
-      <div><label class="block text-xs text-gray-700 mb-1">Price (₱) :</label>
-        <input id="addPrice" type="number" min="0" step="0.01" class="w-full border border-gray-300 rounded px-3 py-2" />
-        <p id="addPriceError" class="text-red-600 text-xs mt-1 hidden">Required</p></div>
-      <div><label class="block text-xs text-gray-700 mb-1">Expiration Date :</label>
-        <input id="addExpiry" type="date" class="w-full border border-gray-300 rounded px-3 py-2" />
-        <p id="addExpiryError" class="text-red-600 text-xs mt-1 hidden">Required</p></div>
-      <div><label class="block text-xs text-gray-700 mb-1">Batch No. :</label>
-        <input id="addBatch" class="w-full border border-gray-300 rounded px-3 py-2" />
-        <p id="addBatchError" class="text-red-600 text-xs mt-1 hidden">Required</p></div>
-      <div><label class="block text-xs text-gray-700 mb-1">Description :</label>
-        <textarea id="addDescription" rows="3" class="w-full border border-gray-300 rounded px-3 py-2" placeholder="Optional description..."></textarea></div>
+
+    <div class="mb-4 pb-4 border-b border-gray-200">
+      <h4 class="text-sm font-semibold text-gray-900 mb-3">Medicine Information</h4>
+      <div class="space-y-3 text-sm">
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs text-gray-700 mb-1 font-medium">Brand</label>
+            <input id="addBrand" placeholder="e.g., Biogesic" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+          </div>
+          <div>
+            <label class="block text-xs text-gray-700 mb-1 font-medium">Generic <span class="text-red-600">*</span></label>
+            <input id="addGeneric" placeholder="e.g., Acetaminophen" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            <p id="addGenericError" class="text-red-600 text-xs mt-1 hidden">Required</p>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs text-gray-700 mb-1 font-medium">Category <span class="text-red-600">*</span></label>
+            <select id="addCategory" class="w-full border border-gray-300 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+              <option value="">Select category</option>
+              <option value="Antibiotic">Antibiotic</option>
+              <option value="Analgesic">Analgesic</option>
+              <option value="Antipyretic">Antipyretic</option>
+              <option value="Antihistamine">Antihistamine</option>
+              <option value="Antacid">Antacid</option>
+              <option value="Vitamin">Vitamin</option>
+              <option value="Vaccine">Vaccine</option>
+              <option value="First Aid">First Aid</option>
+              <option value="Personal Care">Personal Care</option>
+            </select>
+            <p id="addCategoryError" class="text-red-600 text-xs mt-1 hidden">Required</p>
+          </div>
+          <div>
+            <label class="block text-xs text-gray-700 mb-1 font-medium">Dosage Form <span class="text-red-600">*</span></label>
+            <select id="addDosageForm" class="w-full border border-gray-300 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+              <option value="">Select dosage form</option>
+              <option value="Tablet">Tablet</option>
+              <option value="Capsule">Capsule</option>
+              <option value="Syrup">Syrup</option>
+              <option value="Injection">Injection</option>
+              <option value="Ointment">Ointment</option>
+              <option value="Cream">Cream</option>
+              <option value="Drops">Drops</option>
+              <option value="Inhaler">Inhaler</option>
+              <option value="Powder">Powder</option>
+            </select>
+            <p id="addDosageFormError" class="text-red-600 text-xs mt-1 hidden">Required</p>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs text-gray-700 mb-1 font-medium">Strength / Dosage <span class="text-red-600">*</span></label>
+            <input id="addStrength" placeholder="e.g., 500 mg, 250 mg/5 ml" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            <p id="addStrengthError" class="text-red-600 text-xs mt-1 hidden">Required</p>
+          </div>
+          <div>
+            <label class="block text-xs text-gray-700 mb-1 font-medium">Unit <span class="text-red-600">*</span></label>
+            <select id="addUnit" class="w-full border border-gray-300 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+              <option value="">Select unit</option>
+              <option value="Tablet">Tablet</option>
+              <option value="Capsule">Capsule</option>
+              <option value="Bottle">Bottle</option>
+              <option value="Box">Box</option>
+              <option value="Vial">Vial</option>
+              <option value="Piece">Piece</option>
+              <option value="Tube">Tube</option>
+              <option value="Pack">Pack</option>
+            </select>
+            <p id="addUnitError" class="text-red-600 text-xs mt-1 hidden">Required</p>
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-xs text-gray-700 mb-1 font-medium">Description</label>
+          <div class="relative">
+            <textarea id="addDescription" rows="2" placeholder="Short description of the medicine..." class="w-full border border-gray-300 rounded-lg px-3 py-2 pr-10 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"></textarea>
+            <button type="button" id="voiceInputBtn" class="absolute right-2 top-2 p-1.5 rounded-full hover:bg-gray-100 transition-colors" title="Use voice input">
+              <svg id="micIcon" class="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"></path>
+              </svg>
+            </button>
+          </div>
+          <p id="voiceStatusText" class="text-xs text-blue-600 mt-1 hidden">Listening...</p>
+          <p id="voiceErrorText" class="text-xs text-red-600 mt-1 hidden"></p>
+        </div>
+      </div>
     </div>
-    <div class="mt-5 flex gap-5 justify-between">
-      <button id="addCancelBtn" class="flex-1 border border-gray-300 py-2 px-4 rounded-lg bg-white">Cancel</button>
-      <button id="addSaveBtn" class="flex-1 bg-emerald-700 text-white py-2 px-4 rounded-lg">Save</button>
+
+    <div class="space-y-3 text-sm">
+      <h4 class="text-sm font-semibold text-gray-900">Inventory Details</h4>
+
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block text-xs text-gray-700 mb-1 font-medium">Stock Quantity <span class="text-red-600">*</span></label>
+          <input id="addQuantity" type="number" min="0" placeholder="e.g., 100" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+          <p id="addQuantityError" class="text-red-600 text-xs mt-1 hidden">Required</p>
+        </div>
+        <div>
+          <label class="block text-xs text-gray-700 mb-1 font-medium">Reorder Level <span class="text-red-600">*</span></label>
+          <input id="addMinStock" type="number" min="0" placeholder="e.g., 20" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+          <p id="addMinStockError" class="text-red-600 text-xs mt-1 hidden">Required</p>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block text-xs text-gray-700 mb-1 font-medium">Batch Number <span class="text-red-600">*</span></label>
+          <input id="addBatch" placeholder="e.g., BATCH-102" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+          <p id="addBatchError" class="text-red-600 text-xs mt-1 hidden">Required</p>
+        </div>
+        <div>
+          <label class="block text-xs text-gray-700 mb-1 font-medium">Expiration Date <span class="text-red-600">*</span></label>
+          <input id="addExpiry" type="date" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+          <p id="addExpiryError" class="text-red-600 text-xs mt-1 hidden">Required</p>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block text-xs text-gray-700 mb-1 font-medium">Supplier</label>
+          <input id="addSupplier" placeholder="e.g., ABC Pharma" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+        </div>
+        <div>
+          <label class="block text-xs text-gray-700 mb-1 font-medium">Selling Price (₱) <span class="text-red-600">*</span></label>
+          <input id="addPrice" type="number" min="0" step="0.01" placeholder="e.g., 20.00" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+          <p id="addPriceError" class="text-red-600 text-xs mt-1 hidden">Required</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="mt-5 flex gap-3 justify-end">
+      <button id="addCancelBtn" class="border border-gray-300 py-2 px-4 rounded-lg bg-white hover:bg-gray-50 transition-colors text-gray-700">Cancel</button>
+      <button id="addSaveBtn" class="bg-blue-700 text-white py-2 px-4 rounded-lg hover:bg-blue-800 transition-colors">Save</button>
     </div>`;
   const addItemModal = createModal({ id: "addItemModal", content, width: "575px" });
 
@@ -693,23 +1305,40 @@ function showAddItemModal() {
   getElement(addItemModal, "#closeAddItemModal")?.addEventListener("click", hide);
   getElement(addItemModal, "#addCancelBtn")?.addEventListener("click", hide);
 
+  // Initialize voice recognition for the Description field
+  initVoiceRecognitionForModal(addItemModal);
+
   getElement(addItemModal, "#addSaveBtn")?.addEventListener("click", async () => {
     const val = (id) => (getElement(addItemModal, id)?.value || "").trim();
-    const brand    = val("#addBrand");
-    const generic  = val("#addGeneric");
-    const category = val("#addCategory");
-    const qtyRaw   = val("#addQuantity");
-    const qty      = qtyRaw === "" ? NaN : parseInt(qtyRaw, 10);
-    const unit     = val("#addUnit");
+    const brand      = val("#addBrand");
+    const generic    = val("#addGeneric");
+    const category   = val("#addCategory");
+    const dosageForm = val("#addDosageForm");
+    const strength   = val("#addStrength");
+    const qtyRaw     = val("#addQuantity");
+    const qty        = qtyRaw === "" ? NaN : parseInt(qtyRaw, 10);
+    const unit       = val("#addUnit");
     const minStockRaw = val("#addMinStock");
     const minStock    = minStockRaw === "" ? NaN : parseInt(minStockRaw, 10);
-    const priceRaw = val("#addPrice");
-    const price    = priceRaw === "" ? NaN : parseFloat(priceRaw);
-    const expiry   = val("#addExpiry");
-    const batch    = val("#addBatch");
-    const desc     = val("#addDescription");
+    const priceRaw   = val("#addPrice");
+    const price      = priceRaw === "" ? NaN : parseFloat(priceRaw);
+    const expiry     = val("#addExpiry");
+    const batch      = val("#addBatch");
+    const supplier   = val("#addSupplier");
+    const desc       = val("#addDescription");
 
-    const required = { brand: "#addBrand", generic: "#addGeneric", category: "#addCategory", quantity: "#addQuantity", unit: "#addUnit", minStock: "#addMinStock", price: "#addPrice", expiry: "#addExpiry", batch: "#addBatch" };
+    const required = {
+      generic: "#addGeneric",
+      category: "#addCategory",
+      dosageForm: "#addDosageForm",
+      strength: "#addStrength",
+      quantity: "#addQuantity",
+      unit: "#addUnit",
+      minStock: "#addMinStock",
+      price: "#addPrice",
+      expiry: "#addExpiry",
+      batch: "#addBatch",
+    };
     let hasError = false;
     Object.entries(required).forEach(([key, sel]) => {
       const el = getElement(addItemModal, sel);
@@ -725,15 +1354,19 @@ function showAddItemModal() {
         method: "POST",
         body: JSON.stringify({
           name:        generic || brand,
+          genericName: generic,
+          brandName:   brand,
           category:    category || "general",
-          quantity:    isNaN(qty)  ? 0 : qty,
+          dosageForm:  dosageForm,
+          strength:    strength,
+          quantity:    isNaN(qty) ? 0 : qty,
           unit:        unit || "pcs",
           unitPrice:   isNaN(price) ? 0 : price,
           minStock:    isNaN(minStock) ? 10 : minStock,
           expiryDate:  expiry || null,
-          batchNumber: batch  || null,
-          description: desc   || "",
-          supplier:    brand  || null,
+          batchNumber: batch || null,
+          supplier:    supplier || null,
+          description: desc || "",
         }),
       });
       showToast("Item Added Successfully", "success");
@@ -793,12 +1426,19 @@ function showRestoreConfirm(item) {
 
 /* ================= CLOSE ALL MODALS ================= */
 function closeAllModals() {
-  ["itemDetailsModal","reviewRestockModal","addItemModal","archiveConfirmModal","restoreConfirmModal","approveConfirmModal","denyConfirmModal"]
+  ["itemDetailsModal","reviewRestockModal","addItemModal","archiveConfirmModal","restoreConfirmModal","approveConfirmModal","denyConfirmModal","editDiscrepancyModal"]
     .forEach(id => { const m = document.getElementById(id); if (m) m.classList.add("hidden"); });
 }
 
 /* ================= INIT ================= */
 export async function initAdminInventory() {
+  const auth = window.IBMSAuth;
+  if (auth && !auth.isSessionValid("owner")) {
+    auth.clearAuthData();
+    auth.redirectToLogin(true);
+    return;
+  }
+
   console.log("=== INIT ADMIN INVENTORY STARTED ===");
 
   const tabInventory    = document.getElementById("tabInventory");
@@ -832,7 +1472,11 @@ export async function initAdminInventory() {
 
   /* ---- Inventory status filters ---- */
   document.querySelectorAll(".status-filter").forEach(btn =>
-    btn.addEventListener("click", () => { currentStatusFilter = btn.dataset.status; applyFilters(); })
+    btn.addEventListener("click", () => {
+      currentStatusFilter = btn.dataset.status;
+      currentInventoryPage = 1;
+      applyFilters();
+    })
   );
 
   /* ---- Restock status filters ---- */
@@ -861,6 +1505,7 @@ export async function initAdminInventory() {
   document.querySelectorAll(".category-dropdown-item").forEach(btn =>
     btn.addEventListener("click", () => {
       currentCategoryFilter = btn.dataset.category;
+      currentInventoryPage = 1;
       categoryDropdown.classList.add("hidden");
       filterBtn.innerHTML = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"></path></svg> ${btn.textContent}`;
       applyFilters();
@@ -877,7 +1522,10 @@ export async function initAdminInventory() {
   );
 
   /* ---- Search inputs ---- */
-  document.getElementById("searchInventory")?.addEventListener("input", debounce(applyFilters, 300));
+  document.getElementById("searchInventory")?.addEventListener("input", debounce(() => {
+    currentInventoryPage = 1;
+    applyFilters();
+  }, 300));
   document.getElementById("searchRestock")?.addEventListener("input", debounce(applyRestockFilters, 300));
 
   /* ---- Archived toggle ---- */
@@ -892,7 +1540,41 @@ export async function initAdminInventory() {
       archivedBtn.classList.remove("bg-red-600", "text-white");
       archivedBtn.classList.add("bg-white", "text-red-600");
     }
+    currentInventoryPage = 1;
     await refreshInventory();
+  });
+
+  /* ---- Low stock toggle ---- */
+  const lowStockToggle = document.getElementById("lowStockToggle");
+  lowStockToggle?.addEventListener("click", () => {
+    if (showArchivedItems) {
+      showToast("Low stock filter is available only in active inventory view", "error");
+      return;
+    }
+
+    showLowStockOnly = !showLowStockOnly;
+    currentInventoryPage = 1;
+    if (showLowStockOnly) {
+      lowStockToggle.classList.add("ring-2", "ring-red-300");
+    } else {
+      lowStockToggle.classList.remove("ring-2", "ring-red-300");
+    }
+    applyFilters();
+  });
+
+  document.getElementById("inventoryPrevPage")?.addEventListener("click", () => {
+    if (currentInventoryPage > 1) {
+      currentInventoryPage -= 1;
+      renderInventory();
+    }
+  });
+
+  document.getElementById("inventoryNextPage")?.addEventListener("click", () => {
+    const totalPages = Math.max(1, Math.ceil(filteredItems.length / INVENTORY_ITEMS_PER_PAGE));
+    if (currentInventoryPage < totalPages) {
+      currentInventoryPage += 1;
+      renderInventory();
+    }
   });
 
   /* ---- Add item ---- */
@@ -928,6 +1610,8 @@ export async function initAdminInventory() {
   document.getElementById("inventoryGrid")?.addEventListener("click", (e) => {
     const viewBtn    = e.target.closest(".view-details-btn");
     const restoreBtn = e.target.closest(".restore-btn");
+    const editDiscrepancyBtn = e.target.closest(".edit-discrepancy-btn");
+    const archiveBtn = e.target.closest(".archive-btn");
 
     if (viewBtn) {
       const card = viewBtn.closest("[data-card-id]");
@@ -937,6 +1621,14 @@ export async function initAdminInventory() {
       const itemId = restoreBtn.dataset.itemId;
       const item = inventoryItems.find(i => i.id === itemId);
       if (item) showRestoreConfirm(item);
+    } else if (editDiscrepancyBtn) {
+      const itemId = editDiscrepancyBtn.dataset.itemId;
+      const item = inventoryItems.find(i => i.id === itemId);
+      if (item) showEditDiscrepancyModal(item);
+    } else if (archiveBtn) {
+      const itemId = archiveBtn.dataset.itemId;
+      const item = inventoryItems.find(i => i.id === itemId);
+      if (item) showArchiveConfirm(item);
     }
   });
 

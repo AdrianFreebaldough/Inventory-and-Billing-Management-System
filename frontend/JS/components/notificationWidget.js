@@ -185,13 +185,122 @@ class NotificationWidget {
         this.renderNotifications();
       }
 
-      // Redirect if URL provided
+      // Handle navigation based on redirectUrl and user role
       if (redirectUrl) {
-        window.location.href = redirectUrl;
+        this.navigateTo(redirectUrl);
       }
+      
+      // Close dropdown
+      this.isOpen = false;
+      const dropdown = document.getElementById('notificationDropdown');
+      if (dropdown) dropdown.classList.add('hidden');
+      
     } catch (error) {
       console.error('Error marking notification as read:', error);
     }
+  }
+
+  // Navigate to appropriate page based on redirectUrl and user role
+  navigateTo(redirectUrl) {
+    // Get user role from localStorage or token
+    const userRole = this.getUserRole();
+    
+    // Navigation mapping for each role
+    const navigationMap = {
+      staff: {
+        'inventory': () => this.tryCallFunction('loadInventory'),
+        'stock-requests': () => this.tryCallFunction('loadRequestStock'),
+        'expenses': () => this.tryCallFunction('loadExpenses'),
+        'activity-log': () => this.tryCallFunction('loadActivityLog'),
+      },
+      owner: {
+        'inventory': () => this.tryCallFunction('loadInventory'),
+        'stock-requests': () => this.tryCallFunction('loadInventory'), // Owner views stock requests in inventory
+        'expenses': () => this.tryCallFunction('loadExpenses'),
+        'reports': () => this.tryCallFunction('loadReports'),
+        'user-management': () => this.tryCallFunction('loadUserManagement'),
+      }
+    };
+
+    // Try to navigate using the appropriate function
+    const roleNav = navigationMap[userRole];
+    if (roleNav && roleNav[redirectUrl]) {
+      roleNav[redirectUrl]();
+    } else {
+      // Fallback: try to find the page based on common patterns
+      this.fallbackNavigation(redirectUrl, userRole);
+    }
+  }
+
+  // Try to call a global function if it exists
+  tryCallFunction(functionName) {
+    if (typeof window[functionName] === 'function') {
+      window[functionName]();
+      return true;
+    }
+    return false;
+  }
+
+  // Fallback navigation for edge cases
+  fallbackNavigation(redirectUrl, userRole) {
+    // Map notification paths to actual HTML pages
+    const pageMap = {
+      'inventory': {
+        staff: '../../HTML/staff_Inventory/staff_Inventory.html',
+        owner: '../../HTML/admin_Inventory/admin_Inventory.html'
+      },
+      'stock-requests': {
+        staff: '../../HTML/STAFF_StockRequest/STAFF_StockRequest.html',
+        owner: '../../HTML/admin_Inventory/admin_Inventory.html'
+      },
+      'expenses': {
+        staff: '../../HTML/STAFF_Expenses/STAFF_Expenses.html',
+        owner: '../../HTML/OWNER_Expenses/OWNER_Expenses.html'
+      },
+      'activity-log': {
+        staff: '../../HTML/STAFF_ActivityLog/STAFF_ActivityLog.html',
+        owner: '../../HTML/Admin_Activitylogs/OwnerActivitylogs.html'
+      }
+    };
+
+    const page = pageMap[redirectUrl]?.[userRole];
+    if (page) {
+      // Check if we're in a dashboard context
+      const mainContent = document.getElementById('mainContent');
+      if (mainContent) {
+        // Load in iframe if dashboard supports it
+        mainContent.innerHTML = `<iframe src="${page}" class="h-[calc(100vh-220px)] min-h-[560px] w-full border-0"></iframe>`;
+      } else {
+        // Direct navigation
+        window.location.href = page;
+      }
+    }
+  }
+
+  // Get user role from token or localStorage
+  getUserRole() {
+    // Try localStorage first
+    const storedRole = localStorage.getItem('userRole');
+    if (storedRole) return storedRole.toLowerCase();
+
+    // Try to decode JWT token
+    const tokenKeys = ['token', 'authToken', 'jwtToken', 'ibmsToken'];
+    for (const key of tokenKeys) {
+      const token = localStorage.getItem(key);
+      if (!token) continue;
+      
+      try {
+        const parts = token.split('.');
+        if (parts.length >= 2) {
+          const payload = JSON.parse(atob(parts[1]));
+          if (payload.role) return payload.role.toLowerCase();
+        }
+      } catch (e) {
+        // Continue to next token
+      }
+    }
+
+    return 'staff'; // Default fallback
   }
 
   // Mark all as read

@@ -850,6 +850,7 @@ document.addEventListener("DOMContentLoaded", () => {
     e.preventDefault();
     loadUserProfile();
   });
+    
 
   navStockLogs.addEventListener("click", (e) => {
     e.preventDefault();

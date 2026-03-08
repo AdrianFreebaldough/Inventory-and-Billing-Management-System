@@ -1,0 +1,72 @@
+<!-- Inventory Controls Content Only -->
+<div class="w-full flex flex-col p-8">
+    <!-- Scrollable content -->
+    <div class="w-full px-8 pb-8">   
+        <!-- Header -->
+        <div class="mb-8">
+            <h2 class="text-3xl font-semibold text-gray-900">Inventory Controls</h2>
+            <p class="text-sm text-gray-500" style="margin-top: 8px; margin-bottom: 8px;">
+                Configure stock alerts, expiration warnings, and categories
+            </p>
+        </div>
+        
+        <!-- Stock Alerts -->
+        <div style="margin-bottom: 32px;">
+            <h3 class="text-base font-medium text-gray-900" style="margin-bottom: 12px;">Stock Alerts</h3>
+            <div>
+                <label class="block text-base text-gray-600" style="margin-bottom: 4px;">Default Low Stock Threshold</label>
+                <input type="number" id="invLowStockThreshold" value="10" disabled 
+                    class="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg bg-gray-50 text-gray-600 cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"/>
+                <p class="text-xs pt-2 text-gray-500">Items with stock below this threshold will be flagged</p>
+            </div>
+        </div>
+        
+        <!-- Expiration Warnings -->
+        <div style="margin-bottom: 32px;">
+            <h3 class="text-xl font-medium mb-2 text-gray-900">Expiration Warnings</h3>
+            <div>
+                <label class="block text-base mb-1 text-gray-600">Warning Period (Days)</label>
+                <input type="number" id="invWarningPeriod" value="90" disabled
+                    class="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg bg-gray-50 text-gray-600 cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"/>
+                <div class="flex items-center gap-2 text-xs text-amber-600" style="margin-top: 4px;">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4
+                            c-.77-1.333-2.694-1.333-3.464 0L3.34 16
+                            c-.77 1.333.192 3 1.732 3z"/>
+                    </svg>
+                    <span class="pt-2">Items expiring within 90 days will be flagged</span>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Category Management -->
+        <div style="margin-bottom: 32px;">
+            <h3 class="text-xl font-medium text-gray-900" style="margin-bottom: 12px;">Category Management</h3>
+            <div style="margin-bottom: 12px;">
+                <div class="flex gap-4">
+                    <input type="text" id="invNewCategory" placeholder="Enter new category name" disabled
+                        class="flex-1 px-3 py-2 text-sm border border-gray-200 rounded-lg bg-gray-50 text-gray-600 cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"/>
+                    <button id="invAddCategoryBtn" disabled
+                        class="px-4 py-2 bg-gray-300 text-gray-500 rounded-md text-sm font-medium cursor-not-allowed flex items-center gap-2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                        </svg>
+                        Add Category
+                    </button>
+                </div>
+            </div>
+            <div id="invCategoryList">
+                <!-- Categories rendered here -->
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Load JS module -->
+<script type="module">
+    import { initInventory } from './admin_Settings_Inventory.js';
+    document.addEventListener('DOMContentLoaded', () => {
+        initInventory();
+    });
+</script>

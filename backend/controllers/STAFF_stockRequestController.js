@@ -1,6 +1,8 @@
 import STAFF_StockRequest from "../models/STAFF_stockRequest.js";
 import Product from "../models/product.js";
 import Notification from "../models/Notification.js";
+import STAFF_ActivityLog from "../models/STAFF_activityLog.js";
+import User from "../models/user.js";
 import { createStockLog } from "../services/Owner_StockLog.service.js";
 
 // Generate unique request ID
@@ -72,14 +74,34 @@ export const STAFF_createStockRequest = async (req, res) => {
       notes: notes || "",
     });
 
-    // Create notification for owner
-    await Notification.create({
-      userId: null,
+    // Create a notification for each active owner.
+    const owners = await User.find({
       role: "owner",
-      message: `New stock request from ${req.user.name} (${requestItems.length} items)`,
-      type: "stock_request_sent",
-      redirectUrl: "/stock-requests",
-      relatedId: stockRequest._id,
+      isActive: true,
+      status: { $ne: "Archived" },
+    })
+      .select("_id")
+      .lean();
+
+    if (owners.length) {
+      await Notification.insertMany(
+        owners.map((owner) => ({
+          userId: owner._id,
+          role: "owner",
+          message: `New stock request from ${req.user.name} (${requestItems.length} items)`,
+          type: "stock_request_sent",
+          redirectUrl: "inventory",
+          relatedId: stockRequest._id,
+        }))
+      );
+    }
+
+    await STAFF_ActivityLog.create({
+      staffId: req.user.id,
+      actionType: "stock-request-sent",
+      targetItemId: null,
+      description: `Submitted stock request ${stockRequest.requestId} (${requestItems.length} item(s))`,
+      status: "pending",
     });
 
     return res.status(201).json({
@@ -219,7 +241,7 @@ export const OWNER_approveStockRequest = async (req, res) => {
       role: "staff",
       message: `Your stock request ${request.requestId} has been ${request.status.toLowerCase()}`,
       type: request.status === "Approved" ? "stock_request_approved" : "stock_request_rejected",
-      redirectUrl: "/stock-requests",
+      redirectUrl: "stock-requests",
       relatedId: request._id,
     });
 

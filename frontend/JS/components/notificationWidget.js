@@ -27,7 +27,7 @@ class NotificationWidget {
     }
 
     container.innerHTML = `
-      <div class="relative">
+      <div class="relative z-30" style="position: relative; z-index: 30;">
         <!-- Notification Bell Button -->
         <button 
           id="notificationBell" 
@@ -50,19 +50,20 @@ class NotificationWidget {
         <!-- Notification Dropdown -->
         <div 
           id="notificationDropdown" 
-          class="hidden absolute right-0 mt-2 w-96 bg-white rounded-lg shadow-xl border border-slate-200 z-50 max-h-[600px] overflow-y-auto"
+          class="hidden absolute bg-white rounded-lg shadow-lg border border-slate-200 overflow-hidden"
+          style="position: absolute; top: calc(100% + 0.5rem); right: 0; width: 20rem; max-width: min(92vw, 20rem); max-height: min(70vh, 32rem); z-index: 40;"
         >
-          <div class="p-4 border-b border-slate-200 flex justify-between items-center">
+          <div class="p-4 border-b border-slate-200 flex justify-between items-center bg-white gap-3">
             <h3 class="font-semibold text-slate-900">Notifications</h3>
             <button 
               onclick="notificationWidget.markAllAsRead()"
-              class="text-xs text-blue-600 hover:underline"
+              class="text-xs text-blue-600 hover:underline whitespace-nowrap"
             >
               Mark all as read
             </button>
           </div>
           
-          <div id="notificationList" class="divide-y divide-slate-100">
+          <div id="notificationList" class="divide-y divide-slate-100 overflow-y-auto overflow-x-hidden" style="max-height: min(calc(70vh - 4rem), 28rem); width: 100%;">
             <div class="p-4 text-center text-slate-500">Loading...</div>
           </div>
         </div>
@@ -139,7 +140,7 @@ class NotificationWidget {
               ${icon}
             </div>
             <div class="flex-1 min-w-0">
-              <p class="text-sm text-slate-900 mb-1">${notif.message}</p>
+              <p class="text-sm text-slate-900 mb-1 break-words whitespace-normal">${notif.message}</p>
               <p class="text-xs text-slate-500">${timeAgo}</p>
             </div>
             ${!notif.isRead ? '<div class="flex-shrink-0 w-2 h-2 bg-blue-500 rounded-full mt-2"></div>' : ''}

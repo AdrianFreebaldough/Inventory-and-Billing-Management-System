@@ -822,7 +822,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
   /* ================= EVENTS ================= */
   navDashboard.addEventListener("click", (e) => {
->>>>>>> 1c66b0f6b062f85491e5c31077524a1658a1afa3
     e.preventDefault();
     loadDashboard();
   });

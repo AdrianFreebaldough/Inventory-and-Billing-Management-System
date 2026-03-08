@@ -623,7 +623,7 @@ export const OWNER_rejectInventoryRequest = async (req, res) => {
 
 export const OWNER_archiveProduct = async (req, res) => {
   const { productId } = req.params;
-  const { reason } = req.body;
+  const reason = typeof req.body?.reason === "string" ? req.body.reason.trim() : "";
   const session = await mongoose.startSession();
 
   try {
@@ -652,7 +652,7 @@ export const OWNER_archiveProduct = async (req, res) => {
             statusAtArchive: product.status,
             archivedBy: req.user.id,
             archivedAt: new Date(),
-            archiveReason: reason ? String(reason).trim() : "Owner archived product",
+            archiveReason: reason || "Owner archived product",
             snapshot,
           },
         ],
@@ -677,7 +677,7 @@ export const OWNER_archiveProduct = async (req, res) => {
                 quantityChange: 0,
                 quantityAfter: product.quantity,
               },
-              notes: reason ? String(reason).trim() : "Owner archived product",
+              notes: reason || "Owner archived product",
               metadata: {
                 archivedCollection: "archived_products",
               },

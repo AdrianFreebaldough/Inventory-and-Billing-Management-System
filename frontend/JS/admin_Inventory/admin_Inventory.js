@@ -1147,13 +1147,17 @@ function showArchiveConfirm(item) {
 
   getElement(m, "#archiveConfirmBtn")?.addEventListener("click", async () => {
     try {
-      await apiFetch(API.archiveProduct(item.id), { method: "PATCH" });
+      await apiFetch(API.archiveProduct(item.id), {
+        method: "PATCH",
+        body: JSON.stringify({ reason: "Owner archived product" }),
+      });
       showToast("Archived Successfully", "success");
       hide();
       if (detailsModal) { detailsModal.classList.add("hidden"); detailsModal.style.display = ""; }
       await refreshInventory();
     } catch (err) {
-      showToast(`Archive failed: ${err.message}`, "error");
+      console.error("Owner archive failed:", err);
+      showToast("Unable to archive item. Please try again.", "error");
     }
   });
 }

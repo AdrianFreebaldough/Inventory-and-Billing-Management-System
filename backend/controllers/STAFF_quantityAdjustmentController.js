@@ -1,6 +1,8 @@
 import STAFF_QuantityAdjustment from "../models/STAFF_quantityAdjustment.js";
 import Product from "../models/product.js";
 import Notification from "../models/Notification.js";
+import STAFF_ActivityLog from "../models/STAFF_activityLog.js";
+import User from "../models/user.js";
 import { createStockLog } from "../services/Owner_StockLog.service.js";
 
 // Staff: Create quantity adjustment request
@@ -29,14 +31,34 @@ export const STAFF_createQuantityAdjustment = async (req, res) => {
       status: "Pending",
     });
 
-    // Create notification for owner
-    await Notification.create({
-      userId: null,
+    // Create a notification for each active owner.
+    const owners = await User.find({
       role: "owner",
-      message: `Inventory adjustment request for ${product.name} by ${req.user.name}`,
-      type: "inventory_adjustment_request",
-      redirectUrl: "/inventory-adjustments",
-      relatedId: adjustment._id,
+      isActive: true,
+      status: { $ne: "Archived" },
+    })
+      .select("_id")
+      .lean();
+
+    if (owners.length) {
+      await Notification.insertMany(
+        owners.map((owner) => ({
+          userId: owner._id,
+          role: "owner",
+          message: `Inventory adjustment request for ${product.name} by ${req.user.name}`,
+          type: "inventory_adjustment_request",
+          redirectUrl: "inventory",
+          relatedId: adjustment._id,
+        }))
+      );
+    }
+
+    await STAFF_ActivityLog.create({
+      staffId: req.user.id,
+      actionType: "quantity-adjustment-request",
+      targetItemId: product._id,
+      description: `Submitted quantity adjustment request for ${product.name}`,
+      status: "pending",
     });
 
     return res.status(201).json({

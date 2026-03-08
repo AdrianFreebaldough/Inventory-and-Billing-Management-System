@@ -1,5 +1,7 @@
 import STAFF_Expense from "../models/STAFF_expense.js";
 import Notification from "../models/Notification.js";
+import STAFF_ActivityLog from "../models/STAFF_activityLog.js";
+import User from "../models/user.js";
 
 // Staff: Create expense
 export const STAFF_createExpense = async (req, res) => {
@@ -22,14 +24,34 @@ export const STAFF_createExpense = async (req, res) => {
       status: "Pending",
     });
 
-    // Create notification for owner
-    await Notification.create({
-      userId: null, // Will be picked up by all owners
+    // Create a notification for each active owner.
+    const owners = await User.find({
       role: "owner",
-      message: `New expense submitted by ${req.user.name} - ${title}`,
-      type: "expense_submitted",
-      redirectUrl: "/expenses",
-      relatedId: expense._id,
+      isActive: true,
+      status: { $ne: "Archived" },
+    })
+      .select("_id")
+      .lean();
+
+    if (owners.length) {
+      await Notification.insertMany(
+        owners.map((owner) => ({
+          userId: owner._id,
+          role: "owner",
+          message: `New expense submitted by ${req.user.name} - ${title}`,
+          type: "expense_submitted",
+          redirectUrl: "expenses",
+          relatedId: expense._id,
+        }))
+      );
+    }
+
+    await STAFF_ActivityLog.create({
+      staffId: req.user.id,
+      actionType: "expense-submitted",
+      targetItemId: null,
+      description: `Submitted expense \"${title}\" (${category})`,
+      status: "pending",
     });
 
     return res.status(201).json({
@@ -132,7 +154,7 @@ export const OWNER_updateExpenseStatus = async (req, res) => {
       role: "staff",
       message: `Your expense "${expense.title}" has been ${status.toLowerCase()}`,
       type: status === "Approved" ? "expense_approved" : "expense_reviewed",
-      redirectUrl: "/expenses",
+      redirectUrl: "expenses",
       relatedId: expense._id,
     });
 

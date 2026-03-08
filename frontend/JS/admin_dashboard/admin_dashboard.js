@@ -788,7 +788,7 @@ document.addEventListener("DOMContentLoaded", () => {
     setActive(navStockLogs);
 
     try {
-      const res = await fetch("../../HTML/Admin_Activitylogs/OwnerActivitylogs.html");
+      const res = await fetch(`../../HTML/Admin_Activitylogs/OwnerActivitylogs.html?v=${Date.now()}`);
       if (!res.ok) throw new Error("Stock Logs HTML not found");
 
       mainContent.innerHTML = await res.text();

@@ -8,6 +8,12 @@ const physicalInventoryCheckSchema = new mongoose.Schema(
       required: true,
       index: true,
     },
+    batch: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "InventoryBatch",
+      default: null,
+      index: true,
+    },
     month: {
       type: String,
       required: true,
@@ -45,6 +51,6 @@ const physicalInventoryCheckSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-physicalInventoryCheckSchema.index({ product: 1, month: 1 }, { unique: true });
+physicalInventoryCheckSchema.index({ product: 1, batch: 1, month: 1 }, { unique: true });
 
 export default mongoose.model("PhysicalInventoryCheck", physicalInventoryCheckSchema);

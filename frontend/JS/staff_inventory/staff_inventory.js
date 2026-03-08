@@ -1329,6 +1329,7 @@ function showAddItemModal() {
                         <select id="addCategory" class="w-full border border-gray-300 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
                             <option value="">Select category</option>
                             <option value="Antibiotic">Antibiotic</option>
+                            <option value="Medicine">Medicine</option>
                             <option value="Analgesic">Analgesic</option>
                             <option value="Antipyretic">Antipyretic</option>
                             <option value="Antihistamine">Antihistamine</option>

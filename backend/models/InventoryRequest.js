@@ -24,10 +24,25 @@ const inventoryRequestSchema = new mongoose.Schema(
       default: null,
       min: 1,
     },
+    unitPrice: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
     unit: {
       type: String,
       trim: true,
       default: "pcs",
+    },
+    minStock: {
+      type: Number,
+      default: 10,
+      min: 0,
+    },
+    description: {
+      type: String,
+      trim: true,
+      default: "",
     },
     expiryDate: {
       type: Date,
@@ -102,6 +117,9 @@ inventoryRequestSchema.pre("validate", function (next) {
     this.itemName = null;
     this.category = null;
     this.initialQuantity = null;
+    this.unitPrice = 0;
+    this.minStock = 10;
+    this.description = "";
   }
 
   return undefined;

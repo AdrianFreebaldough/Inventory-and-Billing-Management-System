@@ -1,5 +1,18 @@
 import STAFF_ActivityLog from "../models/STAFF_activityLog.js";
 
+const STAFF_MAJOR_ACTION_TYPES = [
+  "billing-create",
+  "billing-complete",
+  "billing-void",
+  "add-item-request",
+  "restock-request",
+  "archive-item",
+  "restore-item",
+  "stock-request-sent",
+  "expense-submitted",
+  "quantity-adjustment-request",
+];
+
 const STAFF_parsePagination = (query) => {
   const page = Number.parseInt(query.page, 10);
   const limit = Number.parseInt(query.limit, 10);
@@ -15,10 +28,24 @@ export const STAFF_getMyActivityLogs = async (req, res) => {
     const { page, limit } = STAFF_parsePagination(req.query);
     const skip = (page - 1) * limit;
 
-    const filter = { staffId: req.user.id };
+    const filter = {
+      staffId: req.user.id,
+      actionType: { $in: STAFF_MAJOR_ACTION_TYPES },
+    };
 
     if (req.query.actionType) {
-      filter.actionType = String(req.query.actionType).trim();
+      const requestedActionType = String(req.query.actionType).trim();
+      if (!STAFF_MAJOR_ACTION_TYPES.includes(requestedActionType)) {
+        return res.status(200).json({
+          page,
+          limit,
+          total: 0,
+          totalPages: 1,
+          data: [],
+        });
+      }
+
+      filter.actionType = requestedActionType;
     }
 
     if (req.query.status) {

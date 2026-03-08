@@ -47,6 +47,15 @@ const STAFF_receiptSnapshotSchema = new mongoose.Schema(
       type: Date,
       required: true,
     },
+    patientId: {
+      type: String,
+      required: true,
+    },
+    patientName: {
+      type: String,
+      required: true,
+      trim: true,
+    },
     staffId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
@@ -60,6 +69,32 @@ const STAFF_receiptSnapshotSchema = new mongoose.Schema(
     subtotal: {
       type: Number,
       required: true,
+      min: 0,
+    },
+    discountRate: {
+      type: Number,
+      default: 0,
+    },
+    discountAmount: {
+      type: Number,
+      default: 0,
+    },
+    vatRate: {
+      type: Number,
+      default: 0.12,
+    },
+    vatAmount: {
+      type: Number,
+      default: 0,
+    },
+    vatIncluded: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    netAmount: {
+      type: Number,
+      default: 0,
       min: 0,
     },
     totalAmount: {
@@ -89,15 +124,79 @@ const STAFF_billingTransactionSchema = new mongoose.Schema(
       required: true,
       index: true,
     },
+    patientId: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+    patientName: {
+      type: String,
+      required: true,
+      trim: true,
+    },
     items: {
       type: [STAFF_billingItemSchema],
       required: true,
       validate: [(items) => items.length > 0, "At least one item is required"],
     },
+    subtotal: {
+      type: Number,
+      required: true,
+      min: 0,
+    },
+    discountRate: {
+      type: Number,
+      default: 0,
+      min: 0,
+      max: 1,
+    },
+    discountAmount: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    vatRate: {
+      type: Number,
+      default: 0.12,
+    },
+    vatAmount: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    vatIncluded: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    netAmount: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
     totalAmount: {
       type: Number,
       required: true,
       min: 0,
+    },
+    editedPatientId: {
+      type: String,
+      trim: true,
+      default: null,
+    },
+    editedPatientName: {
+      type: String,
+      trim: true,
+      default: null,
+    },
+    editedItems: {
+      type: [STAFF_billingItemSchema],
+      default: null,
+    },
+    voidNotes: {
+      type: String,
+      trim: true,
+      default: null,
     },
     cashReceived: {
       type: Number,
@@ -116,7 +215,7 @@ const STAFF_billingTransactionSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ["PENDING_PAYMENT", "COMPLETED"],
+      enum: ["PENDING_PAYMENT", "COMPLETED", "VOIDED"],
       default: "PENDING_PAYMENT",
       index: true,
     },
@@ -128,11 +227,26 @@ const STAFF_billingTransactionSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+    voidedAt: {
+      type: Date,
+      default: null,
+    },
+    voidedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+    voidReason: {
+      type: String,
+      trim: true,
+      default: null,
+    },
   },
   { timestamps: true }
 );
 
 STAFF_billingTransactionSchema.index({ staffId: 1, createdAt: -1 });
+STAFF_billingTransactionSchema.index({ staffId: 1, status: 1, completedAt: -1 });
 STAFF_billingTransactionSchema.index({ "receiptSnapshot.receiptNumber": 1 }, { unique: true, sparse: true });
 
 export default mongoose.model("STAFF_BillingTransaction", STAFF_billingTransactionSchema);

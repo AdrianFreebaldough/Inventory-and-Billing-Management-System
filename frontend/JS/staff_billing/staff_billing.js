@@ -1,502 +1,1161 @@
-import { products } from "./data/staff_billing_data.js";
-
-let cart = [];
-const HISTORY_STORAGE_KEY = "ibms_billing_history";
-
-export function initBilling() {
-  const productList = document.getElementById("productList");
-  const cartItems = document.getElementById("cartItems");
-  const cartCount = document.getElementById("cartCount");
-  const totalEl = document.getElementById("total");
-  const subtotalEl = document.getElementById("subtotal");
-  const clearCartBtn = document.getElementById("clearCart");
-  const proceedPaymentBtn = document.getElementById("proceedPayment");
-  const searchInput = document.getElementById("searchProduct");
-  const filterCategory = document.getElementById("filterCategory");
-
-  const tabTransactionsBtn = document.getElementById("tabTransactions");
-  const tabHistoryBtn = document.getElementById("tabHistory");
-  const transactionsSection = document.getElementById("transactionsSection");
-  const paymentSection = document.getElementById("paymentSection");
-  const paymentSuccessSection = document.getElementById("paymentSuccessSection");
-  const historySection = document.getElementById("historySection");
-  const tabButtons = document.getElementById("tabButtons");
-
-  const searchHistoryInput = document.getElementById("searchHistory");
-  const filterTodayBtn = document.getElementById("filterToday");
-  const historyTable = document.getElementById("historyTable");
-  const historyTransactionsToday = document.getElementById("historyTransactionsToday");
-  const historyTotalSales = document.getElementById("historyTotalSales");
-
-  const patientIdInput = document.getElementById("patientId");
-  const patientNameInput = document.getElementById("patientName");
-
-  if (!productList || !cartItems) return;
-
-  let filteredProducts = products;
-  let historyRecords = loadBillingHistory();
-  let historyTodayOnly = false;
-
-  const cashReceivedInput = document.getElementById("cashReceived");
-  const changeAmountEl = document.getElementById("changeAmount");
-  const completePaymentBtn = document.getElementById("completePayment");
-  const payAmountEl = document.getElementById("payAmount");
-  const quickAmountBtns = document.querySelectorAll(".quick-amount");
-
-  function formatCurrency(amount) {
-    return `₱${(Number(amount) || 0).toFixed(2)}`;
-  }
-
-  function getDateTimeDisplay(record) {
-    if (record.dateTimeDisplay) return record.dateTimeDisplay;
-    if (!record.dateTime) return "-";
-    return new Date(record.dateTime).toLocaleString();
-  }
-
-  function isTodayDate(dateString) {
-    if (!dateString) return false;
-    const date = new Date(dateString);
-    const now = new Date();
-    return date.getFullYear() === now.getFullYear() &&
-      date.getMonth() === now.getMonth() &&
-      date.getDate() === now.getDate();
-  }
-
-  function setHistoryTabStyles(isHistoryActive) {
-    if (!tabTransactionsBtn || !tabHistoryBtn) return;
-
-    if (isHistoryActive) {
-      tabHistoryBtn.classList.remove("bg-gray-200", "text-gray-700");
-      tabHistoryBtn.classList.add("bg-emerald-700", "text-white");
-      tabTransactionsBtn.classList.remove("bg-emerald-700", "text-white");
-      tabTransactionsBtn.classList.add("bg-gray-200", "text-gray-700");
-      return;
-    }
-
-    tabTransactionsBtn.classList.remove("bg-gray-200", "text-gray-700");
-    tabTransactionsBtn.classList.add("bg-emerald-700", "text-white");
-    tabHistoryBtn.classList.remove("bg-emerald-700", "text-white");
-    tabHistoryBtn.classList.add("bg-gray-200", "text-gray-700");
-  }
-
-  function showTransactionsTab() {
-    transactionsSection?.classList.remove("hidden");
-    paymentSection?.classList.add("hidden");
-    paymentSuccessSection?.classList.add("hidden");
-    historySection?.classList.add("hidden");
-    if (tabButtons) tabButtons.style.display = "";
-    setHistoryTabStyles(false);
-  }
-
-  function showHistoryTab() {
-    transactionsSection?.classList.add("hidden");
-    paymentSection?.classList.add("hidden");
-    paymentSuccessSection?.classList.add("hidden");
-    historySection?.classList.remove("hidden");
-    if (tabButtons) tabButtons.style.display = "";
-    setHistoryTabStyles(true);
-    renderHistoryTable();
-  }
-
-  function updateChange() {
-    const payAmount = parseFloat(payAmountEl?.textContent?.replace(/[₱,]/g, "") || "0");
-    const cash = parseFloat(cashReceivedInput?.value || "0");
-    const change = cash - payAmount;
-    if (changeAmountEl) changeAmountEl.textContent = `₱${change > 0 ? change.toFixed(2) : "0.00"}`;
-    if (completePaymentBtn) completePaymentBtn.disabled = !(cash >= payAmount && payAmount > 0);
-  }
-
-  function renderProducts() {
-    productList.innerHTML = "";
-    filteredProducts.forEach(product => {
-      const card = document.createElement("div");
-      card.className = "border rounded-lg p-4 space-y-1 bg-white";
-      card.innerHTML = `
-        <h3 class="font-semibold">${product.name}</h3>
-        <p class="text-xs text-gray-500">${product.id} · ${product.category}</p>
-        <p class="text-lg font-bold text-emerald-700">₱${product.price.toFixed(2)}</p>
-        <p class="text-xs text-gray-500">Stock: ${product.stock}</p>
-        <button class="mt-2 w-full bg-emerald-700 text-white py-1 rounded text-sm">Add</button>
-      `;
-      card.querySelector("button")?.addEventListener("click", () => addToCart(product));
-      productList.appendChild(card);
-    });
-  }
-
-  function filterProducts() {
-    const search = searchInput?.value?.toLowerCase() || "";
-    const category = filterCategory?.value || "";
-
-    filteredProducts = products.filter(product => {
-      const matchesSearch = product.name.toLowerCase().includes(search) || product.id.toLowerCase().includes(search);
-      const matchesCategory = !category || product.category === category;
-      return matchesSearch && matchesCategory;
-    });
-
-    renderProducts();
-  }
-
-  function addToCart(product) {
-    const existing = cart.find(item => item.id === product.id);
-    if (existing) existing.qty += 1;
-    else cart.push({ ...product, qty: 1 });
-    renderCart();
-  }
-
-  function setQty(id, value) {
-    const item = cart.find(entry => entry.id === id);
-    if (!item) return;
-
-    const qty = Number(value);
-    if (qty <= 0 || Number.isNaN(qty)) {
-      cart = cart.filter(entry => entry.id !== id);
-    } else {
-      item.qty = qty;
-    }
-
-    renderCart();
-  }
-
-  function updateQty(id, delta) {
-    const item = cart.find(entry => entry.id === id);
-    if (!item) return;
-    item.qty += delta;
-    if (item.qty <= 0) cart = cart.filter(entry => entry.id !== id);
-    renderCart();
-  }
-
-  function clearCart() {
-    cart = [];
-    renderCart();
-  }
-
-  function renderCart() {
-    cartItems.innerHTML = "";
-    cartCount.textContent = String(cart.reduce((sum, item) => sum + item.qty, 0));
-
-    let subtotal = 0;
-    let total = 0;
-
-    if (cart.length === 0) {
-      cartItems.innerHTML = `
-        <div class="text-center text-gray-400 mt-20">
-          Cart is empty<br>
-          <span class="text-xs">Add a product to start</span>
-        </div>
-      `;
-      totalEl.textContent = "₱0.00";
-      subtotalEl.textContent = "₱0.00";
-      proceedPaymentBtn.disabled = true;
-      return;
-    }
-
-    cart.forEach(item => {
-      subtotal += item.price * item.qty;
-      total += item.price * item.qty;
-
-      const row = document.createElement("div");
-      row.className = "flex justify-between items-center border-b pb-2 mb-2";
-      row.innerHTML = `
-        <div>
-          <p class="font-medium">${item.name}</p>
-          <p class="text-xs text-gray-500">₱${item.price.toFixed(2)} each</p>
-        </div>
-        <div class="flex flex-col items-end">
-          <div class="flex items-center gap-2 mb-1">
-            <button class="px-2 border rounded" title="Decrease">−</button>
-            <input type="number" min="1" value="${item.qty}" class="w-14 text-center border rounded text-sm" />
-            <button class="px-2 border rounded" title="Increase">+</button>
-          </div>
-          <span class="font-semibold">₱${(item.price * item.qty).toFixed(2)}</span>
-          <button class="text-red-500 text-xs mt-1" title="Remove">🗑</button>
-        </div>
-      `;
-
-      const [minusBtn, qtyInput, plusBtn] = row.querySelectorAll("button, input");
-      minusBtn.onclick = () => updateQty(item.id, -1);
-      plusBtn.onclick = () => updateQty(item.id, 1);
-      qtyInput.onblur = event => setQty(item.id, event.target.value);
-      qtyInput.onkeydown = event => {
-        if (event.key === "Enter") {
-          setQty(item.id, event.target.value);
-          qtyInput.blur();
-        }
-      };
-      row.querySelector(".text-red-500").onclick = () => setQty(item.id, 0);
-      cartItems.appendChild(row);
-    });
-
-    totalEl.textContent = `₱${total.toFixed(2)}`;
-    subtotalEl.textContent = `₱${subtotal.toFixed(2)}`;
-    proceedPaymentBtn.disabled = cart.length === 0;
-  }
-
-  function getFilteredHistoryRecords() {
-    const keyword = (searchHistoryInput?.value || "").trim().toLowerCase();
-
-    return historyRecords.filter(record => {
-      const matchesToday = !historyTodayOnly || isTodayDate(record.dateTime);
-      if (!keyword) return matchesToday;
-
-      const haystack = [record.id, record.patientId, record.patientName].join(" ").toLowerCase();
-      return matchesToday && haystack.includes(keyword);
-    });
-  }
-
-  function updateHistorySummary() {
-    const todayRecords = historyRecords.filter(record => isTodayDate(record.dateTime));
-    const totalSalesToday = todayRecords.reduce((sum, record) => sum + (Number(record.total) || 0), 0);
-
-    if (historyTransactionsToday) historyTransactionsToday.textContent = String(todayRecords.length);
-    if (historyTotalSales) historyTotalSales.textContent = formatCurrency(totalSalesToday);
-  }
-
-  function openTransactionDetails(transactionId) {
-    const tx = historyRecords.find(record => record.id === transactionId);
-    if (!tx) return;
-
-    const dateObj = tx.dateTime ? new Date(tx.dateTime) : null;
-    const detailsItems = document.getElementById("detailsItems");
-
-    document.getElementById("detailsTransactionId").textContent = tx.id || "-";
-    document.getElementById("detailsStatus").textContent = tx.status || "Completed";
-    document.getElementById("detailsDate").textContent = dateObj ? dateObj.toLocaleDateString() : "-";
-    document.getElementById("detailsTime").textContent = dateObj ? dateObj.toLocaleTimeString() : "-";
-    document.getElementById("detailsPatient").textContent = `${tx.patientName || "Walk-in"} (${tx.patientId || "SAMPLE-XXX"})`;
-
-    if (detailsItems) {
-      detailsItems.innerHTML = (tx.items || []).map(item => `
-        <tr>
-          <td class="py-1">${item.name}</td>
-          <td class="text-center">${item.qty}</td>
-          <td class="text-right">${formatCurrency(item.lineTotal)}</td>
-        </tr>
-      `).join("");
-    }
-
-    document.getElementById("detailsTotal").textContent = formatCurrency(tx.total);
-    document.getElementById("detailsCashPaid").textContent = formatCurrency(tx.cashPaid);
-    document.getElementById("detailsChange").textContent = formatCurrency(tx.change);
-
-    document.getElementById("transactionDetailsModal")?.classList.remove("hidden");
-  }
-
-  function closeTransactionDetails() {
-    document.getElementById("transactionDetailsModal")?.classList.add("hidden");
-  }
-
-  function renderHistoryTable() {
-    if (!historyTable) return;
-
-    const filteredHistory = getFilteredHistoryRecords();
-    updateHistorySummary();
-
-    if (filteredHistory.length === 0) {
-      historyTable.innerHTML = `
-        <tr>
-          <td colspan="6" class="py-8 text-center text-gray-500">No transactions found.</td>
-        </tr>
-      `;
-      return;
-    }
-
-    historyTable.innerHTML = filteredHistory.map(record => {
-      const itemCount = (record.items || []).reduce((sum, item) => sum + (item.qty || 0), 0);
-      return `
-        <tr class="border-b">
-          <td class="py-2">${record.id}</td>
-          <td class="py-2">${getDateTimeDisplay(record)}</td>
-          <td class="py-2">${itemCount} item(s)</td>
-          <td class="py-2">${record.patientId || "SAMPLE-XXX"}</td>
-          <td class="py-2">${formatCurrency(record.total)}</td>
-          <td class="py-2 text-center">
-            <button class="history-view-btn border rounded px-3 py-1 text-xs hover:bg-gray-100" data-id="${record.id}">View</button>
-          </td>
-        </tr>
-      `;
-    }).join("");
-
-    historyTable.querySelectorAll(".history-view-btn").forEach(button => {
-      button.addEventListener("click", () => openTransactionDetails(button.dataset.id));
-    });
-  }
-
-  searchInput?.addEventListener("input", filterProducts);
-  filterCategory?.addEventListener("change", filterProducts);
-  clearCartBtn?.addEventListener("click", clearCart);
-
-  cashReceivedInput?.addEventListener("input", updateChange);
-  quickAmountBtns.forEach(button => {
-    button.addEventListener("click", () => {
-      const payAmount = parseFloat(payAmountEl?.textContent?.replace(/[₱,]/g, "") || "0");
-      const amount = button.dataset.amount === "exact" ? payAmount : button.dataset.amount;
-      if (cashReceivedInput) cashReceivedInput.value = amount;
-      updateChange();
-    });
-  });
-
-  proceedPaymentBtn?.addEventListener("click", () => {
-    if (cart.length === 0) return;
-
-    transactionsSection?.classList.add("hidden");
-    paymentSection?.classList.remove("hidden");
-    if (tabButtons) tabButtons.style.display = "none";
-
-    const now = new Date();
-    const transactionId = generateTransactionId();
-    const total = cart.reduce((sum, item) => sum + item.price * item.qty, 0);
-    const totalItems = cart.reduce((sum, item) => sum + item.qty, 0);
-
-    document.getElementById("summaryTransactionId").textContent = transactionId;
-    document.getElementById("summaryItems").textContent = `${totalItems} item(s)`;
-    document.getElementById("summaryDateTime").textContent = now.toLocaleString();
-    document.getElementById("summaryTotal").textContent = formatCurrency(total);
-    document.getElementById("payAmount").textContent = formatCurrency(total);
-    document.getElementById("quickExact").textContent = total.toFixed(2);
-
-    const itemsList = document.getElementById("summaryItemsList");
-    if (itemsList) {
-      itemsList.innerHTML = cart.map(item => `
-        <div class="flex justify-between border-b pb-2 mb-2">
-          <span>${item.name} <span class="text-xs text-gray-400">x${item.qty}</span></span>
-          <span>${formatCurrency(item.price * item.qty)}</span>
-        </div>
-      `).join("");
-    }
-
-    if (cashReceivedInput) cashReceivedInput.value = "";
-    if (changeAmountEl) changeAmountEl.textContent = "₱0.00";
-    if (completePaymentBtn) completePaymentBtn.disabled = true;
-  });
-
-  document.getElementById("backToTransactions")?.addEventListener("click", showTransactionsTab);
-  document.getElementById("cancelTransaction")?.addEventListener("click", showTransactionsTab);
-
-  document.getElementById("cancelPayment")?.addEventListener("click", () => {
-    clearCart();
-    if (patientIdInput) patientIdInput.value = "";
-    if (patientNameInput) patientNameInput.value = "";
-  });
-
-  completePaymentBtn?.addEventListener("click", () => {
-    paymentSection?.classList.add("hidden");
-    paymentSuccessSection?.classList.remove("hidden");
-    if (tabButtons) tabButtons.style.display = "none";
-
-    const transactionId = document.getElementById("summaryTransactionId")?.textContent || generateTransactionId();
-    const summaryDateTime = document.getElementById("summaryDateTime")?.textContent || new Date().toLocaleString();
-    const patientId = patientIdInput?.value?.trim() || "SAMPLE-XXX";
-    const patientName = patientNameInput?.value?.trim() || "Walk-in";
-    const total = cart.reduce((sum, item) => sum + item.price * item.qty, 0);
-    const cashPaid = parseFloat(cashReceivedInput?.value || "0");
-    const change = Math.max(cashPaid - total, 0);
-
-    document.getElementById("receiptTransactionId").textContent = transactionId;
-    document.getElementById("receiptDateTime").textContent = summaryDateTime;
-    document.getElementById("receiptPatient").textContent = `${patientName} (${patientId})`;
-    document.getElementById("receiptStaff").textContent = "Staff Name";
-    document.getElementById("receiptTotal").textContent = formatCurrency(total);
-    document.getElementById("receiptCashPaid").textContent = formatCurrency(cashPaid);
-    document.getElementById("receiptChange").textContent = formatCurrency(change);
-
-    const receiptItems = document.getElementById("receiptItems");
-    if (receiptItems) {
-      receiptItems.innerHTML = cart.map(item => `
-        <tr>
-          <td>${item.name}</td>
-          <td class="text-center">${item.qty}</td>
-          <td class="text-right">${formatCurrency(item.price * item.qty)}</td>
-        </tr>
-      `).join("");
-    }
-
-    const completedTx = {
-      id: transactionId,
-      dateTime: new Date().toISOString(),
-      dateTimeDisplay: summaryDateTime,
-      patientId,
-      patientName,
-      total,
-      cashPaid,
-      change,
-      status: "Completed",
-      items: cart.map(item => ({
-        id: item.id,
-        name: item.name,
-        qty: item.qty,
-        price: item.price,
-        lineTotal: item.price * item.qty
-      }))
-    };
-
-    historyRecords = [completedTx, ...historyRecords];
-    saveBillingHistory(historyRecords);
-    renderHistoryTable();
-
-    cart = [];
-    renderCart();
-  });
-
-  document.getElementById("newTransaction")?.addEventListener("click", () => {
-    showTransactionsTab();
-    clearCart();
-    if (patientIdInput) patientIdInput.value = "";
-    if (patientNameInput) patientNameInput.value = "";
-  });
-
-  document.getElementById("returnToTransactions")?.addEventListener("click", () => {
-    showTransactionsTab();
-    clearCart();
-    if (patientIdInput) patientIdInput.value = "";
-    if (patientNameInput) patientNameInput.value = "";
-  });
-
-  tabTransactionsBtn?.addEventListener("click", showTransactionsTab);
-  tabHistoryBtn?.addEventListener("click", showHistoryTab);
-
-  searchHistoryInput?.addEventListener("input", renderHistoryTable);
-  filterTodayBtn?.addEventListener("click", () => {
-    historyTodayOnly = !historyTodayOnly;
-    if (historyTodayOnly) {
-      filterTodayBtn.classList.add("bg-emerald-700", "text-white", "border-emerald-700");
-    } else {
-      filterTodayBtn.classList.remove("bg-emerald-700", "text-white", "border-emerald-700");
-    }
-    renderHistoryTable();
-  });
-
-  document.getElementById("closeTransactionDetails")?.addEventListener("click", closeTransactionDetails);
-  document.getElementById("closeDetails")?.addEventListener("click", closeTransactionDetails);
-  document.getElementById("transactionDetailsModal")?.addEventListener("click", event => {
-    if (event.target.id === "transactionDetailsModal") closeTransactionDetails();
-  });
-
-  document.getElementById("printDetailsReceipt")?.addEventListener("click", () => window.print());
-  document.getElementById("printReceipt")?.addEventListener("click", () => window.print());
-
-  renderProducts();
-  renderCart();
-  renderHistoryTable();
-  showTransactionsTab();
+/**
+ * Staff Billing Module - Production Version
+ * Fully integrated with backend API. No mock data.
+ */
+
+import {
+	fetchBillingProducts,
+	createTransaction,
+	proceedToPayment,
+	completeTransaction,
+	voidTransaction as apiVoidTransaction,
+	fetchHistory,
+	fetchReceipt,
+} from "./BillingAPI.js";
+import { apiFetch } from "../utils/apiClient.js";
+
+/* ===== Constants ===== */
+
+const BILLING_MODE_RETURN_KEY = "lastStaffRoute";
+const VAT_RATE = 0.12;
+const CLINIC_NAME = "IBMS Clinic";
+const PRODUCT_CATEGORIES = [
+	"All Items",
+	"Medicines",
+	"Medical Supplies",
+	"Medical Equipment",
+	"Diagnostic Kits",
+	"General Supplies",
+];
+
+let patientLookupDebounceTimer = null;
+
+/* ===== State ===== */
+
+const state = {
+	products: [],
+	activeCategory: "All Items",
+	searchTerm: "",
+	quantities: {},
+	discountRate: 0,
+	patientId: "",
+	patientName: "",
+	activeView: "sale",
+	transactionLog: [],
+	activeTransactionId: null,
+	heldTransactions: [],
+	heldCounter: 1,
+	currentModal: null,
+	lastCompletedSale: null,
+	pendingVoidTransactionId: null,
+	isLoading: false,
+};
+
+/* ===== DOM Elements ===== */
+
+const categoryTabs = document.getElementById("categoryTabs");
+const itemsTableBody = document.getElementById("itemsTableBody");
+const searchInput = document.getElementById("searchInput");
+const selectedItemsPanel = document.getElementById("selectedItems");
+const posView = document.getElementById("posView");
+const historyView = document.getElementById("historyView");
+const historyTableBody = document.getElementById("historyTableBody");
+
+const itemsCountElement = document.getElementById("itemsCount");
+const subtotalElement = document.getElementById("subtotalValue");
+const discountElement = document.getElementById("discountValue");
+const vatElement = document.getElementById("vatValue");
+const totalDueElement = document.getElementById("totalDueValue");
+
+const txnIdElement = document.getElementById("txnId");
+const txnStatusElement = document.getElementById("txnStatus");
+const patientIdInput = document.getElementById("patientIdInput");
+const patientIdHint = document.getElementById("patientIdHint");
+const proceedButton = document.getElementById("proceedBtn");
+
+const menuPosButton = document.getElementById("menuPosBtn");
+const holdTopButton = document.getElementById("holdTopBtn");
+const holdSummaryButton = document.getElementById("holdSummaryBtn");
+const newSaleButton = document.getElementById("newSaleBtn");
+const historyButton = document.getElementById("historyBtn");
+const discountButton = document.getElementById("discountBtn");
+const clearAllButton = document.getElementById("clearAllBtn");
+
+const modalOverlay = document.getElementById("modalOverlay");
+const summaryModal = document.getElementById("summaryModal");
+const cashModal = document.getElementById("cashModal");
+const successModal = document.getElementById("successModal");
+const heldModal = document.getElementById("heldModal");
+const historyViewModal = document.getElementById("historyViewModal");
+const voidConfirmModal = document.getElementById("voidConfirmModal");
+
+const summaryClinic = document.getElementById("summaryClinic");
+const summaryTxnId = document.getElementById("summaryTxnId");
+const summaryPatientId = document.getElementById("summaryPatientId");
+const summaryItemsBody = document.getElementById("summaryItemsBody");
+const summarySubtotal = document.getElementById("summarySubtotal");
+const summaryDiscount = document.getElementById("summaryDiscount");
+const summaryVat = document.getElementById("summaryVat");
+const summaryTotal = document.getElementById("summaryTotal");
+const summaryBackBtn = document.getElementById("summaryBackBtn");
+const summaryProceedBtn = document.getElementById("summaryProceedBtn");
+
+const cashTotalDue = document.getElementById("cashTotalDue");
+const cashTenderedInput = document.getElementById("cashTenderedInput");
+const cashChangeValue = document.getElementById("cashChangeValue");
+const cashBackBtn = document.getElementById("cashBackBtn");
+const finalizeBtn = document.getElementById("finalizeBtn");
+
+const successClinic = document.getElementById("successClinic");
+const successTxnId = document.getElementById("successTxnId");
+const successPatientId = document.getElementById("successPatientId");
+const successItems = document.getElementById("successItems");
+const successSubtotal = document.getElementById("successSubtotal");
+const successDiscount = document.getElementById("successDiscount");
+const successVat = document.getElementById("successVat");
+const successTotal = document.getElementById("successTotal");
+const printSlipBtn = document.getElementById("printSlipBtn");
+const nextSaleBtn = document.getElementById("nextSaleBtn");
+
+const heldCloseBtn = document.getElementById("heldCloseBtn");
+const heldList = document.getElementById("heldList");
+
+const historyViewCloseBtn = document.getElementById("historyViewCloseBtn");
+const historyViewTxnId = document.getElementById("historyViewTxnId");
+const historyViewDateTime = document.getElementById("historyViewDateTime");
+const historyViewPatientId = document.getElementById("historyViewPatientId");
+const historyViewStatus = document.getElementById("historyViewStatus");
+const historyViewItemsBody = document.getElementById("historyViewItemsBody");
+const historyViewSubtotal = document.getElementById("historyViewSubtotal");
+const historyViewDiscount = document.getElementById("historyViewDiscount");
+const historyViewVat = document.getElementById("historyViewVat");
+const historyViewTotal = document.getElementById("historyViewTotal");
+const voidCancelBtn = document.getElementById("voidCancelBtn");
+const voidConfirmBtn = document.getElementById("voidConfirmBtn");
+
+const toastContainer = document.getElementById("toastContainer");
+const loadingOverlay = document.getElementById("loadingOverlay");
+const loadingText = document.getElementById("loadingText");
+
+/* ===== Auth & Navigation ===== */
+
+function getCurrentTokenRole() {
+	const tokenKeys = ["token", "authToken", "jwtToken", "ibmsToken"];
+	for (const key of tokenKeys) {
+		const token = localStorage.getItem(key);
+		if (!token || !token.trim()) continue;
+		const parts = token.split(".");
+		if (parts.length < 2) continue;
+		try {
+			const payload = JSON.parse(atob(parts[1]));
+			const role = String(payload?.role || "").toLowerCase();
+			if (role) return role;
+		} catch {
+			return "";
+		}
+	}
+	return "";
 }
 
-function generateTransactionId() {
-  const now = new Date();
-  const datePart = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}`;
-  const randomPart = Math.random().toString(36).slice(2, 8).toUpperCase();
-  return `OR-${datePart}-${randomPart}`;
+function enforceStaffAccessOrRedirect() {
+	const role = getCurrentTokenRole();
+	if (role !== "staff") {
+		window.location.href = "../../HTML/loginPage/loginPage.html";
+		return false;
+	}
+	return true;
 }
 
-function loadBillingHistory() {
-  try {
-    const raw = localStorage.getItem(HISTORY_STORAGE_KEY);
-    const parsed = raw ? JSON.parse(raw) : [];
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
+function exitBillingMode() {
+	const lastRoute = (sessionStorage.getItem(BILLING_MODE_RETURN_KEY) || "dashboard").toLowerCase();
+	const safeRoute = ["dashboard", "inventory", "profile"].includes(lastRoute) ? lastRoute : "dashboard";
+	window.location.href = `../../HTML/staff_dashboard/staff_dashboard.html#${safeRoute}`;
 }
 
-function saveBillingHistory(records) {
-  localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(records));
+/* ===== UI Utilities ===== */
+
+function formatPeso(value) {
+	return `₱${Number(value).toFixed(2)}`;
 }
+
+function showToast(message, type = "info") {
+	const toast = document.createElement("div");
+	const bgColor = {
+		success: "bg-emerald-500",
+		error: "bg-rose-500",
+		info: "bg-cyan-500",
+		warning: "bg-amber-500",
+	}[type] || "bg-slate-700";
+
+	toast.className = `${bgColor} text-white px-4 py-2 rounded shadow-lg text-sm animate-fade-in`;
+	toast.textContent = message;
+	toastContainer.appendChild(toast);
+
+	setTimeout(() => {
+		toast.classList.add("opacity-0", "transition-opacity");
+		setTimeout(() => toast.remove(), 300);
+	}, 3000);
+}
+
+function showLoading(text = "Processing...") {
+	state.isLoading = true;
+	loadingText.textContent = text;
+	loadingOverlay.classList.remove("hidden");
+	loadingOverlay.classList.add("flex");
+}
+
+function hideLoading() {
+	state.isLoading = false;
+	loadingOverlay.classList.add("hidden");
+	loadingOverlay.classList.remove("flex");
+}
+
+function generatePatientId() {
+	const suffix = Math.floor(100000 + Math.random() * 900000);
+	return `PAT-${suffix}`;
+}
+
+async function fetchPatientNameById(patientId) {
+	if (!patientId || !patientId.trim()) return "";
+	try {
+		const encodedPatientId = encodeURIComponent(patientId.trim());
+		const result = await apiFetch(`/api/patients/${encodedPatientId}`, { method: "GET" });
+		const payload = result?.data || result;
+		return payload?.patientName ? String(payload.patientName).trim() : "";
+	} catch {
+		return "";
+	}
+}
+
+function generateHeldId() {
+	const id = `HLD-${String(state.heldCounter).padStart(4, "0")}`;
+	state.heldCounter += 1;
+	return id;
+}
+
+function formatDateTime(isoString) {
+	if (!isoString) return { date: "N/A", time: "N/A" };
+	const d = new Date(isoString);
+	const month = d.getMonth() + 1;
+	const day = d.getDate();
+	const year = d.getFullYear();
+	const hour = d.getHours();
+	const minute = String(d.getMinutes()).padStart(2, "0");
+	return { date: `${month}/${day}/${year}`, time: `${hour}:${minute}` };
+}
+
+/* ===== Modals ===== */
+
+function closeAllModals() {
+	[summaryModal, cashModal, successModal, heldModal, historyViewModal, voidConfirmModal].forEach((modal) => {
+		modal.classList.add("hidden");
+		modal.classList.remove("flex");
+	});
+	modalOverlay.classList.add("hidden");
+	document.body.classList.remove("overflow-hidden");
+	state.currentModal = null;
+}
+
+function openModal(modal) {
+	closeAllModals();
+	modalOverlay.classList.remove("hidden");
+	modal.classList.remove("hidden");
+	modal.classList.add("flex");
+	document.body.classList.add("overflow-hidden");
+	state.currentModal = modal.id;
+}
+
+/* ===== Data Computation ===== */
+
+function getSelectedItems() {
+	return state.products
+		.filter((item) => (state.quantities[item.id] || 0) > 0)
+		.map((item) => ({ ...item, qty: state.quantities[item.id] }));
+}
+
+function getFilteredItems() {
+	const term = state.searchTerm.trim().toLowerCase();
+	return state.products.filter((item) => {
+		const categoryMatch = state.activeCategory === "All Items" || item.category === state.activeCategory;
+		const searchMatch = item.name.toLowerCase().includes(term);
+		return categoryMatch && searchMatch;
+	});
+}
+
+function computeSaleTotals() {
+	const selected = getSelectedItems();
+	const itemCount = selected.reduce((total, item) => total + item.qty, 0);
+	const subtotal = selected.reduce((total, item) => total + item.price * item.qty, 0);
+	const discount = subtotal * state.discountRate;
+	// Prices are VAT-inclusive: total already contains the 12% VAT
+	const totalDue = Math.max(subtotal - discount, 0);
+	// Reverse VAT extraction: Net = Total / 1.12, VAT = Total - Net
+	const netAmount = totalDue / 1.12;
+	const vat = totalDue - netAmount;
+	return { selected, itemCount, subtotal, discount, vat, totalDue };
+}
+
+/* ===== Rendering ===== */
+
+function setProceedButtonEnabled(enabled) {
+	proceedButton.disabled = !enabled;
+	proceedButton.className = enabled
+		? "w-full bg-emerald-500 py-2.5 text-xs font-semibold text-white hover:bg-emerald-400"
+		: "w-full cursor-not-allowed bg-slate-200 py-2.5 text-xs font-semibold text-slate-400";
+}
+
+function updatePaymentLockStatus() {
+	const { itemCount } = computeSaleTotals();
+	if (!state.patientId) {
+		txnStatusElement.textContent = "WAITING FOR PATIENT ID";
+		txnStatusElement.className = "font-semibold text-amber-300";
+		patientIdHint.textContent = "Patient ID auto-generates when first item is added.";
+		patientIdHint.className = "mt-1 text-[10px] text-slate-400";
+		setProceedButtonEnabled(false);
+		return;
+	}
+
+	txnStatusElement.textContent = itemCount > 0 ? "READY FOR PAYMENT" : "WAITING FOR ITEMS";
+	txnStatusElement.className = itemCount > 0 ? "font-semibold text-emerald-400" : "font-semibold text-amber-300";
+	patientIdHint.textContent = itemCount > 0 ? "Patient ID ready. You can proceed to payment." : "Patient ID ready. Add items to continue.";
+	patientIdHint.className = itemCount > 0 ? "mt-1 text-[10px] text-emerald-300" : "mt-1 text-[10px] text-slate-400";
+	setProceedButtonEnabled(itemCount > 0 && Boolean(state.patientId));
+}
+
+function renderTabs() {
+	categoryTabs.innerHTML = PRODUCT_CATEGORIES
+		.map((tab) => {
+			const isActive = tab === state.activeCategory;
+			return `
+				<button
+					type="button"
+					data-category="${tab}"
+					class="min-w-24 border px-3 py-1.5 text-[11px] font-medium transition ${
+						isActive
+							? "border-slate-800 bg-slate-900 text-white"
+							: "border-slate-300 bg-white text-slate-700 hover:border-slate-400"
+					}"
+				>
+					${tab}
+				</button>
+			`;
+		})
+		.join("");
+}
+
+function renderItemRows() {
+	const filtered = getFilteredItems();
+	if (!filtered.length) {
+		itemsTableBody.innerHTML = `
+			<tr>
+				<td colspan="4" class="px-3 py-6 text-center text-sm text-slate-500">No items found.</td>
+			</tr>
+		`;
+		return;
+	}
+
+	itemsTableBody.innerHTML = filtered
+		.map((item) => {
+			const currentQty = state.quantities[item.id] || 0;
+			const displayQty = currentQty > 0 ? currentQty : 1;
+			const isOutOfStock = item.stock <= 0;
+			const isMinusDisabled = isOutOfStock || currentQty <= 1;
+			const isPlusDisabled = isOutOfStock || currentQty >= item.stock;
+			return `
+				<tr class="text-sm text-slate-800">
+					<td class="px-3 py-3 font-medium">${item.name}</td>
+					<td class="px-3 py-3">${formatPeso(item.price)}</td>
+					<td class="px-3 py-3 text-slate-600">${item.stock} units</td>
+					<td class="px-3 py-3">
+						<div class="mx-auto flex w-fit items-center gap-2">
+							<button
+								type="button"
+								data-action="decrement"
+								data-id="${item.id}"
+								${isMinusDisabled ? "disabled" : ""}
+								class="h-6 w-6 border text-xs leading-none ${
+									isMinusDisabled
+										? "cursor-not-allowed border-slate-200 text-slate-300"
+										: "border-slate-400 text-slate-700 hover:bg-slate-100"
+								}"
+							>−</button>
+							<input
+								type="number"
+								data-role="qty-input"
+								data-id="${item.id}"
+								min="1"
+								max="${item.stock}"
+								step="1"
+								inputmode="numeric"
+								value="${isOutOfStock ? 0 : displayQty}"
+								${isOutOfStock ? "disabled" : ""}
+								class="pos-qty-input h-6 w-[55px] border border-slate-300 bg-white px-1 text-center text-xs font-semibold text-slate-800 outline-none focus:border-cyan-600${
+									isOutOfStock ? " cursor-not-allowed bg-slate-100 text-slate-400" : ""
+								}"
+							/>
+							<button
+								type="button"
+								data-action="increment"
+								data-id="${item.id}"
+								${isPlusDisabled ? "disabled" : ""}
+								class="h-6 w-6 border text-xs leading-none ${
+									isPlusDisabled
+										? "cursor-not-allowed border-slate-200 text-slate-300"
+										: "border-slate-400 text-slate-700 hover:bg-slate-100"
+								}"
+							>+</button>
+						</div>
+					</td>
+				</tr>
+			`;
+		})
+		.join("");
+}
+
+function validateCommittedQuantity(item, rawValue, previousQty) {
+	const cleaned = String(rawValue ?? "").replace(/[^\d-]/g, "").trim();
+
+	if (!cleaned) {
+		return previousQty > 0 ? previousQty : 1;
+	}
+
+	const parsed = Number.parseInt(cleaned, 10);
+	if (!Number.isFinite(parsed) || parsed <= 0) {
+		return 1;
+	}
+
+	return Math.min(parsed, item.stock);
+}
+
+function commitQuantityInput(inputEl) {
+	if (!(inputEl instanceof HTMLInputElement) || inputEl.dataset.role !== "qty-input") return;
+
+	const idValue = inputEl.dataset.id;
+	if (!idValue) return;
+
+	const item = state.products.find((entry) => entry.id === idValue);
+	if (!item || item.stock <= 0) return;
+
+	const previousQty = state.quantities[idValue] || 0;
+	const committedQty = validateCommittedQuantity(item, inputEl.value, previousQty);
+	inputEl.value = String(committedQty);
+	setQuantity(idValue, committedQty);
+}
+
+function renderSummaryPanel() {
+	const { selected, itemCount, subtotal, discount, vat, totalDue } = computeSaleTotals();
+	if (!selected.length) {
+		selectedItemsPanel.innerHTML = "No items selected.";
+		itemsCountElement.textContent = "0";
+		subtotalElement.textContent = formatPeso(0);
+		discountElement.textContent = formatPeso(0);
+		vatElement.textContent = formatPeso(0);
+		totalDueElement.textContent = formatPeso(0);
+		return;
+	}
+
+	selectedItemsPanel.innerHTML = selected
+		.map((item) => {
+			const lineTotal = item.price * item.qty;
+			return `
+				<div class="mb-2 border-b border-slate-200 pb-2 text-sm last:mb-0 last:border-b-0 last:pb-0">
+					<div class="flex items-start justify-between gap-2">
+						<p class="font-medium text-slate-800">${item.name}</p>
+						<p class="whitespace-nowrap font-semibold text-slate-700">${formatPeso(lineTotal)}</p>
+					</div>
+					<p class="text-xs text-slate-500">${item.qty} × ${formatPeso(item.price)}</p>
+				</div>
+			`;
+		})
+		.join("");
+
+	itemsCountElement.textContent = String(itemCount);
+	subtotalElement.textContent = formatPeso(subtotal);
+	discountElement.textContent = formatPeso(discount);
+	vatElement.textContent = formatPeso(vat);
+	totalDueElement.textContent = formatPeso(totalDue);
+}
+
+function renderHistoryTable() {
+	const transactions = [...state.transactionLog].sort((a, b) => {
+		const dateA = new Date(a.dateTime).getTime();
+		const dateB = new Date(b.dateTime).getTime();
+		return dateB - dateA;
+	});
+
+	if (!transactions.length) {
+		historyTableBody.innerHTML = `
+			<tr>
+				<td colspan="7" class="px-2 py-6 text-center text-xs text-black">No transactions available.</td>
+			</tr>
+		`;
+		return;
+	}
+
+	historyTableBody.innerHTML = transactions
+		.map((txn) => {
+			const isVoided = txn.status === "VOIDED";
+			const { date, time } = formatDateTime(txn.dateTime);
+			const itemCount = txn.items?.reduce((sum, item) => sum + item.quantity, 0) || 0;
+			const rowClass = isVoided ? "bg-slate-100 text-slate-500" : "text-black";
+			const cellClass = isVoided ? "text-slate-500" : "text-black";
+
+			return `
+				<tr class="text-xs ${rowClass}">
+					<td class="px-2 py-2 font-semibold ${cellClass}">${String(txn.transactionId).slice(-8).toUpperCase()}</td>
+					<td class="px-2 py-2 ${cellClass}">
+						<div>${date}</div>
+						<div>${time}</div>
+					</td>
+					<td class="px-2 py-2 ${cellClass}">${itemCount} item(s)</td>
+					<td class="px-2 py-2 ${cellClass}">${txn.patientName || "N/A"}</td>
+			<td class="px-2 py-2 ${cellClass}">${txn.patientId || "N/A"}</td>
+					<td class="px-2 py-2 font-medium ${cellClass}">
+						${isVoided ? formatPeso(0) : formatPeso(txn.totalAmount || 0)}
+						<div class="text-[10px] ${isVoided ? "text-rose-600" : "text-emerald-600"}">${txn.status}</div>
+					</td>
+					<td class="px-2 py-2">
+						<div class="flex items-center justify-end gap-2">
+							<button type="button" data-action="view" data-transaction-id="${txn.transactionId}" class="min-w-14 border border-slate-400 bg-slate-100 px-2 py-1 text-[10px] font-semibold text-slate-700 hover:bg-slate-200">
+								VIEW
+							</button>
+							${
+								isVoided
+									? '<span class="min-w-14 border border-rose-300 bg-rose-100 px-2 py-1 text-center text-[10px] font-semibold text-rose-600">VOIDED</span>'
+									: `<button type="button" data-action="void" data-transaction-id="${txn.transactionId}" class="min-w-14 border border-rose-700 bg-rose-700 px-2 py-1 text-[10px] font-semibold text-white hover:bg-rose-600">VOID</button>`
+							}
+						</div>
+					</td>
+				</tr>
+			`;
+		})
+		.join("");
+}
+
+function renderHeldModalList() {
+	if (!state.heldTransactions.length) {
+		heldList.innerHTML = '<p class="text-center text-xs text-slate-500">No held transactions.</p>';
+		return;
+	}
+
+	heldList.innerHTML = state.heldTransactions
+		.map(
+			(entry) => `
+				<div class="border border-slate-200 bg-slate-50 p-3">
+					<div class="flex items-center justify-between gap-3">
+						<div>
+							<p class="font-semibold text-slate-900">${entry.heldId}</p>
+							<p class="text-[11px] text-slate-600">${entry.itemCount} item(s) • ${formatPeso(entry.totalDue)}</p>
+						</div>
+						<button type="button" data-resume-id="${entry.heldId}" class="min-w-20 border border-emerald-600 bg-emerald-500 px-3 py-1.5 text-[11px] font-semibold text-white hover:bg-emerald-400">
+							RESUME
+						</button>
+					</div>
+				</div>
+			`
+		)
+		.join("");
+}
+
+function updateTopTabs() {
+	const saleActive = state.activeView === "sale";
+	newSaleButton.className = saleActive
+		? "min-w-20 border border-cyan-500 bg-cyan-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-cyan-500"
+		: "min-w-20 border border-slate-500 bg-slate-700 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-slate-600";
+	historyButton.className = !saleActive
+		? "min-w-20 border border-cyan-500 bg-cyan-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-cyan-500"
+		: "min-w-20 border border-slate-500 bg-slate-700 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-slate-600";
+}
+
+function renderActiveView() {
+	const showingSaleView = state.activeView === "sale";
+	posView.classList.toggle("hidden", !showingSaleView);
+	posView.classList.toggle("block", showingSaleView);
+	historyView.classList.toggle("hidden", showingSaleView);
+	historyView.classList.toggle("block", !showingSaleView);
+	updateTopTabs();
+	if (!showingSaleView) {
+		renderHistoryTable();
+	}
+}
+
+function refreshUi() {
+	txnIdElement.textContent = state.activeTransactionId ? String(state.activeTransactionId).slice(-8).toUpperCase() : "NEW";
+	patientIdInput.value = state.patientId;
+	const patientNameInputEl = document.getElementById("patientNameInput");
+	if (patientNameInputEl) patientNameInputEl.value = state.patientName;
+	renderTabs();
+	renderItemRows();
+	renderSummaryPanel();
+	updatePaymentLockStatus();
+	renderActiveView();
+	renderHeldModalList();
+}
+
+/* ===== Cart Actions ===== */
+
+function setQuantity(itemId, nextQty) {
+	const item = state.products.find((entry) => entry.id === itemId);
+	if (!item) return;
+
+	const boundedQty = Math.max(0, Math.min(nextQty, item.stock));
+	state.quantities[itemId] = boundedQty;
+
+	const { itemCount } = computeSaleTotals();
+	if (itemCount === 0) {
+		state.patientId = "";
+		state.patientName = "";
+	}
+	refreshUi();
+}
+
+function resetActiveSale() {
+	Object.keys(state.quantities).forEach((key) => {
+		state.quantities[key] = 0;
+	});
+	state.discountRate = 0;
+	state.patientId = "";
+	state.patientName = "";
+	state.activeTransactionId = null;
+	searchInput.value = "";
+	state.searchTerm = "";
+	state.activeCategory = "All Items";
+}
+
+/* ===== Transaction Flow ===== */
+
+function openSummaryModal() {
+	const totals = computeSaleTotals();
+	if (!state.patientId || totals.itemCount === 0) return;
+
+	summaryClinic.textContent = CLINIC_NAME;
+	summaryTxnId.textContent = state.activeTransactionId ? String(state.activeTransactionId).slice(-8).toUpperCase() : "PENDING";
+	summaryPatientId.textContent = state.patientId;
+	const summaryPatientNameEl = document.getElementById("summaryPatientName");
+	if (summaryPatientNameEl) summaryPatientNameEl.textContent = state.patientName || "N/A";
+	summaryItemsBody.innerHTML = totals.selected
+		.map(
+			(item) => `
+				<tr class="text-xs text-slate-700">
+					<td class="px-3 py-2">${item.name}</td>
+					<td class="px-3 py-2 text-center">${item.qty}</td>
+					<td class="px-3 py-2 text-right">${formatPeso(item.qty * item.price)}</td>
+				</tr>
+			`
+		)
+		.join("");
+	summarySubtotal.textContent = formatPeso(totals.subtotal);
+	summaryDiscount.textContent = formatPeso(totals.discount);
+	summaryVat.textContent = formatPeso(totals.vat);
+	summaryTotal.textContent = formatPeso(totals.totalDue);
+
+	openModal(summaryModal);
+}
+
+async function handleProceedToPayment() {
+	const totals = computeSaleTotals();
+	if (!state.patientId || totals.itemCount === 0) return;
+
+	showLoading("Creating transaction...");
+
+	try {
+		// Build items array for API
+		const items = totals.selected.map((item) => ({
+			productId: item.id,
+			quantity: item.qty,
+		}));
+
+		// Create transaction on backend
+		const result = await createTransaction({
+			patientId: state.patientId,
+			patientName: state.patientName,
+			items,
+			discountRate: state.discountRate,
+		});
+
+		state.activeTransactionId = result.transactionId;
+
+		// Proceed to payment
+		await proceedToPayment(result.transactionId);
+
+		hideLoading();
+		openCashModal();
+	} catch (error) {
+		hideLoading();
+		showToast(error.message || "Failed to create transaction", "error");
+	}
+}
+
+function openCashModal() {
+	const totals = computeSaleTotals();
+	cashTotalDue.textContent = formatPeso(totals.totalDue);
+	cashTenderedInput.value = "";
+	cashChangeValue.textContent = formatPeso(0);
+	setFinalizeEnabled(false);
+	openModal(cashModal);
+}
+
+function setFinalizeEnabled(enabled) {
+	finalizeBtn.disabled = !enabled;
+	finalizeBtn.className = enabled
+		? "min-w-28 border border-emerald-600 bg-emerald-500 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-400"
+		: "min-w-28 cursor-not-allowed border border-slate-300 bg-slate-200 px-3 py-2 text-xs font-semibold text-slate-400";
+}
+
+function updateCashChange() {
+	const { totalDue } = computeSaleTotals();
+	const tendered = Number(cashTenderedInput.value || 0);
+	const change = tendered - totalDue;
+	cashChangeValue.textContent = formatPeso(Math.max(change, 0));
+	setFinalizeEnabled(tendered >= totalDue && totalDue > 0);
+}
+
+async function handleCompleteSale() {
+	if (!state.activeTransactionId) {
+		showToast("No active transaction", "error");
+		return;
+	}
+
+	const tendered = Number(cashTenderedInput.value || 0);
+	const { totalDue } = computeSaleTotals();
+
+	if (tendered < totalDue) {
+		showToast("Insufficient cash tendered", "error");
+		return;
+	}
+
+	showLoading("Processing payment...");
+
+	try {
+		const result = await completeTransaction(state.activeTransactionId, tendered);
+
+		// Refresh products to get updated stock
+		await loadProducts();
+
+		// Build success display data
+		const totals = computeSaleTotals();
+		state.lastCompletedSale = {
+			clinicName: CLINIC_NAME,
+			transactionId: result.transactionId,
+			patientId: state.patientId,
+			patientName: state.patientName,
+			selected: totals.selected,
+			subtotal: totals.subtotal,
+			discount: totals.discount,
+			vat: totals.vat,
+			totalDue: totals.totalDue,
+		};
+
+		hideLoading();
+		showSuccessModal();
+		showToast("Sale completed successfully!", "success");
+	} catch (error) {
+		hideLoading();
+		showToast(error.message || "Failed to complete sale", "error");
+	}
+}
+
+function showSuccessModal() {
+	if (!state.lastCompletedSale) return;
+
+	successClinic.textContent = state.lastCompletedSale.clinicName;
+	successTxnId.textContent = String(state.lastCompletedSale.transactionId).slice(-8).toUpperCase();
+	successPatientId.textContent = state.lastCompletedSale.patientId;
+	successItems.innerHTML = state.lastCompletedSale.selected
+		.map((item) => `<p>${item.name} (${item.qty}) - ${formatPeso(item.qty * item.price)}</p>`)
+		.join("");
+	successSubtotal.textContent = formatPeso(state.lastCompletedSale.subtotal);
+	successDiscount.textContent = formatPeso(state.lastCompletedSale.discount);
+	successVat.textContent = formatPeso(state.lastCompletedSale.vat);
+	successTotal.textContent = formatPeso(state.lastCompletedSale.totalDue);
+
+	openModal(successModal);
+}
+
+/* ===== Hold Transactions (UI-Only) ===== */
+
+function holdCurrentTransaction() {
+	const totals = computeSaleTotals();
+	if (!totals.itemCount) return;
+
+	state.heldTransactions.push({
+		heldId: generateHeldId(),
+		patientId: state.patientId,
+		patientName: state.patientName,
+		items: totals.selected,
+		itemCount: totals.itemCount,
+		subtotal: totals.subtotal,
+		discount: totals.discount,
+		vat: totals.vat,
+		totalDue: totals.totalDue,
+	});
+
+	resetActiveSale();
+	closeAllModals();
+	refreshUi();
+	showToast("Transaction held", "info");
+}
+
+function resumeHeldTransaction(heldId) {
+	const index = state.heldTransactions.findIndex((entry) => entry.heldId === heldId);
+	if (index < 0) return;
+
+	const held = state.heldTransactions[index];
+	resetActiveSale();
+	held.items.forEach((item) => {
+		state.quantities[item.id] = item.qty;
+	});
+	state.patientId = held.patientId;
+	state.patientName = held.patientName || "";
+	state.heldTransactions.splice(index, 1);
+	closeAllModals();
+	refreshUi();
+	showToast("Transaction resumed", "info");
+}
+
+/* ===== History & Void ===== */
+
+function findTransaction(transactionId) {
+	return state.transactionLog.find((entry) => String(entry.transactionId) === String(transactionId));
+}
+
+function openHistoryTransactionModal(transactionId) {
+	const transaction = findTransaction(transactionId);
+	if (!transaction) return;
+
+	const { date, time } = formatDateTime(transaction.dateTime);
+
+	historyViewTxnId.textContent = String(transaction.transactionId).slice(-8).toUpperCase();
+	historyViewDateTime.textContent = `${date} ${time}`;
+	historyViewPatientId.textContent = transaction.patientId || "N/A";
+	const historyViewPatientNameEl = document.getElementById("historyViewPatientName");
+	if (historyViewPatientNameEl) historyViewPatientNameEl.textContent = transaction.patientName || "N/A";
+	historyViewStatus.textContent = transaction.status;
+	historyViewStatus.className =
+		transaction.status === "VOIDED"
+			? "rounded bg-rose-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-rose-700"
+			: "rounded bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-emerald-700";
+
+	historyViewItemsBody.innerHTML = (transaction.items || [])
+		.map(
+			(item) => `
+				<tr class="text-xs text-slate-700">
+					<td class="px-3 py-2">${item.name}</td>
+					<td class="px-3 py-2 text-center">${item.quantity}</td>
+					<td class="px-3 py-2 text-right">${formatPeso(item.unitPrice)}</td>
+					<td class="px-3 py-2 text-right">${formatPeso(item.lineTotal)}</td>
+				</tr>
+			`
+		)
+		.join("");
+
+	historyViewSubtotal.textContent = formatPeso(transaction.subtotal || 0);
+	historyViewDiscount.textContent = formatPeso(transaction.discountAmount || 0);
+	historyViewVat.textContent = formatPeso(transaction.vatAmount || 0);
+	historyViewTotal.textContent = formatPeso(transaction.totalAmount || 0);
+
+	openModal(historyViewModal);
+}
+
+function openVoidConfirmation(transactionId) {
+	const transaction = findTransaction(transactionId);
+	if (!transaction || transaction.status === "VOIDED") return;
+	state.pendingVoidTransactionId = transactionId;
+	openModal(voidConfirmModal);
+}
+
+async function handleVoidTransaction() {
+	if (!state.pendingVoidTransactionId) return;
+
+	const transaction = findTransaction(state.pendingVoidTransactionId);
+	if (!transaction || transaction.status === "VOIDED") {
+		state.pendingVoidTransactionId = null;
+		closeAllModals();
+		return;
+	}
+
+	const voidReasonInputEl = document.getElementById("voidReasonInput");
+	const voidReason = voidReasonInputEl ? voidReasonInputEl.value.trim() : "";
+	showLoading("Voiding transaction...");
+
+	try {
+		await apiVoidTransaction(state.pendingVoidTransactionId, voidReason);
+
+		// Refresh history and products
+		await Promise.all([loadHistory(), loadProducts()]);
+
+		state.pendingVoidTransactionId = null;
+		hideLoading();
+		if (voidReasonInputEl) voidReasonInputEl.value = "";
+		closeAllModals();
+		refreshUi();
+		showToast("Transaction voided successfully", "success");
+	} catch (error) {
+		hideLoading();
+		showToast(error.message || "Failed to void transaction", "error");
+	}
+}
+
+/* ===== API Data Loading ===== */
+
+async function loadProducts() {
+	try {
+		const products = await fetchBillingProducts();
+		state.products = products;
+	} catch (error) {
+		showToast("Failed to load products: " + error.message, "error");
+		state.products = [];
+	}
+}
+
+async function loadHistory() {
+	try {
+		const history = await fetchHistory();
+		state.transactionLog = history;
+	} catch (error) {
+		showToast("Failed to load history: " + error.message, "error");
+		state.transactionLog = [];
+	}
+}
+
+/* ===== Event Handlers ===== */
+
+function attachEvents() {
+	categoryTabs.addEventListener("click", (event) => {
+		const target = event.target;
+		if (!(target instanceof HTMLElement)) return;
+		const selectedCategory = target.dataset.category;
+		if (!selectedCategory) return;
+		state.activeCategory = selectedCategory;
+		renderTabs();
+		renderItemRows();
+	});
+
+	searchInput.addEventListener("input", (event) => {
+		const target = event.target;
+		if (!(target instanceof HTMLInputElement)) return;
+		state.searchTerm = target.value;
+		renderItemRows();
+	});
+
+	patientIdInput?.addEventListener("input", (event) => {
+		const patientIdValue = String(event.target.value || "").trim();
+		state.patientId = patientIdValue;
+		state.patientName = "";
+		updatePaymentLockStatus();
+
+		if (patientLookupDebounceTimer) {
+			clearTimeout(patientLookupDebounceTimer);
+		}
+
+		if (!patientIdValue) {
+			refreshUi();
+			return;
+		}
+
+		patientLookupDebounceTimer = setTimeout(async () => {
+			const lookedUpName = await fetchPatientNameById(patientIdValue);
+			if (state.patientId !== patientIdValue) return;
+			state.patientName = lookedUpName || "";
+			refreshUi();
+		}, 350);
+	});
+
+	itemsTableBody.addEventListener("click", (event) => {
+		const target = event.target;
+
+		if (target instanceof HTMLInputElement && target.dataset.role === "qty-input") {
+			target.select();
+			return;
+		}
+
+		if (!(target instanceof HTMLButtonElement)) return;
+		const action = target.dataset.action;
+		const idValue = target.dataset.id;
+		if (!action || !idValue) return;
+		const item = state.products.find((entry) => entry.id === idValue);
+		if (!item || item.stock <= 0) return;
+		const currentQty = state.quantities[idValue] || 0;
+
+		if (action === "increment") {
+			setQuantity(idValue, Math.min(currentQty + 1, item.stock));
+			return;
+		}
+
+		if (action === "decrement") {
+			if (currentQty <= 1) return;
+			setQuantity(idValue, currentQty - 1);
+		}
+	});
+
+	itemsTableBody.addEventListener("keydown", (event) => {
+		const target = event.target;
+		if (!(target instanceof HTMLInputElement) || target.dataset.role !== "qty-input") return;
+
+		if (["e", "E", "+", ".", ","].includes(event.key)) {
+			event.preventDefault();
+			return;
+		}
+
+		if (event.key === "Enter") {
+			event.preventDefault();
+			commitQuantityInput(target);
+			target.blur();
+		}
+	});
+
+	itemsTableBody.addEventListener(
+		"blur",
+		(event) => {
+			const target = event.target;
+			if (!(target instanceof HTMLInputElement) || target.dataset.role !== "qty-input") return;
+			commitQuantityInput(target);
+		},
+		true
+	);
+
+	itemsTableBody.addEventListener(
+		"wheel",
+		(event) => {
+			const target = event.target;
+			if (!(target instanceof HTMLInputElement) || target.dataset.role !== "qty-input") return;
+			target.blur();
+		},
+		{ passive: true }
+	);
+
+	menuPosButton.addEventListener("click", exitBillingMode);
+
+	holdTopButton.addEventListener("click", () => {
+		renderHeldModalList();
+		openModal(heldModal);
+	});
+
+	holdSummaryButton.addEventListener("click", holdCurrentTransaction);
+	heldCloseBtn.addEventListener("click", closeAllModals);
+
+	heldList.addEventListener("click", (event) => {
+		const target = event.target;
+		if (!(target instanceof HTMLButtonElement)) return;
+		const heldId = target.dataset.resumeId;
+		if (!heldId) return;
+		resumeHeldTransaction(heldId);
+	});
+
+	newSaleButton.addEventListener("click", async () => {
+		state.activeView = "sale";
+		resetActiveSale();
+		await loadProducts();
+		closeAllModals();
+		refreshUi();
+	});
+
+	historyButton.addEventListener("click", async () => {
+		state.activeView = "history";
+		showLoading("Loading history...");
+		await loadHistory();
+		hideLoading();
+		renderActiveView();
+	});
+
+	historyTableBody.addEventListener("click", (event) => {
+		const target = event.target;
+		if (!(target instanceof HTMLButtonElement)) return;
+		const action = target.dataset.action;
+		const transactionId = target.dataset.transactionId;
+		if (!action || !transactionId) return;
+		if (action === "view") {
+			openHistoryTransactionModal(transactionId);
+			return;
+		}
+		if (action === "void") {
+			openVoidConfirmation(transactionId);
+		}
+	});
+
+	historyViewCloseBtn.addEventListener("click", closeAllModals);
+
+	voidCancelBtn.addEventListener("click", () => {
+		state.pendingVoidTransactionId = null;
+		const voidReasonInputEl = document.getElementById("voidReasonInput");
+		if (voidReasonInputEl) voidReasonInputEl.value = "";
+		closeAllModals();
+	});
+
+	voidConfirmBtn.addEventListener("click", handleVoidTransaction);
+
+	discountButton.addEventListener("click", () => {
+		const input = prompt("Enter discount percentage (0-100):", String(state.discountRate * 100));
+		if (input === null) return;
+		const percent = parseFloat(input);
+		if (isNaN(percent) || percent < 0 || percent > 100) {
+			showToast("Invalid discount percentage", "error");
+			return;
+		}
+		state.discountRate = percent / 100;
+		refreshUi();
+		showToast(`Discount set to ${percent}%`, "info");
+	});
+
+	clearAllButton.addEventListener("click", () => {
+		resetActiveSale();
+		refreshUi();
+	});
+
+	proceedButton.addEventListener("click", () => {
+		if (proceedButton.disabled) return;
+		openSummaryModal();
+	});
+
+	summaryBackBtn.addEventListener("click", closeAllModals);
+	summaryProceedBtn.addEventListener("click", handleProceedToPayment);
+
+	cashBackBtn.addEventListener("click", openSummaryModal);
+	cashTenderedInput.addEventListener("input", updateCashChange);
+
+	finalizeBtn.addEventListener("click", () => {
+		if (finalizeBtn.disabled) return;
+		handleCompleteSale();
+	});
+
+	printSlipBtn.addEventListener("click", () => {
+		if (state.lastCompletedSale) {
+			window.print();
+		}
+	});
+
+	nextSaleBtn.addEventListener("click", async () => {
+		resetActiveSale();
+		await loadProducts();
+		closeAllModals();
+		state.activeView = "sale";
+		refreshUi();
+	});
+
+	modalOverlay.addEventListener("click", () => {
+		const closableModals = ["summaryModal", "heldModal", "historyViewModal", "voidConfirmModal"];
+		if (closableModals.includes(state.currentModal)) {
+			closeAllModals();
+		}
+	});
+}
+
+/* ===== Initialization ===== */
+
+async function init() {
+	if (!enforceStaffAccessOrRedirect()) return;
+
+	showLoading("Loading billing system...");
+
+	try {
+		await Promise.all([loadProducts(), loadHistory()]);
+		hideLoading();
+		refreshUi();
+		attachEvents();
+	} catch (error) {
+		hideLoading();
+		showToast("Failed to initialize billing system", "error");
+	}
+}
+
+init();

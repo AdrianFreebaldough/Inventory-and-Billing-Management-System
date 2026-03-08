@@ -671,6 +671,13 @@ function bindEvents() {
 }
 
 export async function initUserManagement() {
+	const auth = window.IBMSAuth;
+	if (auth && !auth.isSessionValid("owner")) {
+		auth.clearAuthData();
+		auth.redirectToLogin(true);
+		return;
+	}
+
 	users = [];
 	activityLogs = [];
 	currentView = "users";

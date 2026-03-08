@@ -1,1322 +1,1647 @@
-import { inventoryItems, restockRequests, activityLog } from "./data/admin_Inventory_data.js";
+/* =============================================================
+   OWNER INVENTORY – fully API-driven  (no mock data)
+   Replaces the previous mock-data module.
+   Every read / write goes through the backend via apiFetch.
+   ============================================================= */
+import { apiFetch } from "../utils/apiClient.js";
 
-let filteredItems = [...inventoryItems];
-let filteredRestockRequests = [...restockRequests];
+/* ================= API ENDPOINTS ================= */
+const API = {
+  activeInventory:   "/api/owner/inventory",
+  archivedInventory: "/api/owner/inventory/archived",
+  addProduct:        "/api/owner/inventory",
+  pendingRequests:   "/api/owner/inventory/requests/pending",
+  allRequests:       "/api/owner/inventory/requests/all",
+  approveRequest:    (id) => `/api/owner/inventory/requests/${id}/approve`,
+  rejectRequest:     (id) => `/api/owner/inventory/requests/${id}/reject`,
+  archiveProduct:    (id) => `/api/owner/inventory/${id}/archive`,
+  restoreProduct:    (id) => `/api/owner/inventory/${id}/restore`,
+  adjustStock:       (id) => `/api/owner/inventory/${id}/adjust-stock`,
+  updateDiscrepancy: (id) => `/api/owner/inventory/${id}/discrepancy`,
+};
+
+/* ================= LOCAL UI STATE ================= */
+let inventoryItems = [];
+let restockRequests = [];
+let filteredItems = [];
+let filteredRestockRequests = [];
 let currentStatusFilter = "all";
 let currentCategoryFilter = "all";
 let currentRestockStatusFilter = "all";
 let currentRestockCategoryFilter = "all";
 let showArchivedItems = false;
 let showLowStockOnly = false;
+let currentInventoryPage = 1;
+const INVENTORY_ITEMS_PER_PAGE = 8;
 
-// Status filter configurations with distinct active and hover colors
-const FILTER_CONFIG = {
-    'all': {
-        activeBg: 'bg-blue-600', activeText: 'text-white', activeBorder: 'border-blue-600',
-        hoverBg: 'hover:bg-blue-50', hoverBorder: 'hover:border-blue-500', hoverText: 'hover:text-blue-700'
-    },
-    'in-stock': {
-        activeBg: 'bg-green-600', activeText: 'text-white', activeBorder: 'border-green-600',
-        hoverBg: 'hover:bg-green-50', hoverBorder: 'hover:border-green-500', hoverText: 'hover:text-green-700'
-    },
-    'pending': {
-        activeBg: 'bg-yellow-500', activeText: 'text-white', activeBorder: 'border-yellow-500',
-        hoverBg: 'hover:bg-yellow-50', hoverBorder: 'hover:border-yellow-500', hoverText: 'hover:text-yellow-700'
-    },
-    'low-stock': {
-        activeBg: 'bg-orange-500', activeText: 'text-white', activeBorder: 'border-orange-500',
-        hoverBg: 'hover:bg-orange-50', hoverBorder: 'hover:border-orange-500', hoverText: 'hover:text-orange-700'
-    },
-    'out-of-stock': {
-        activeBg: 'bg-red-700', activeText: 'text-white', activeBorder: 'border-red-700',
-        hoverBg: 'hover:bg-red-50', hoverBorder: 'hover:border-red-600', hoverText: 'hover:text-red-700'
-    },
-    'approved': {
-        activeBg: 'bg-green-600', activeText: 'text-white', activeBorder: 'border-green-600',
-        hoverBg: 'hover:bg-green-50', hoverBorder: 'hover:border-green-500', hoverText: 'hover:text-green-700'
-    },
-    'denied': {
-        activeBg: 'bg-red-600', activeText: 'text-white', activeBorder: 'border-red-600',
-        hoverBg: 'hover:bg-red-50', hoverBorder: 'hover:border-red-500', hoverText: 'hover:text-red-700'
-    }
+/* ================= STATUS MAPS  (DB → UI) ================= */
+const DB_STATUS_TO_UI = {
+  available: "in-stock",
+  low:       "low-stock",
+  out:       "out-of-stock",
 };
 
-// Status colors for cards and badges
+const DB_REQUEST_STATUS_TO_UI = {
+  pending:  "pending",
+  approved: "approved",
+  rejected: "denied",
+};
+
+/* ================= FILTER & COLOR CONFIGS ================= */
+const FILTER_CONFIG = {
+  all:           { activeBg:'bg-blue-600',   activeText:'text-white', activeBorder:'border-blue-600',   hoverBg:'hover:bg-blue-50',   hoverBorder:'hover:border-blue-500',   hoverText:'hover:text-blue-700' },
+  'in-stock':    { activeBg:'bg-green-600',  activeText:'text-white', activeBorder:'border-green-600',  hoverBg:'hover:bg-green-50',  hoverBorder:'hover:border-green-500',  hoverText:'hover:text-green-700' },
+  pending:       { activeBg:'bg-yellow-500', activeText:'text-white', activeBorder:'border-yellow-500', hoverBg:'hover:bg-yellow-50', hoverBorder:'hover:border-yellow-500', hoverText:'hover:text-yellow-700' },
+  'low-stock':   { activeBg:'bg-orange-500', activeText:'text-white', activeBorder:'border-orange-500', hoverBg:'hover:bg-orange-50', hoverBorder:'hover:border-orange-500', hoverText:'hover:text-orange-700' },
+  'out-of-stock':{ activeBg:'bg-red-700',    activeText:'text-white', activeBorder:'border-red-700',    hoverBg:'hover:bg-red-50',    hoverBorder:'hover:border-red-600',    hoverText:'hover:text-red-700' },
+  approved:      { activeBg:'bg-green-600',  activeText:'text-white', activeBorder:'border-green-600',  hoverBg:'hover:bg-green-50',  hoverBorder:'hover:border-green-500',  hoverText:'hover:text-green-700' },
+  denied:        { activeBg:'bg-red-600',    activeText:'text-white', activeBorder:'border-red-600',    hoverBg:'hover:bg-red-50',    hoverBorder:'hover:border-red-500',    hoverText:'hover:text-red-700' },
+};
+
 const STATUS_COLORS = {
-    'in-stock': { 
-        bg: 'bg-green-100', 
-        text: 'text-green-800', 
-        border: 'border-green-500',
-        quantity: 'text-green-700'
-    },
-    'pending': { 
-        bg: 'bg-yellow-100', 
-        text: 'text-yellow-800', 
-        border: 'border-yellow-500',
-        quantity: 'text-yellow-700'
-    },
-    'low-stock': { 
-        bg: 'bg-orange-100', 
-        text: 'text-orange-800', 
-        border: 'border-orange-500',
-        quantity: 'text-orange-700'
-    },
-    'out-of-stock': { 
-        bg: 'bg-red-100', 
-        text: 'text-red-800', 
-        border: 'border-red-500',
-        quantity: 'text-red-700'
-    },
-    'archived': { 
-        bg: 'bg-gray-400', 
-        text: 'text-white', 
-        border: 'border-gray-500',
-        quantity: 'text-gray-700'
-    },
-    'approved': { 
-        bg: 'bg-blue-100', 
-        text: 'text-blue-800', 
-        border: 'border-blue-500',
-        quantity: 'text-blue-700'
-    },
-    'denied': { 
-        bg: 'bg-red-100', 
-        text: 'text-red-800', 
-        border: 'border-red-500',
-        quantity: 'text-red-700'
-    }
+  'in-stock':     { bg:'bg-green-100',  text:'text-green-800',  border:'border-green-500',  quantity:'text-green-700' },
+  pending:        { bg:'bg-yellow-100', text:'text-yellow-800', border:'border-yellow-500', quantity:'text-yellow-700' },
+  'low-stock':    { bg:'bg-orange-100', text:'text-orange-800', border:'border-orange-500', quantity:'text-orange-700' },
+  'out-of-stock': { bg:'bg-red-100',    text:'text-red-800',    border:'border-red-500',    quantity:'text-red-700' },
+  archived:       { bg:'bg-gray-400',   text:'text-white',      border:'border-gray-500',   quantity:'text-gray-700' },
+  approved:       { bg:'bg-blue-100',   text:'text-blue-800',   border:'border-blue-500',   quantity:'text-blue-700' },
+  denied:         { bg:'bg-red-100',    text:'text-red-800',    border:'border-red-500',    quantity:'text-red-700' },
 };
 
 const STATUS_DISPLAY = {
-    'in-stock': 'In Stock',
-    'pending': 'Pending',
-    'low-stock': 'Low Stock',
-    'out-of-stock': 'Out of Stock',
-    'archived': 'Archived',
-    'approved': 'Approved',
-    'denied': 'Denied'
+  'in-stock': 'In Stock', pending: 'Pending', 'low-stock': 'Low Stock',
+  'out-of-stock': 'Out of Stock', archived: 'Archived', approved: 'Approved', denied: 'Denied',
 };
 
-const Z_INDEX = {
-    MODAL_BASE: 10000,
-    MODAL_OVERLAY: 9999,
-    TOAST: 20000
+const STATUS_SORT_PRIORITY = {
+  pending: 0,
+  'out-of-stock': 1,
+  'low-stock': 2,
+  'in-stock': 3,
 };
 
+const Z_INDEX = { MODAL_BASE: 10000, MODAL_OVERLAY: 9999, TOAST: 20000 };
+const EXPIRY_WARNING_DAYS = 7;
+
+/* ================= DATA MAPPING (backend → UI) ================= */
+function mapBackendItemToUI(p) {
+  const batches = Array.isArray(p.batches)
+    ? p.batches.map((batch) => ({
+        id: batch._id,
+        batchNumber: batch.batchNumber || "—",
+        quantity: Number(batch.quantity ?? 0),
+        supplier: batch.supplier || "—",
+        createdAt: batch.createdAt || null,
+        expiryDateISO: batch.expiryDate ? new Date(batch.expiryDate).toISOString().split("T")[0] : "",
+        expiryDate: batch.expiryDate ? formatDateDisplay(batch.expiryDate, "N/A") : "N/A",
+      }))
+    : [];
+
+  const nearestExpiry = p.nearestExpiryDate || p.expiryDate || null;
+  const batchCount = Number.isFinite(Number(p.batchCount)) ? Number(p.batchCount) : batches.length;
+
+  return {
+    id:              p._id,
+    name:            p.name || "",
+    type:            p.name || "",              // brand column – use name
+    category:        p.category || "",
+    currentQuantity: p.quantity ?? 0,
+    minStock:        p.minStock ?? 10,
+    unit:            p.unit || "pcs",
+    supplier:        p.nearestBatchSupplier || p.supplier || "—",
+    status:          p.isArchived ? "archived" : (DB_STATUS_TO_UI[p.status] || "in-stock"),
+    expiryDate:      nearestExpiry ? formatDateDisplay(nearestExpiry, "—") : "—",
+    expiryDateISO:   nearestExpiry ? new Date(nearestExpiry).toISOString().split("T")[0] : "",
+    batchNumber:     p.nearestBatchNumber || p.batchNumber || "—",
+    batchCount,
+    batches,
+    archived:        !!p.isArchived,
+    price:           p.unitPrice ?? 0,
+    description:     p.description || "",
+    genericName:     p.genericName || "",
+    brandName:       p.brandName || p.name || "",
+    medicineName:    p.medicineName || p.name || "",
+    dosageForm:      p.dosageForm || "",
+    strength:        p.strength || "",
+    expectedRemaining: Number.isFinite(Number(p.expectedRemaining))
+      ? Number(p.expectedRemaining)
+      : Number(p.quantity ?? 0),
+    physicalCount: Number.isFinite(Number(p.physicalCount))
+      ? Number(p.physicalCount)
+      : Number(p.expectedRemaining ?? p.quantity ?? 0),
+    variance: Number.isFinite(Number(p.variance))
+      ? Number(p.variance)
+      : Number(p.physicalCount ?? p.quantity ?? 0) - Number(p.expectedRemaining ?? p.quantity ?? 0),
+    discrepancyStatus: p.discrepancyStatus || "Balanced",
+  };
+}
+
+function mapBackendRequestToUI(r) {
+  const isRestock = r.requestType === "RESTOCK";
+  const product = r.product || {};
+  return {
+    id:              r._id,
+    requestType:     r.requestType,
+    itemName:        isRestock ? (product.name || "Unknown") : (r.itemName || "Unknown"),
+    type:            isRestock ? (product.name || "Unknown") : (r.itemName || "Unknown"),
+    category:        isRestock ? (product.category || "") : (r.category || ""),
+    currentQuantity: isRestock ? (product.quantity ?? 0) : 0,
+    minStock:        isRestock ? 10 : 10,       // product minStock not populated; safe default
+    unit:            r.unit || "pcs",
+    requestQuantity: isRestock ? (r.requestedQuantity ?? 0) : (r.initialQuantity ?? 0),
+    requestedBy:     r.requestedBy?.email || "Staff",
+    requestDate:     r.createdAt ? new Date(r.createdAt).toLocaleDateString("en-US") : "—",
+    status:          DB_REQUEST_STATUS_TO_UI[r.status] || r.status,
+    supplier:        "",
+    productId:       isRestock ? (product._id || null) : null,
+    notes:           r.rejectionReason || "",
+  };
+}
+
+/* ================= API FETCH HELPERS ================= */
+async function fetchInventoryItems() {
+  try {
+    const res = await apiFetch(API.activeInventory);
+    return (res?.data || []).map(mapBackendItemToUI);
+  } catch (err) {
+    showToast(`Failed to load inventory: ${err.message}`, "error");
+    return [];
+  }
+}
+
+async function fetchArchivedItems() {
+  try {
+    const res = await apiFetch(API.archivedInventory);
+    return (res?.data || []).map(mapBackendItemToUI);
+  } catch (err) {
+    showToast(`Failed to load archived items: ${err.message}`, "error");
+    return [];
+  }
+}
+
+async function fetchPendingRequests() {
+  try {
+    const res = await apiFetch(API.pendingRequests);
+    return (res?.data || []).map(mapBackendRequestToUI);
+  } catch (err) {
+    showToast(`Failed to load requests: ${err.message}`, "error");
+    return [];
+  }
+}
+
+async function fetchAllRequests() {
+  try {
+    const res = await apiFetch(API.allRequests);
+    return (res?.data || []).map(mapBackendRequestToUI);
+  } catch (err) {
+    showToast(`Failed to load requests: ${err.message}`, "error");
+    return [];
+  }
+}
+
+async function refreshInventory() {
+  if (showArchivedItems) {
+    inventoryItems = await fetchArchivedItems();
+  } else {
+    inventoryItems = await fetchInventoryItems();
+  }
+  applyFilters();
+}
+
+async function refreshRequests() {
+  /* When filter is 'all' we need every status → use allRequests */
+  if (currentRestockStatusFilter === "all" || currentRestockStatusFilter !== "pending") {
+    restockRequests = await fetchAllRequests();
+  } else {
+    restockRequests = await fetchPendingRequests();
+  }
+  applyRestockFilters();
+}
+
+async function refreshAll() {
+  await Promise.all([refreshInventory(), refreshRequests()]);
+}
+
+/* ================= UTILITY HELPERS ================= */
 function normalizeStatus(status) {
-    if (!status) return 'in-stock';
-    return String(status).toLowerCase().replace(/\s+/g, '-');
+  if (!status) return "in-stock";
+  return String(status).toLowerCase().replace(/\s+/g, "-");
+}
+function getFilterConfig(status)     { return FILTER_CONFIG[normalizeStatus(status)]  || FILTER_CONFIG["all"]; }
+function getStatusColors(status)     { return STATUS_COLORS[normalizeStatus(status)]  || STATUS_COLORS["in-stock"]; }
+function getStatusDisplayText(status){ return STATUS_DISPLAY[normalizeStatus(status)] || "In Stock"; }
+function formatCategory(cat)         { return cat ? cat.split(/[-_\s]+/).map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(" ") : ""; }
+function getStatusSortPriority(status){
+  const normalized = normalizeStatus(status);
+  return Object.prototype.hasOwnProperty.call(STATUS_SORT_PRIORITY, normalized)
+    ? STATUS_SORT_PRIORITY[normalized]
+    : Number.MAX_SAFE_INTEGER;
 }
 
-function getFilterConfig(status) {
-    const normalized = normalizeStatus(status);
-    return FILTER_CONFIG[normalized] || FILTER_CONFIG['all'];
+function formatDateDisplay(value, fallback = "N/A") {
+  if (!value) return fallback;
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return fallback;
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
-function getStatusColors(status) {
-    const normalized = normalizeStatus(status);
-    return STATUS_COLORS[normalized] || STATUS_COLORS['in-stock'];
+function getExpiryMeta(expiryValue) {
+  if (!expiryValue) {
+    return {
+      date: null,
+      diffDays: null,
+      badgeText: "Unknown",
+      badgeClass: "text-xs font-medium text-gray-600",
+      dotHtml: "",
+    };
+  }
+
+  const date = new Date(expiryValue);
+  if (Number.isNaN(date.getTime())) {
+    return {
+      date: null,
+      diffDays: null,
+      badgeText: "Unknown",
+      badgeClass: "text-xs font-medium text-gray-600",
+      dotHtml: "",
+    };
+  }
+
+  const diffDays = Math.ceil((date - new Date()) / 86400000);
+  if (diffDays < 0) {
+    return {
+      date,
+      diffDays,
+      badgeText: "Expired",
+      badgeClass: "text-xs font-medium text-red-700",
+      dotHtml: '<span class="w-3 h-3 rounded-full bg-red-600 inline-block ml-1" title="Expired"></span>',
+    };
+  }
+
+  if (diffDays <= EXPIRY_WARNING_DAYS) {
+    return {
+      date,
+      diffDays,
+      badgeText: "Expiring Soon",
+      badgeClass: "text-xs font-medium text-red-600",
+      dotHtml: '<span class="w-3 h-3 rounded-full bg-red-500 inline-block ml-1" title="Expiring soon"></span>',
+    };
+  }
+
+  if (diffDays <= 30) {
+    return {
+      date,
+      diffDays,
+      badgeText: "Expiring Soon",
+      badgeClass: "text-xs font-medium text-orange-600",
+      dotHtml: '<span class="w-3 h-3 rounded-full bg-orange-400 inline-block ml-1" title="Expiring soon"></span>',
+    };
+  }
+
+  return {
+    date,
+    diffDays,
+    badgeText: "Safe",
+    badgeClass: "text-xs font-medium text-green-600",
+    dotHtml: "",
+  };
 }
 
-function getStatusDisplayText(status) {
-    const normalized = normalizeStatus(status);
-    return STATUS_DISPLAY[normalized] || 'In Stock';
+function getModalStatusTextClass(status) {
+  const normalized = normalizeStatus(status);
+  if (normalized === "in-stock") return "text-sm font-medium text-green-600";
+  if (normalized === "low-stock") return "text-sm font-medium text-orange-600";
+  if (normalized === "out-of-stock") return "text-sm font-medium text-red-700";
+  if (normalized === "pending") return "text-sm font-medium text-yellow-600";
+  if (normalized === "archived") return "text-sm font-medium text-gray-600";
+  return "text-sm font-medium text-gray-700";
 }
 
-function formatCategory(category) {
-    if (!category) return '';
-    return category.split(/[-_\s]+/).map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(' ');
+function escapeHtml(text) {
+  return String(text ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\"/g, "&quot;")
+    .replace(/'/g, "&#039;");
 }
 
-/* ================= TOAST SYSTEM (Reused from staff) ================= */
+function generateBatchNumber(request) {
+  const now = new Date();
+  const stamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}${String(now.getHours()).padStart(2, "0")}${String(now.getMinutes()).padStart(2, "0")}`;
+  const key = (request?.itemName || "ITEM").replace(/[^A-Za-z0-9]/g, "").slice(0, 4).toUpperCase() || "ITEM";
+  return `RST-${key}-${stamp}`;
+}
+
+function hasExpiringSoonBatch(batches) {
+  if (!Array.isArray(batches) || !batches.length) return false;
+  return batches.some((batch) => {
+    if (!batch?.expiryDateISO) return false;
+    const meta = getExpiryMeta(batch.expiryDateISO);
+    return Number.isFinite(meta.diffDays) && meta.diffDays >= 0 && meta.diffDays <= EXPIRY_WARNING_DAYS;
+  });
+}
+
+/* ================= TOAST ================= */
 function ensureToastContainer() {
-    let container = document.getElementById('toastContainer');
-    if (!container) {
-        container = document.createElement('div');
-        container.id = 'toastContainer';
-        container.className = `fixed right-8 bottom-12 flex flex-col items-end gap-3 z-[${Z_INDEX.TOAST}]`;
-        document.body.appendChild(container);
-    }
-    return container;
+  let c = document.getElementById("toastContainer");
+  if (!c) {
+    c = document.createElement("div");
+    c.id = "toastContainer";
+    c.className = `fixed right-8 bottom-12 flex flex-col items-end gap-3 z-[${Z_INDEX.TOAST}]`;
+    document.body.appendChild(c);
+  }
+  return c;
 }
 
-function showToast(message, type = 'success', duration = 3500) {
-    const container = ensureToastContainer();
-    container.innerHTML = '';
-    const toast = document.createElement('div');
-    
-    // Blue theme for admin (matching admin color scheme)
-    const baseClass = 'bg-white text-blue-700 border-4 border-blue-600 rounded-md px-4 py-3 shadow-lg max-w-xs transform transition-all duration-300 translate-y-2 opacity-0';
-    toast.className = baseClass;
-    toast.innerHTML = `<div class="text-sm font-medium">${message}</div>`;
-    container.appendChild(toast);
-
-    requestAnimationFrame(() => {
-        toast.classList.remove('translate-y-2', 'opacity-0');
-    });
-
-    setTimeout(() => {
-        toast.classList.add('translate-y-2', 'opacity-0');
-        setTimeout(() => toast.remove(), 300);
-    }, duration);
-}
-
-function logActivity(action, itemName, quantity, status) {
-    const now = new Date();
-    const date = now.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' });
-    const time = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
-    
-    activityLog.unshift({
-        id: Date.now(),
-        action,
-        item: itemName,
-        quantity,
-        status,
-        user: "Admin",
-        timestamp: `${date} ${time}`
-    });
+function showToast(message, type = "success", duration = 3500) {
+  const container = ensureToastContainer();
+  container.innerHTML = "";
+  const toast = document.createElement("div");
+  const isError = type === "error";
+  const base = isError
+    ? "bg-white text-red-700 border-4 border-red-600 rounded-md px-4 py-3 shadow-lg max-w-xs transform transition-all duration-300 translate-y-2 opacity-0"
+    : "bg-white text-blue-700 border-4 border-blue-600 rounded-md px-4 py-3 shadow-lg max-w-xs transform transition-all duration-300 translate-y-2 opacity-0";
+  toast.className = base;
+  toast.innerHTML = `<div class="text-sm font-medium">${message}</div>`;
+  container.appendChild(toast);
+  requestAnimationFrame(() => toast.classList.remove("translate-y-2", "opacity-0"));
+  setTimeout(() => { toast.classList.add("translate-y-2", "opacity-0"); setTimeout(() => toast.remove(), 300); }, duration);
 }
 
 function debounce(func, wait) {
-    let timeout;
-    return function executedFunction(...args) {
-        const later = () => {
-            clearTimeout(timeout);
-            func(...args);
-        };
-        clearTimeout(timeout);
-        timeout = setTimeout(later, wait);
-    };
+  let timeout;
+  return (...args) => { clearTimeout(timeout); timeout = setTimeout(() => func(...args), wait); };
 }
 
-function getElement(modal, selector) {
-    return modal?.querySelector(selector) || document.getElementById(selector);
+function getElement(modal, sel) {
+  return modal?.querySelector(sel) || document.getElementById(sel);
 }
 
 function createModal(options) {
-    const { id, title, content, width = '520px' } = options;
-    
-    // ALWAYS remove existing modal first
-    const existingModal = document.getElementById(id);
-    if (existingModal) {
-        existingModal.remove();
+  const { id, content, width = "520px" } = options;
+  const existing = document.getElementById(id);
+  if (existing) existing.remove();
+  const closeBtnId = `close${id.charAt(0).toUpperCase() + id.slice(1)}`;
+  const wrapper = document.createElement("div");
+  wrapper.id = id;
+  wrapper.className = `fixed inset-0 bg-black/40 flex items-center justify-center z-[${Z_INDEX.MODAL_BASE}]`;
+  wrapper.innerHTML = `
+    <div class="bg-white rounded-lg shadow-lg p-6 max-w-[95vw] max-h-[90vh] overflow-y-auto relative" style="width:${width};min-width:${width};">
+      <button id="${closeBtnId}" class="absolute top-4 right-4 text-gray-400 hover:text-gray-700 text-2xl">&times;</button>
+      ${content}
+    </div>`;
+  document.body.appendChild(wrapper);
+  return wrapper;
+}
+
+/* ================= VOICE RECOGNITION HELPER ================= */
+function initVoiceRecognitionForModal(modal) {
+  const voiceBtn = getElement(modal, '#voiceInputBtn');
+  const descriptionField = getElement(modal, '#addDescription');
+  const micIcon = getElement(modal, '#micIcon');
+  const statusText = getElement(modal, '#voiceStatusText');
+  const errorText = getElement(modal, '#voiceErrorText');
+
+  if (!voiceBtn || !descriptionField) return;
+
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+  if (!SpeechRecognition) {
+    voiceBtn.style.display = 'none';
+    return;
+  }
+
+  const recognition = new SpeechRecognition();
+  recognition.continuous = true;
+  recognition.interimResults = true;
+  recognition.lang = 'en-PH';
+
+  let isListening = false;
+  // Text that was in the field before recording started
+  let baseText = '';
+  // Accumulated finalized transcripts from previous result segments
+  let finalizedText = '';
+
+  function setListeningUI(active) {
+    isListening = active;
+    if (active) {
+      micIcon.classList.remove('text-gray-500');
+      micIcon.classList.add('text-red-600', 'animate-pulse');
+      statusText.classList.remove('hidden');
+    } else {
+      micIcon.classList.remove('text-red-600', 'animate-pulse');
+      micIcon.classList.add('text-gray-500');
+      statusText.classList.add('hidden');
     }
-    
-    const closeBtnId = `close${id.charAt(0).toUpperCase() + id.slice(1)}`;
-    
-    // Always create fresh modal
-    const wrapper = document.createElement('div');
-    wrapper.id = id;
-    wrapper.className = `fixed inset-0 bg-black/40 flex items-center justify-center z-[${Z_INDEX.MODAL_BASE}]`;
-    wrapper.innerHTML = `
-        <div class="bg-white rounded-lg shadow-lg p-6 max-w-[95vw] max-h-[90vh] overflow-y-auto relative" style="width: ${width}; min-width: ${width};">
-            <button id="${closeBtnId}" class="absolute top-4 right-4 text-gray-400 hover:text-gray-700 text-2xl">&times;</button>
-            ${content}
-        </div>
-    `;
-    document.body.appendChild(wrapper);
-    
-    return wrapper;
+  }
+
+  voiceBtn.addEventListener('click', () => {
+    if (isListening) {
+      recognition.stop();
+      errorText.classList.add('hidden');
+    } else {
+      try {
+        // Capture whatever text the user has already typed
+        baseText = descriptionField.value;
+        finalizedText = '';
+        recognition.start();
+        setListeningUI(true);
+        errorText.classList.add('hidden');
+      } catch (err) {
+        errorText.textContent = 'Failed to start voice recognition';
+        errorText.classList.remove('hidden');
+      }
+    }
+  });
+
+  recognition.onresult = (event) => {
+    let interimTranscript = '';
+    let newFinal = '';
+
+    for (let i = event.resultIndex; i < event.results.length; i++) {
+      const text = event.results[i][0].transcript;
+      if (event.results[i].isFinal) {
+        newFinal += text;
+      } else {
+        interimTranscript += text;
+      }
+    }
+
+    if (newFinal) {
+      finalizedText += newFinal;
+    }
+
+    // Build the full textarea value: base text + finalized speech + live interim
+    const separator = baseText && !baseText.endsWith(' ') ? ' ' : '';
+    descriptionField.value = baseText + separator + (finalizedText + interimTranscript).trimStart();
+  };
+
+  recognition.onend = () => {
+    setListeningUI(false);
+  };
+
+  recognition.onerror = (event) => {
+    setListeningUI(false);
+
+    // 'aborted' fires when user clicks stop – not a real error
+    if (event.error === 'aborted') return;
+
+    let errorMessage = 'Voice recognition error';
+    if (event.error === 'no-speech') {
+      errorMessage = 'No speech detected. Please try again.';
+    } else if (event.error === 'audio-capture') {
+      errorMessage = 'No microphone found or permission denied.';
+    } else if (event.error === 'not-allowed') {
+      errorMessage = 'Microphone access denied. Please allow microphone access.';
+    } else if (event.error === 'network') {
+      errorMessage = 'Network error. Please check your connection.';
+    }
+
+    errorText.textContent = errorMessage;
+    errorText.classList.remove('hidden');
+    setTimeout(() => { errorText.classList.add('hidden'); }, 5000);
+  };
 }
 
+/* ================= FILTER BUTTONS ================= */
 function updateFilterButtonStyles(containerSelector, activeStatus) {
-    const buttons = document.querySelectorAll(`${containerSelector} .status-filter, ${containerSelector} .status-filter-restock`);
-    
-    buttons.forEach(btn => {
-        const status = btn.dataset.status;
-        const config = getFilterConfig(status);
-        const isActive = status === activeStatus;
-        
-        let classes = 'status-filter px-4 py-1 rounded-full border text-sm shadow-sm transition-all cursor-pointer ';
-        
-        if (isActive) {
-            classes += `${config.activeBg} ${config.activeText} ${config.activeBorder}`;
-        } else {
-            classes += `bg-white text-gray-700 border-gray-300 ${config.hoverBg} ${config.hoverBorder} ${config.hoverText}`;
-        }
-        
-        btn.className = classes;
-    });
+  document.querySelectorAll(`${containerSelector} .status-filter, ${containerSelector} .status-filter-restock`).forEach(btn => {
+    const status = btn.dataset.status;
+    const cfg = getFilterConfig(status);
+    const active = status === activeStatus;
+    let cls = "status-filter px-4 py-1 rounded-full border text-sm shadow-sm transition-all cursor-pointer ";
+    cls += active
+      ? `${cfg.activeBg} ${cfg.activeText} ${cfg.activeBorder}`
+      : `bg-white text-gray-700 border-gray-300 ${cfg.hoverBg} ${cfg.hoverBorder} ${cfg.hoverText}`;
+    btn.className = cls;
+  });
 }
 
+/* ================= FILTERS & RENDERS ================= */
 function applyFilters() {
-    const search = document.getElementById("searchInventory")?.value?.toLowerCase() || "";
-    
-    filteredItems = inventoryItems.filter(item => {
-        if (showArchivedItems) {
-            if (!item.archived) return false;
-        } else {
-            if (item.archived) return false;
-        }
-        
-        const matchesSearch = (
-            (item.name || "").toLowerCase().includes(search) ||
-            (item.id || "").toLowerCase().includes(search) ||
-            (item.type || "").toLowerCase().includes(search)
-        );
-        
-        const matchesStatus = currentStatusFilter === "all" || item.status === currentStatusFilter;
-        const matchesCategory = currentCategoryFilter === "all" || item.category === currentCategoryFilter;
-        
-        return matchesSearch && matchesStatus && matchesCategory;
-    });
+  const search = (document.getElementById("searchInventory")?.value || "").toLowerCase();
+  filteredItems = inventoryItems.filter(item => {
+    if (showArchivedItems) { if (!item.archived) return false; }
+    else                   { if (item.archived)  return false; }
+    const matchSearch = (item.name || "").toLowerCase().includes(search) ||
+                        (item.type || "").toLowerCase().includes(search) ||
+                        (item.id   || "").toLowerCase().includes(search);
+    const matchStatus   = currentStatusFilter   === "all" || item.status   === currentStatusFilter;
+    const matchCategory = currentCategoryFilter === "all" || item.category === currentCategoryFilter;
+    const matchStockFilter = !showLowStockOnly || item.status === "low-stock" || item.status === "out-of-stock";
+    return matchSearch && matchStatus && matchCategory && matchStockFilter;
+  });
+  filteredItems.sort((a, b) => getStatusSortPriority(a.status) - getStatusSortPriority(b.status));
 
-    filteredItems.sort((a, b) => {
-        if (a.status === 'pending' && b.status !== 'pending') return -1;
-        if (a.status !== 'pending' && b.status === 'pending') return 1;
-        return 0;
-    });
+  const totalPages = Math.max(1, Math.ceil(filteredItems.length / INVENTORY_ITEMS_PER_PAGE));
+  if (currentInventoryPage > totalPages) {
+    currentInventoryPage = totalPages;
+  }
 
-    updateFilterButtonStyles('#statusFiltersContainer', currentStatusFilter);
-    renderInventory();
+  updateFilterButtonStyles("#statusFiltersContainer", currentStatusFilter);
+  renderInventory();
 }
 
 function applyRestockFilters() {
-    const search = document.getElementById("searchRestock")?.value?.toLowerCase() || "";
-    
-    filteredRestockRequests = restockRequests.filter(req => {
-        const matchesSearch = (
-            (req.itemName || "").toLowerCase().includes(search) ||
-            (req.id || "").toLowerCase().includes(search) ||
-            (req.type || "").toLowerCase().includes(search)
-        );
-        
-        const matchesStatus = currentRestockStatusFilter === "all" || req.status === currentRestockStatusFilter;
-        const matchesCategory = currentRestockCategoryFilter === "all" || req.category === currentRestockCategoryFilter;
-        
-        return matchesSearch && matchesStatus && matchesCategory;
-    });
-
-    updateFilterButtonStyles('#restockStatusFiltersContainer', currentRestockStatusFilter);
-    renderRestockRequests();
+  const search = (document.getElementById("searchRestock")?.value || "").toLowerCase();
+  filteredRestockRequests = restockRequests.filter(req => {
+    const matchSearch = (req.itemName || "").toLowerCase().includes(search) ||
+                        (req.id   || "").toLowerCase().includes(search) ||
+                        (req.type || "").toLowerCase().includes(search);
+    const matchStatus   = currentRestockStatusFilter   === "all" || req.status   === currentRestockStatusFilter;
+    const matchCategory = currentRestockCategoryFilter === "all" || req.category === currentRestockCategoryFilter;
+    return matchSearch && matchStatus && matchCategory;
+  });
+  updateFilterButtonStyles("#restockStatusFiltersContainer", currentRestockStatusFilter);
+  renderRestockRequests();
 }
 
+/* ================= RENDER: Inventory Grid ================= */
 function renderInventory() {
-    const grid = document.getElementById("inventoryGrid");
-    if (!grid) return;
-    grid.innerHTML = "";
+  const grid = document.getElementById("inventoryGrid");
+  if (!grid) return;
+  grid.innerHTML = "";
 
-    if (filteredItems.length === 0) {
-        grid.innerHTML = `<div class="col-span-full text-center py-8 text-gray-500"><p>No items found matching your criteria.</p></div>`;
-        return;
-    }
+  const startIndex = (currentInventoryPage - 1) * INVENTORY_ITEMS_PER_PAGE;
+  const endIndex = startIndex + INVENTORY_ITEMS_PER_PAGE;
+  const pagedItems = filteredItems.slice(startIndex, endIndex);
 
-    filteredItems.forEach(item => {
-        const colors = getStatusColors(item.status);
-        const statusText = getStatusDisplayText(item.status);
-        const isPending = item.status === 'pending';
-        const archivedPill = item.archived ? `<span class="ml-2 inline-block px-2 py-1 rounded text-xs font-medium bg-gray-200 text-gray-700">Archived</span>` : '';
+  if (!filteredItems.length) {
+    grid.innerHTML = `<div class="col-span-full text-center py-8 text-gray-500"><p>No items found matching your criteria.</p></div>`;
+    renderInventoryPagination(0, 0, 0, 1);
+    return;
+  }
 
-        const card = document.createElement("div");
-        card.className = "border border-gray-200 rounded-lg p-4 bg-white shadow-md hover:shadow-lg transition-all duration-200 h-full flex flex-col transform hover:-translate-y-1";
-        card.setAttribute("data-card-id", item.id);
-        
-        let buttonsHtml = '';
-        if (isPending && !item.archived) {
-            buttonsHtml = `
-                <button class="reject-btn flex-1 bg-red-600 text-white py-2 rounded text-xs font-medium hover:bg-red-700 transition-colors" data-item-id="${item.id}">
-                    Reject
-                </button>
-                <button class="approve-btn flex-1 bg-blue-600 text-white py-2 rounded text-xs font-medium hover:bg-blue-700 transition-colors" data-item-id="${item.id}">
-                    Approve
-                </button>
-            `;
-        } else if (item.archived) {
-            buttonsHtml = `
-                <button class="restore-btn flex-1 bg-emerald-600 text-white py-2 rounded text-xs font-medium hover:bg-emerald-700 transition-colors" data-item-id="${item.id}">
-                    Restore
-                </button>
-                <button class="view-details-btn flex-1 border border-gray-300 py-2 rounded text-xs font-medium hover:bg-gray-100 transition-colors">
-                    View Details
-                </button>
-            `;
-        } else {
-            buttonsHtml = `
-                <button class="view-details-btn w-full border border-gray-300 py-2 rounded text-xs font-medium hover:bg-gray-100 transition-colors">
-                    View Details
-                </button>
-            `;
-        }
+  pagedItems.forEach(item => {
+      const hasBatchWarning = hasExpiringSoonBatch(item.batches || []);
 
-        const quantityColorClass = colors.quantity;
-
-        card.innerHTML = `
-            <div class="flex justify-between items-start mb-3 gap-2">
-                <div class="flex-1">
-                    <h3 class="font-semibold text-gray-800 text-sm">${item.name}</h3>
-                    <p class="text-xs text-gray-500">${item.type}</p>
-                </div>
-                <div class="flex items-center gap-2">
-                    <span class="px-2 py-1 rounded text-xs font-medium ${colors.bg} ${colors.text} whitespace-nowrap border ${colors.border}">${statusText}</span>
-                    ${archivedPill}
-                </div>
-            </div>
-
-            <div class="space-y-2 mb-4 text-xs flex-1">
-                <div class="flex justify-between">
-                    <span class="text-gray-600">Current Quantity</span>
-                    <span class="font-semibold ${quantityColorClass}">${item.currentQuantity} ${item.unit}</span>
-                </div>
-                <div class="text-gray-500">Min: ${item.minStock} ${item.unit}</div>
-                <div class="text-gray-500 flex items-center gap-2">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
-                    </svg>
-                    <span>Expires: ${item.expiryDate}</span>
-                </div>
-                <div class="text-gray-500">Batch: ${item.batchNumber}</div>
-                <div class="flex justify-between items-center pt-2 border-t border-gray-100 mt-2">
-                    <span class="text-gray-600">Price</span>
-                    <span class="font-bold text-blue-700 text-sm">₱${item.price.toFixed(2)}</span>
-                </div>
-            </div>
-
-            <div class="flex gap-2 mt-auto">
-                ${buttonsHtml}
-            </div>
-        `;
-        grid.appendChild(card);
-    });
-}
-
-function renderRestockRequests() {
-    const grid = document.getElementById("restockGrid");
-    
-    if (!grid) return;
-
-    if (filteredRestockRequests.length === 0) {
-        grid.innerHTML = `<div class="col-span-full text-center py-8 text-gray-500"><p>No restock requests found.</p></div>`;
-        return;
-    }
-
-    grid.innerHTML = "";
-
-    filteredRestockRequests.forEach(req => {
-        const colors = getStatusColors(req.status);
-        
-        const card = document.createElement("div");
-        card.className = "border border-gray-200 rounded-lg p-4 bg-white shadow-md hover:shadow-lg transition-all duration-200 h-full flex flex-col transform hover:-translate-y-1";
-        card.setAttribute("data-request-id", req.id);
-        
-        const stockColorClass = req.currentQuantity === 0 ? 'text-red-700' : 
-                               req.currentQuantity <= req.minStock ? 'text-orange-700' : 'text-green-700';
-        
-        card.innerHTML = `
-            <div class="flex justify-between items-start mb-3 gap-2">
-                <div class="flex-1">
-                    <h3 class="font-semibold text-gray-800 text-sm">${req.itemName}</h3>
-                    <p class="text-xs text-gray-500">${req.type}</p>
-                    <p class="text-xs text-blue-600 font-mono mt-1">${req.id}</p>
-                </div>
-                <div>
-                    <span class="px-2 py-1 rounded text-xs font-medium ${colors.bg} ${colors.text} whitespace-nowrap border ${colors.border}">${getStatusDisplayText(req.status)}</span>
-                </div>
-            </div>
-
-            <div class="space-y-2 mb-4 text-xs flex-1">
-                <div class="flex justify-between">
-                    <span class="text-gray-600">Current Stock</span>
-                    <span class="font-semibold ${stockColorClass}">${req.currentQuantity} ${req.unit}</span>
-                </div>
-                <div class="flex justify-between">
-                    <span class="text-gray-600">Requested</span>
-                    <span class="font-semibold text-blue-700">${req.requestQuantity} ${req.unit}</span>
-                </div>
-                <div class="text-gray-500 flex items-center gap-2">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>
-                    </svg>
-                    <span>By: ${req.requestedBy}</span>
-                </div>
-                <div class="text-gray-500 flex items-center gap-2">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                    </svg>
-                    <span>${req.requestDate}</span>
-                </div>
-            </div>
-
-            <div class="flex gap-2 mt-auto">
-                <button class="review-request-btn w-full bg-blue-600 text-white py-2 rounded text-xs font-medium hover:bg-blue-700 transition-colors">
-                    Review Request
-                </button>
-            </div>
-        `;
-        grid.appendChild(card);
-    });
-}
-
-function showItemDetails(item) {
-    const modal = document.getElementById("itemDetailsModal");
-    if (!modal) return;
-
-    modal.currentItem = item;
     const colors = getStatusColors(item.status);
+    const statusText = getStatusDisplayText(item.status);
+    const archivedPill = item.archived ? `<span class="ml-2 inline-block px-2 py-1 rounded text-xs font-medium bg-gray-200 text-gray-700">Archived</span>` : "";
 
-    document.getElementById("detailsItemName").textContent = item.name;
-    document.getElementById("detailsBrand").textContent = `Brand: ${item.type}`;
-    document.getElementById("detailsStock").textContent = `${item.currentQuantity} ${item.unit}`;
-    document.getElementById("detailsStock").className = `px-4 py-3 text-left font-semibold ${colors.quantity}`;
-    document.getElementById("detailsMinStock").textContent = `${item.minStock} ${item.unit}`;
-    document.getElementById("detailsUnit").textContent = item.unit || '';
-    document.getElementById("detailsPrice").textContent = `₱${(item.price || 0).toFixed(2)}`;
-    document.getElementById("detailsExpiry").textContent = item.expiryDate || '';
-    document.getElementById("detailsDescription").textContent = item.description || 'No description available.';
-    document.getElementById("detailsCategory").textContent = formatCategory(item.category);
-    document.getElementById("detailsCriticalText").textContent = `${item.minStock} ${item.unit || ''}`;
-
-    const statusBadge = document.getElementById("detailsStatusBadge");
-    const statusTextContainer = document.getElementById("detailsStatusText");
-    
-    if (statusBadge) {
-        statusBadge.textContent = getStatusDisplayText(item.status);
-        statusBadge.className = `inline-block px-3 py-1 rounded-full text-sm font-medium ${colors.bg} ${colors.text} border ${colors.border}`;
-    }
-    
-    if (statusTextContainer) {
-        statusTextContainer.innerHTML = `<span class="inline-block px-2 py-1 rounded-full text-xs font-medium ${colors.bg} ${colors.text} border ${colors.border}">${getStatusDisplayText(item.status)}</span>`;
-    }
-
-    const expiryTextEl = document.getElementById('detailsExpiresIn');
-    const expiryBadge = document.getElementById('detailsExpiryBadge');
-    const parseDate = (str) => {
-        if (!str) return null;
-        const parts = str.split(/[\/\-\.]/);
-        if (parts.length !== 3) return null;
-        if (parts[0].length === 4) {
-            return new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
-        } else {
-            return new Date(parseInt(parts[2]), parseInt(parts[0]) - 1, parseInt(parts[1]));
+    const card = document.createElement("div");
+    card.className = "border border-gray-200 rounded-lg p-4 bg-white shadow-md hover:shadow-lg transition-all duration-200 h-full flex flex-col transform hover:-translate-y-1";
+    card.setAttribute("data-card-id", item.id);
+    card.innerHTML = `
+      <div class="flex justify-between items-start mb-3 gap-2">
+        <div class="flex-1">
+          <h3 class="font-semibold text-gray-800 text-sm">${item.name}</h3>
+          <p class="text-xs text-gray-500">${item.type}</p>
+        </div>
+        <div class="flex items-center gap-2">
+          <span class="px-2 py-1 rounded text-xs font-medium ${colors.bg} ${colors.text} whitespace-nowrap border ${colors.border}">${statusText}</span>
+          ${archivedPill}
+        </div>
+      </div>
+      <div class="space-y-2 mb-4 text-xs flex-1">
+        <div class="flex justify-between"><span class="text-gray-600">Current Quantity</span><span class="font-semibold ${colors.quantity}">${item.currentQuantity} ${item.unit}</span></div>
+        <div class="text-gray-500">Min: ${item.minStock} ${item.unit}</div>
+        <div class="text-gray-500 flex items-center gap-2">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+          <span>Next Expiry: ${item.expiryDate}</span>
+          ${hasBatchWarning ? '<span class="w-3 h-3 rounded-full bg-red-600 inline-block ml-1" title="Contains batch expiring soon"></span>' : ''}
+        </div>
+        <div class="text-gray-500">Batches: ${item.batchCount || 0}</div>
+        <div class="flex justify-between items-center pt-2 border-t border-gray-100 mt-2">
+          <span class="text-gray-600">Price</span>
+          <span class="font-bold text-blue-700 text-sm">₱${Number(item.price).toFixed(2)}</span>
+        </div>
+      </div>
+      <div class="flex flex-col gap-2 mt-auto">
+        <div class="flex gap-2">
+          <button class="view-details-btn flex-1 border border-gray-300 py-2 rounded text-xs font-medium hover:bg-gray-100 transition-colors">View Details</button>
+          ${item.archived
+            ? `<button class="restore-btn flex-1 bg-emerald-600 text-white py-2 rounded text-xs font-medium hover:bg-emerald-700 transition-colors" data-item-id="${item.id}">Restore</button>`
+            : `<button class="edit-discrepancy-btn flex-1 bg-amber-500 text-white py-2 rounded text-xs font-medium hover:bg-amber-600 transition-colors" data-item-id="${item.id}">Edit Discrepancy</button>`
+          }
+        </div>
+        ${!item.archived
+          ? `<button class="archive-btn w-full border border-gray-400 bg-gray-50 text-gray-700 py-2 rounded text-xs font-medium hover:bg-gray-100 transition-colors" data-item-id="${item.id}">Archive</button>`
+          : ''
         }
-    };
-    
-    const expDate = parseDate(item.expiryDateISO || item.expiryDate);
-    if (expiryTextEl && expiryBadge && expDate) {
-        const now = new Date();
-        const diff = Math.ceil((expDate - now) / (1000*60*60*24));
-        expiryTextEl.textContent = `Expires in ${diff} days`;
-        
-        if (diff < 0) {
-            expiryBadge.textContent = 'Expired';
-            expiryBadge.className = 'inline-block px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-700 border border-red-200';
-        } else if (diff <= 30) {
-            expiryBadge.textContent = 'Expiring Soon';
-            expiryBadge.className = 'inline-block px-2 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-700 border border-orange-200';
-        } else {
-            expiryBadge.textContent = 'Safe';
-            expiryBadge.className = 'inline-block px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700 border border-green-200';
-        }
-    }
+      </div>`;
+    grid.appendChild(card);
+  });
 
-    const btnCloseTop = getElement(modal, '#closeItemDetails');
-    const btnCancel = getElement(modal, '#closeDetails');
-    const btnMove = getElement(modal, '#moveToArchive');
-
-    if (btnCloseTop) {
-        const newBtn = btnCloseTop.cloneNode(true);
-        btnCloseTop.parentNode.replaceChild(newBtn, btnCloseTop);
-        newBtn.onclick = () => { modal.classList.add('hidden'); modal.style.display = ''; };
-    }
-    if (btnCancel) {
-        const newBtn = btnCancel.cloneNode(true);
-        btnCancel.parentNode.replaceChild(newBtn, btnCancel);
-        newBtn.onclick = () => { modal.classList.add('hidden'); modal.style.display = ''; };
-    }
-    if (btnMove) {
-        if (item.archived) {
-            const newBtn = btnMove.cloneNode(true);
-            btnMove.parentNode.replaceChild(newBtn, btnMove);
-            newBtn.textContent = 'Restore from Archive';
-            newBtn.className = 'w-full bg-emerald-600 text-white py-2.5 rounded-lg text-sm font-semibold hover:bg-emerald-700 transition-colors';
-            newBtn.onclick = (e) => { e?.stopPropagation?.(); showRestoreConfirm(item); };
-        } else {
-            const newBtn = btnMove.cloneNode(true);
-            btnMove.parentNode.replaceChild(newBtn, btnMove);
-            newBtn.textContent = 'Move to Archive';
-            newBtn.className = 'w-full bg-red-600 text-white py-2.5 rounded-lg text-sm font-semibold hover:bg-red-700 transition-colors';
-            newBtn.onclick = (e) => { e?.stopPropagation?.(); showArchiveConfirm(item); };
-        }
-    }
-
-    modal.classList.remove('hidden');
+  renderInventoryPagination(startIndex + 1, Math.min(endIndex, filteredItems.length), filteredItems.length, Math.ceil(filteredItems.length / INVENTORY_ITEMS_PER_PAGE));
 }
 
-/* ================= REVIEW RESTOCK MODAL (Reuses Request Restock structure) ================= */
+function renderInventoryPagination(start, end, total, totalPages) {
+  const pageInfo = document.getElementById("inventoryPageInfo");
+  const pageNumber = document.getElementById("inventoryPageNumber");
+  const prevBtn = document.getElementById("inventoryPrevPage");
+  const nextBtn = document.getElementById("inventoryNextPage");
+
+  if (pageInfo) {
+    pageInfo.textContent = `Showing ${start} to ${end} of ${total} items`;
+  }
+  if (pageNumber) {
+    pageNumber.textContent = `Page ${currentInventoryPage} of ${Math.max(1, totalPages)}`;
+  }
+  if (prevBtn) {
+    prevBtn.disabled = currentInventoryPage <= 1 || total === 0;
+  }
+  if (nextBtn) {
+    nextBtn.disabled = currentInventoryPage >= Math.max(1, totalPages) || total === 0;
+  }
+}
+
+/* ================= RENDER: Restock Grid ================= */
+function renderRestockRequests() {
+  const grid = document.getElementById("restockGrid");
+  if (!grid) return;
+
+  if (!filteredRestockRequests.length) {
+    grid.innerHTML = `<div class="col-span-full text-center py-8 text-gray-500"><p>No restock requests found.</p></div>`;
+    return;
+  }
+  grid.innerHTML = "";
+
+  filteredRestockRequests.forEach(req => {
+    const colors = getStatusColors(req.status);
+    const stockColor = req.currentQuantity === 0 ? "text-red-700"
+                     : req.currentQuantity <= req.minStock ? "text-orange-700" : "text-green-700";
+
+    const isPending = req.status === "pending";
+    const reviewBtnHtml = isPending
+      ? `<button class="review-request-btn w-full bg-blue-600 text-white py-2 rounded text-xs font-medium hover:bg-blue-700 transition-colors">Review Request</button>`
+      : "";
+
+    const card = document.createElement("div");
+    card.className = "border border-gray-200 rounded-lg p-4 bg-white shadow-md hover:shadow-lg transition-all duration-200 h-full flex flex-col transform hover:-translate-y-1";
+    card.setAttribute("data-request-id", req.id);
+    card.innerHTML = `
+      <div class="flex justify-between items-start mb-3 gap-2">
+        <div class="flex-1">
+          <h3 class="font-semibold text-gray-800 text-sm">${req.itemName}</h3>
+          <p class="text-xs text-gray-500">${req.type}</p>
+          <p class="text-xs text-blue-600 font-mono mt-1">${req.requestType}</p>
+        </div>
+        <div><span class="px-2 py-1 rounded text-xs font-medium ${colors.bg} ${colors.text} whitespace-nowrap border ${colors.border}">${getStatusDisplayText(req.status)}</span></div>
+      </div>
+      <div class="space-y-2 mb-4 text-xs flex-1">
+        <div class="flex justify-between"><span class="text-gray-600">Current Stock</span><span class="font-semibold ${stockColor}">${req.currentQuantity} ${req.unit}</span></div>
+        <div class="flex justify-between"><span class="text-gray-600">Requested</span><span class="font-semibold text-blue-700">${req.requestQuantity} ${req.unit}</span></div>
+        <div class="text-gray-500 flex items-center gap-2">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
+          <span>By: ${req.requestedBy}</span>
+        </div>
+        <div class="text-gray-500 flex items-center gap-2">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+          <span>${req.requestDate}</span>
+        </div>
+      </div>
+      <div class="flex gap-2 mt-auto">${reviewBtnHtml}</div>`;
+    grid.appendChild(card);
+  });
+}
+
+/* ================= SHOW ITEM DETAILS ================= */
+function showItemDetails(item) {
+  const modal = document.getElementById("itemDetailsModal");
+  if (!modal) return;
+  modal.currentItem = item;
+  const colors = getStatusColors(item.status);
+
+  const setText = (id, value) => {
+    const el = getElement(modal, '#' + id);
+    if (el) el.textContent = value || "N/A";
+  };
+
+  // Header information
+  setText("detailsItemName", item.name);
+  setText("detailsGenericName", item.genericName || item.generic);
+  setText("detailsBrandName", item.brandName || item.brand || item.type);
+  setText("detailsCategory", formatCategory(item.category));
+  setText("detailsSellingPrice", `₱${(item.price || 0).toFixed(2)}`);
+
+  // Medicine Information section
+  setText("detailsMedicineName", item.medicineName || item.name);
+  setText("detailsMedicineGeneric", item.genericName || item.generic);
+  setText("detailsMedicineBrand", item.brandName || item.brand || item.type);
+  setText("detailsDosageForm", item.dosageForm);
+  setText("detailsStrength", item.strength);
+  setText("detailsMedicineUnit", item.unit);
+  setText("detailsMedicineDescription", item.description);
+
+  // Inventory Details — Stock Information
+  setText("detailsStock", `${item.currentQuantity} ${item.unit}`);
+  setText("detailsMinStock", `${item.minStock} ${item.unit}`);
+  setText("detailsBatchCount", String(item.batchCount || (item.batches || []).length || 0));
+  setText("detailsExpiry", item.expiryDate || "N/A");
+  setText("detailsSupplier", item.supplier);
+
+  const statusTextContainer = getElement(modal, '#detailsStatusText');
+  if (statusTextContainer) {
+    statusTextContainer.innerHTML = `<span class="${getModalStatusTextClass(item.status)}">${getStatusDisplayText(item.status)}</span>`;
+  }
+
+  // Discrepancy Details
+  const expectedRemainingEl = getElement(modal, '#detailsExpectedRemaining');
+  const physicalCountEl = getElement(modal, '#detailsPhysicalCount');
+  const varianceEl = getElement(modal, '#detailsVariance');
+  const discrepancyStatusEl = getElement(modal, '#detailsVarianceStatus');
+
+  if (expectedRemainingEl) {
+    expectedRemainingEl.textContent = `${Number(item.expectedRemaining ?? item.currentQuantity ?? 0)} ${item.unit}`;
+  }
+  if (physicalCountEl) {
+    physicalCountEl.textContent = `${Number(item.physicalCount ?? item.currentQuantity ?? 0)} ${item.unit}`;
+  }
+  if (varianceEl) {
+    const variance = Number(item.variance ?? 0);
+    const varianceClass = variance === 0 ? "text-green-700" : "text-amber-700";
+    varianceEl.textContent = `${variance >= 0 ? "+" : ""}${variance} ${item.unit}`;
+    varianceEl.className = `font-semibold ${varianceClass}`;
+  }
+  if (discrepancyStatusEl) {
+    const discrepancyStatus = item.discrepancyStatus || (Number(item.variance || 0) === 0 ? "Balanced" : "With Variance");
+    const textClass = discrepancyStatus === "Balanced"
+      ? "text-xs font-medium text-green-600"
+      : "text-xs font-medium text-orange-600";
+    discrepancyStatusEl.innerHTML = `<span class="${textClass}">${discrepancyStatus}</span>`;
+  }
+
+  const batchRows = getElement(modal, "#detailsBatchRows");
+  if (batchRows) {
+    const rows = (item.batches || []).map((batch) => {
+      const expiryMeta = getExpiryMeta(batch.expiryDateISO);
+      const expiryLabel = batch.expiryDateISO ? formatDateDisplay(batch.expiryDateISO, "N/A") : "N/A";
+      const statusHtml = (() => {
+        if (!batch.expiryDateISO) {
+          return '<span class="text-xs font-medium text-gray-600">Unknown</span>';
+        }
+
+        if (expiryMeta.diffDays < 0) {
+          return '<span class="text-xs font-medium text-red-700">Expired</span>';
+        }
+
+        if (expiryMeta.diffDays <= EXPIRY_WARNING_DAYS) {
+          return '<span class="inline-flex items-center gap-1 text-xs font-medium text-red-600"><span class="w-2 h-2 rounded-full bg-red-600 inline-block"></span>Expiring Soon</span>';
+        }
+
+        return '<span class="text-xs font-medium text-green-600">Normal</span>';
+      })();
+
+      return `
+        <tr>
+          <td class="px-3 py-2 text-gray-900 font-semibold break-words whitespace-normal">${escapeHtml(batch.batchNumber || "—")}</td>
+          <td class="px-3 py-2 text-gray-900 font-medium">${Number(batch.quantity || 0)} ${escapeHtml(item.unit)}</td>
+          <td class="px-3 py-2 text-gray-900 font-medium">${escapeHtml(expiryLabel)}</td>
+          <td class="px-3 py-2 text-gray-900">${statusHtml}</td>
+        </tr>`;
+    });
+
+    batchRows.innerHTML = rows.length
+      ? rows.join("")
+      : '<tr><td colspan="4" class="px-3 py-3 text-gray-600">No batch records available.</td></tr>';
+  }
+
+  /* ---- Expiry calculation ---- */
+  const expiryTextEl = getElement(modal, '#detailsExpiresIn');
+  const expiryBadge = getElement(modal, '#detailsExpiryBadge');
+  const expiryMeta = getExpiryMeta(item.expiryDateISO || item.expiryDate);
+  if (expiryTextEl && expiryBadge) {
+    if (expiryMeta.date) {
+      expiryTextEl.textContent = `Expires in ${expiryMeta.diffDays} days`;
+      expiryBadge.textContent = expiryMeta.badgeText;
+      expiryBadge.className = expiryMeta.badgeClass;
+    } else {
+      expiryTextEl.textContent = "Expiry date not available";
+      expiryBadge.textContent = expiryMeta.badgeText;
+      expiryBadge.className = expiryMeta.badgeClass;
+    }
+  }
+
+  /* ---- Detail modal buttons ---- */
+  const btnCloseTop = getElement(modal, "#closeItemDetails");
+  const btnCancel   = getElement(modal, "#closeDetails");
+  const btnEditDiscrepancy = getElement(modal, "#detailsEditDiscrepancyBtn");
+  const btnMove     = getElement(modal, "#moveToArchive");
+
+  const hideDetails = () => { modal.classList.add("hidden"); modal.style.display = ""; };
+
+  if (btnCloseTop) { const n = btnCloseTop.cloneNode(true); btnCloseTop.parentNode.replaceChild(n, btnCloseTop); n.onclick = hideDetails; }
+  if (btnCancel)   { const n = btnCancel.cloneNode(true); btnCancel.parentNode.replaceChild(n, btnCancel); n.onclick = hideDetails; }
+  if (btnEditDiscrepancy) {
+    const n = btnEditDiscrepancy.cloneNode(true);
+    btnEditDiscrepancy.parentNode.replaceChild(n, btnEditDiscrepancy);
+    n.onclick = (e) => {
+      e?.stopPropagation?.();
+      hideDetails();
+      showEditDiscrepancyModal(item);
+    };
+  }
+  if (btnMove) {
+    const n = btnMove.cloneNode(true);
+    btnMove.parentNode.replaceChild(n, btnMove);
+    if (item.archived) {
+      n.textContent = "Restore from Archive";
+      n.className = "w-full bg-emerald-600 text-white py-2 rounded text-sm font-semibold hover:bg-emerald-700 transition-colors";
+      n.onclick = (e) => { e?.stopPropagation?.(); showRestoreConfirm(item); };
+    } else {
+      n.textContent = "Move to Archive";
+      n.className = "w-full bg-red-600 text-white py-2 rounded text-sm font-semibold hover:bg-red-700 transition-colors";
+      n.onclick = (e) => { e?.stopPropagation?.(); showArchiveConfirm(item); };
+    }
+  }
+  modal.classList.remove("hidden");
+  modal.style.display = "flex";
+}
+
+/* ================= REVIEW RESTOCK MODAL ================= */
 function showReviewRestockModal(request) {
-    const content = `
-        <h3 class="text-lg font-semibold mb-1">Review Request Restock</h3>
-        <p class="text-sm text-gray-600 mb-4">${request.id}</p>
-        <div class="space-y-3 text-sm">
-            <div class="flex justify-between py-2 border-b">
-                <span class="text-gray-600">Item Name</span>
-                <span class="font-semibold">${request.itemName}</span>
-            </div>
-            <div class="flex justify-between py-2 border-b">
-                <span class="text-gray-600">Category</span>
-                <span class="font-semibold">${formatCategory(request.category)}</span>
-            </div>
-            <div class="flex justify-between py-2 border-b">
-                <span class="text-gray-600">Current Stock</span>
-                <span class="font-semibold ${request.currentQuantity === 0 ? 'text-red-700' : request.currentQuantity <= request.minStock ? 'text-orange-700' : 'text-green-700'}">${request.currentQuantity} ${request.unit}</span>
-            </div>
-            <div class="flex justify-between py-2 border-b">
-                <span class="text-gray-600">Requested Quantity</span>
-                <span class="font-semibold text-blue-700">${request.requestQuantity} ${request.unit}</span>
-            </div>
-            <div class="flex justify-between py-2 border-b">
-                <span class="text-gray-600">Requested By</span>
-                <span class="font-semibold">${request.requestedBy}</span>
-            </div>
-            <div class="py-2">
-                <label class="block text-xs text-gray-700 mb-1">Approved Quantity</label>
-                <input id="approvedQuantity" type="number" min="0" max="${request.requestQuantity}" value="${request.requestQuantity}" class="w-full border border-gray-300 rounded px-3 py-2" />
-            </div>
-            <div class="py-2">
-                <label class="block text-xs text-gray-700 mb-1">Notes</label>
-                <textarea id="adminNotesInput" rows="3" class="w-full border border-gray-300 rounded px-3 py-2" placeholder="Add admin notes..."></textarea>
-            </div>
+  const defaultBatchNumber = request.batchNumber && request.batchNumber !== "—"
+    ? request.batchNumber
+    : generateBatchNumber(request);
+
+  const defaultExpiryDate = (() => {
+    const plusMonth = new Date();
+    plusMonth.setMonth(plusMonth.getMonth() + 1);
+    return plusMonth.toISOString().split("T")[0];
+  })();
+
+  const content = `
+    <h3 class="text-lg font-semibold mb-1">Review Request Restock</h3>
+    <p class="text-sm text-gray-600 mb-4">${request.requestType}</p>
+    <div class="space-y-3 text-sm">
+      <div class="flex justify-between py-2 border-b"><span class="text-gray-600">Item Name</span><span class="font-semibold">${request.itemName}</span></div>
+      <div class="flex justify-between py-2 border-b"><span class="text-gray-600">Category</span><span class="font-semibold">${formatCategory(request.category)}</span></div>
+      <div class="flex justify-between py-2 border-b"><span class="text-gray-600">Current Stock</span><span class="font-semibold ${request.currentQuantity === 0 ? "text-red-700" : request.currentQuantity <= request.minStock ? "text-orange-700" : "text-green-700"}">${request.currentQuantity} ${request.unit}</span></div>
+      <div class="flex justify-between py-2 border-b"><span class="text-gray-600">Requested Quantity</span><span class="font-semibold text-blue-700">${request.requestQuantity} ${request.unit}</span></div>
+      <div class="flex justify-between py-2 border-b"><span class="text-gray-600">Requested By</span><span class="font-semibold">${request.requestedBy}</span></div>
+      <div class="py-2">
+        <label class="block text-xs text-gray-700 mb-1">Approved Quantity</label>
+        <input id="approvedQuantity" type="number" min="0" value="${request.requestQuantity}" class="w-full border border-gray-300 rounded px-3 py-2" />
+      </div>
+      <div class="py-2">
+        <label class="block text-xs text-gray-700 mb-1">Notes</label>
+        <textarea id="adminNotesInput" rows="3" class="w-full border border-gray-300 rounded px-3 py-2" placeholder="Add admin notes..."></textarea>
+      </div>
+      <div class="pt-2 border-t border-gray-100">
+        <p class="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-2">New Batch Details (For Approved Stock Only)</p>
+        <div class="space-y-2">
+          <div>
+            <label class="block text-xs text-gray-700 mb-1">Batch Number</label>
+            <input id="approvalBatchNumber" type="text" value="${defaultBatchNumber}" class="w-full border border-gray-300 rounded px-3 py-2" />
+          </div>
+          <div>
+            <label class="block text-xs text-gray-700 mb-1">Expiration Date</label>
+            <input id="approvalExpirationDate" type="date" value="${defaultExpiryDate}" class="w-full border border-gray-300 rounded px-3 py-2" />
+          </div>
+          <div>
+            <label class="block text-xs text-gray-700 mb-1">Supplier (Optional)</label>
+            <input id="approvalSupplier" type="text" value="${request.supplier && request.supplier !== "—" ? request.supplier : ""}" placeholder="Supplier name" class="w-full border border-gray-300 rounded px-3 py-2" />
+          </div>
         </div>
-        <div class="mt-5 flex gap-5 justify-between">
-            <button id="reviewCancelBtn" class="flex-1 border border-gray-300 py-2 px-4 rounded-lg bg-white">Cancel</button>
-            <button id="reviewDenyBtn" class="flex-1 bg-red-600 text-white py-2 px-4 rounded-lg">Deny</button>
-            <button id="reviewApproveBtn" class="flex-1 bg-green-600 text-white py-2 px-4 rounded-lg">Approve</button>
-        </div>
-    `;
+      </div>
+    </div>
+    <div class="mt-5 flex gap-5 justify-between">
+      <button id="reviewCancelBtn" class="flex-1 border border-gray-300 py-2 px-4 rounded-lg bg-white">Cancel</button>
+      <button id="reviewDenyBtn" class="flex-1 bg-red-600 text-white py-2 px-4 rounded-lg">Deny</button>
+      <button id="reviewApproveBtn" class="flex-1 bg-green-600 text-white py-2 px-4 rounded-lg">Approve</button>
+    </div>`;
 
-    const reviewModal = createModal({
-        id: 'reviewRestockModal',
-        content: content,
-        width: '500px'
-    });
+  const reviewModal = createModal({ id: "reviewRestockModal", content, width: "500px" });
+  reviewModal.currentRequest = request;
 
-    reviewModal.currentRequest = request;
+  const hide = () => { reviewModal.classList.add("hidden"); reviewModal.style.display = ""; setTimeout(() => reviewModal.remove(), 200); };
+  getElement(reviewModal, "#closeReviewRestockModal")?.addEventListener("click", hide);
+  getElement(reviewModal, "#reviewCancelBtn")?.addEventListener("click", hide);
 
-    const closeBtn = getElement(reviewModal, '#closeReviewRestockModal');
-    const cancel = getElement(reviewModal, '#reviewCancelBtn');
-    const deny = getElement(reviewModal, '#reviewDenyBtn');
-    const approve = getElement(reviewModal, '#reviewApproveBtn');
-    const hide = () => { reviewModal.classList.add('hidden'); reviewModal.style.display = ''; setTimeout(() => reviewModal.remove(), 200); };
-
-    if (closeBtn) closeBtn.onclick = hide;
-    if (cancel) cancel.onclick = hide;
-
-    if (deny) {
-        deny.onclick = () => {
-            const adminNotes = getElement(reviewModal, '#adminNotesInput')?.value || '';
-            
-            showDenyConfirmModal(request, adminNotes, () => {
-                // Remove request from restock list when denied
-                const requestIndex = restockRequests.findIndex(r => r.id === request.id);
-                if (requestIndex > -1) {
-                    restockRequests.splice(requestIndex, 1);
-                }
-                
-                logActivity("Denied Restock", request.itemName, request.requestQuantity, "Denied");
-                showToast('Request Denied and Removed', 'error');
-                hide();
-                applyRestockFilters();
-            });
-        };
-    }
-
-    if (approve) {
-    approve.onclick = () => {
-        const approvedQty = parseInt(getElement(reviewModal, '#approvedQuantity')?.value || request.requestQuantity);
-        const adminNotes = getElement(reviewModal, '#adminNotesInput')?.value || '';
-        
-        showApproveConfirmModal(request, approvedQty, adminNotes, () => {
-            // Find existing item by itemId (e.g., "INV001")
-            let item = inventoryItems.find(i => i.id === request.itemId);
-            
-            if (item) {
-                // Update existing item
-                item.currentQuantity += approvedQty;
-                item.status = item.currentQuantity > item.minStock ? 'in-stock' : 
-                             item.currentQuantity === 0 ? 'out-of-stock' : 'low-stock';
-                item.lastRestocked = new Date().toISOString().split('T')[0];
-            } else {
-                // Create new inventory item
-                item = {
-                    id: `ITEM-${Date.now()}`,
-                    name: request.itemName,
-                    type: request.type,
-                    category: request.category,
-                    currentQuantity: approvedQty,
-                    minStock: request.minStock,
-                    unit: request.unit,
-                    supplier: request.supplier || request.requestedBy,
-                    status: approvedQty > request.minStock ? 'in-stock' : 'low-stock',
-                    expiryDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toLocaleDateString('en-US'),
-                    expiryDateISO: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-                    batchNumber: `BATCH-${Date.now()}`,
-                    archived: false,
-                    price: 0,
-                    description: ''
-                };
-                inventoryItems.unshift(item);
-            }
-            
-            // Remove request from restock list
-            const requestIndex = restockRequests.findIndex(r => r.id === request.id);
-            if (requestIndex > -1) {
-                restockRequests.splice(requestIndex, 1);
-            }
-            
-            logActivity("Approved Restock", request.itemName, approvedQty, "Approved");
-            showToast('Request Approved & Stock Updated', 'success');
-            hide();
-            applyRestockFilters();
-            applyFilters();
+  /* DENY */
+  getElement(reviewModal, "#reviewDenyBtn")?.addEventListener("click", () => {
+    const reason = getElement(reviewModal, "#adminNotesInput")?.value || "";
+    showDenyConfirmModal(request, reason, async () => {
+      try {
+        await apiFetch(API.rejectRequest(request.id), {
+          method: "PATCH",
+          body: JSON.stringify({ reason }),
         });
-    };
-}
-}
-
-/* ================= APPROVE CONFIRM MODAL ================= */
-function showApproveConfirmModal(request, approvedQty, adminNotes, onConfirm) {
-    const content = `
-        <div class="flex items-start gap-4">
-            <div class="w-10 h-10 rounded-full bg-green-50 flex items-center justify-center">
-                <svg class="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                </svg>
-            </div>
-            <div class="flex-1">
-                <h3 class="text-lg font-semibold text-gray-900">Are you sure you want to Approve this request?</h3>
-                <p id="approveItemName" class="text-sm font-semibold text-gray-800 mt-2"></p>
-                <p class="text-sm text-gray-600 mt-1">Note: This will add the item to inventory and remove the request</p>
-            </div>
-        </div>
-        <div class="mt-6 grid grid-cols-2 gap-4">
-            <button id="approveCancelBtn" class="w-full border border-gray-300 py-2.5 rounded-lg bg-white text-sm font-semibold hover:bg-gray-50 transition-colors text-gray-700">Cancel</button>
-            <button id="approveConfirmBtn" class="w-full bg-green-600 text-white py-2.5 rounded-lg text-sm font-semibold hover:bg-green-700 transition-colors">Confirm</button>
-        </div>
-    `;
-    
-    const approveModal = createModal({
-        id: 'approveConfirmModal',
-        content: content
-    });
-
-    if (approveModal && approveModal.parentElement !== document.body) {
-        document.body.appendChild(approveModal);
-    }
-
-    approveModal.classList.add('hidden');
-    approveModal.style.display = 'none';
-    setTimeout(() => { approveModal.classList.remove('hidden'); approveModal.style.display = 'flex'; }, 10);
-
-    const nameEl = getElement(approveModal, '#approveItemName');
-    if (nameEl) nameEl.textContent = `${request.itemName} (${approvedQty} ${request.unit})`;
-
-    const hide = () => { approveModal.classList.add('hidden'); approveModal.style.display = ''; };
-
-    getElement(approveModal, '#closeApproveConfirmModal')
-        ?.addEventListener('click', hide);
-
-    getElement(approveModal, '#approveCancelBtn')
-        ?.addEventListener('click', hide);
-
-    getElement(approveModal, '#approveConfirmBtn')
-        ?.addEventListener('click', () => {
-            hide();
-            onConfirm();
-        });
-}
-
-/* ================= DENY CONFIRM MODAL ================= */
-function showDenyConfirmModal(request, adminNotes, onConfirm) {
-    const content = `
-        <div class="flex items-start gap-4">
-            <div class="w-10 h-10 rounded-full bg-red-50 flex items-center justify-center">
-                <svg class="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
-                </svg>
-            </div>
-            <div class="flex-1">
-                <h3 class="text-lg font-semibold text-gray-900">Are you sure you want to Deny this request?</h3>
-                <p id="denyItemName" class="text-sm font-semibold text-gray-800 mt-2"></p>
-                <p class="text-sm text-gray-600 mt-1">Note: This will remove the request from the list</p>
-            </div>
-        </div>
-        <div class="mt-6 grid grid-cols-2 gap-4">
-            <button id="denyCancelBtn" class="w-full border border-gray-300 py-2.5 rounded-lg bg-white text-sm font-semibold hover:bg-gray-50 transition-colors text-gray-700">Cancel</button>
-            <button id="denyConfirmBtn" class="w-full bg-red-600 text-white py-2.5 rounded-lg text-sm font-semibold hover:bg-red-700 transition-colors">Confirm</button>
-        </div>
-    `;
-    
-    const denyModal = createModal({
-        id: 'denyConfirmModal',
-        content: content
-    });
-
-    if (denyModal && denyModal.parentElement !== document.body) {
-        document.body.appendChild(denyModal);
-    }
-
-    denyModal.classList.add('hidden');
-    denyModal.style.display = 'none';
-    setTimeout(() => { denyModal.classList.remove('hidden'); denyModal.style.display = 'flex'; }, 10);
-
-    const nameEl = getElement(denyModal, '#denyItemName');
-    if (nameEl) nameEl.textContent = `${request.itemName} (${request.requestQuantity} ${request.unit})`;
-
-    const hide = () => { denyModal.classList.add('hidden'); denyModal.style.display = ''; };
-
-    getElement(denyModal, '#closeDenyConfirmModal')
-        ?.addEventListener('click', hide);
-
-    getElement(denyModal, '#denyCancelBtn')
-        ?.addEventListener('click', hide);
-
-    getElement(denyModal, '#denyConfirmBtn')
-        ?.addEventListener('click', () => {
-            hide();
-            onConfirm();
-        });
-}
-
-/* ================= ARCHIVE CONFIRM MODAL (Reused from staff pattern) ================= */
-function showArchiveConfirm(item) {
-    const detailsModal = document.getElementById('itemDetailsModal');
-    
-    const content = `
-        <div class="flex items-start gap-4">
-            <div class="w-10 h-10 rounded-full bg-red-50 flex items-center justify-center">
-                <svg class="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
-                </svg>
-            </div>
-            <div class="flex-1">
-                <h3 class="text-lg font-semibold text-gray-900">Are you sure you want to Archive this item?</h3>
-                <p id="archiveItemName" class="text-sm font-semibold text-gray-800 mt-2"></p>
-                <p class="text-sm text-gray-600 mt-1">Note: Archived items will be moved to archive page and can be restored later</p>
-            </div>
-        </div>
-        <div class="mt-6 grid grid-cols-2 gap-4">
-            <button id="archiveCancelBtn" class="w-full border border-gray-300 py-2.5 rounded-lg bg-white text-sm font-semibold hover:bg-gray-50 transition-colors text-gray-700">Cancel</button>
-            <button id="archiveConfirmBtn" class="w-full bg-red-600 text-white py-2.5 rounded-lg text-sm font-semibold hover:bg-red-700 transition-colors">Confirm</button>
-        </div>
-    `;
-    
-    const archiveModal = createModal({
-        id: 'archiveConfirmModal',
-        content: content
-    });
-
-    if (archiveModal && archiveModal.parentElement !== document.body) {
-        document.body.appendChild(archiveModal);
-    }
-
-    archiveModal.classList.add('hidden');
-    archiveModal.style.display = 'none';
-    setTimeout(() => { archiveModal.classList.remove('hidden'); archiveModal.style.display = 'flex'; }, 10);
-
-    const nameEl = getElement(archiveModal, '#archiveItemName');
-    if (nameEl) nameEl.textContent = item.name || '';
-    setTimeout(() => { if (detailsModal) { detailsModal.classList.add('hidden'); detailsModal.style.display = ''; } }, 50);
-
-    const hide = () => { archiveModal.classList.add('hidden'); archiveModal.style.display = ''; };
-
-    getElement(archiveModal, '#closeArchiveConfirmModal')
-        ?.addEventListener('click', hide);
-
-    getElement(archiveModal, '#archiveCancelBtn')
-        ?.addEventListener('click', hide);
-
-    getElement(archiveModal, '#archiveConfirmBtn')
-    ?.addEventListener('click', () => {
-        const detailsModalEl = document.getElementById('itemDetailsModal');
-        if (detailsModalEl) { detailsModalEl.classList.add('hidden'); detailsModalEl.style.display = ''; }
-        
-        const itemInArray = inventoryItems.find(i => String(i.id) === String(detailsModalEl?.currentItem?.id));
-        if (itemInArray) {
-            itemInArray.archived = true;
-            console.log(`✅ Item ${itemInArray.name} archived`);
-            logActivity("Archived", itemInArray.name, itemInArray.currentQuantity, "Archived");
-        } else {
-            console.warn("Item not found in inventory array");
-        }
-        
-        applyFilters();
-        showToast('Archived Successfully', 'success');
+        showToast("Request Denied", "success");
         hide();
+        await refreshRequests();
+      } catch (err) {
+        showToast(`Deny failed: ${err.message}`, "error");
+      }
     });
+  });
+
+  /* APPROVE */
+  getElement(reviewModal, "#reviewApproveBtn")?.addEventListener("click", () => {
+    const approvedQty = parseInt(getElement(reviewModal, "#approvedQuantity")?.value || request.requestQuantity, 10);
+    const adminNotes  = getElement(reviewModal, "#adminNotesInput")?.value || "";
+    const approvalBatchNumber = (getElement(reviewModal, "#approvalBatchNumber")?.value || "").trim();
+    const approvalExpirationDate = (getElement(reviewModal, "#approvalExpirationDate")?.value || "").trim();
+    const approvalSupplier = (getElement(reviewModal, "#approvalSupplier")?.value || "").trim();
+
+    if (!approvalExpirationDate) {
+      showToast("Expiration Date is required for approved restock batches", "error");
+      return;
+    }
+
+    showApproveConfirmModal(request, approvedQty, adminNotes, async () => {
+      try {
+        await apiFetch(API.approveRequest(request.id), {
+          method: "PATCH",
+          body: JSON.stringify({
+            approvedQuantity: approvedQty,
+            batchNumber: approvalBatchNumber || generateBatchNumber(request),
+            expirationDate: approvalExpirationDate,
+            supplier: approvalSupplier || null,
+          }),
+        });
+        showToast("Request Approved and New Batch Added", "success");
+        hide();
+        await refreshAll();
+      } catch (err) {
+        showToast(`Approve failed: ${err.message}`, "error");
+      }
+    });
+  });
 }
 
-/* ================= ADD ITEM MODAL (Reused from staff pattern) ================= */
+/* ================= APPROVE CONFIRM ================= */
+function showApproveConfirmModal(request, approvedQty, adminNotes, onConfirm) {
+  const content = `
+    <div class="flex items-start gap-4">
+      <div class="w-10 h-10 rounded-full bg-green-50 flex items-center justify-center">
+        <svg class="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+      </div>
+      <div class="flex-1">
+        <h3 class="text-lg font-semibold text-gray-900">Are you sure you want to Approve this request?</h3>
+        <p id="approveItemName" class="text-sm font-semibold text-gray-800 mt-2"></p>
+        <p class="text-sm text-gray-600 mt-1">Note: This will add the item to inventory and remove the request</p>
+      </div>
+    </div>
+    <div class="mt-6 grid grid-cols-2 gap-4">
+      <button id="approveCancelBtn" class="w-full border border-gray-300 py-2.5 rounded-lg bg-white text-sm font-semibold hover:bg-gray-50 transition-colors text-gray-700">Cancel</button>
+      <button id="approveConfirmBtn" class="w-full bg-green-600 text-white py-2.5 rounded-lg text-sm font-semibold hover:bg-green-700 transition-colors">Confirm</button>
+    </div>`;
+  const m = createModal({ id: "approveConfirmModal", content });
+  m.classList.add("hidden"); m.style.display = "none";
+  setTimeout(() => { m.classList.remove("hidden"); m.style.display = "flex"; }, 10);
+
+  const nameEl = getElement(m, "#approveItemName");
+  if (nameEl) nameEl.textContent = `${request.itemName} (${approvedQty} ${request.unit})`;
+
+  const hide = () => { m.classList.add("hidden"); m.style.display = ""; };
+  getElement(m, "#closeApproveConfirmModal")?.addEventListener("click", hide);
+  getElement(m, "#approveCancelBtn")?.addEventListener("click", hide);
+  getElement(m, "#approveConfirmBtn")?.addEventListener("click", () => { hide(); onConfirm(); });
+}
+
+/* ================= DENY CONFIRM ================= */
+function showDenyConfirmModal(request, adminNotes, onConfirm) {
+  const content = `
+    <div class="flex items-start gap-4">
+      <div class="w-10 h-10 rounded-full bg-red-50 flex items-center justify-center">
+        <svg class="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+      </div>
+      <div class="flex-1">
+        <h3 class="text-lg font-semibold text-gray-900">Are you sure you want to Deny this request?</h3>
+        <p id="denyItemName" class="text-sm font-semibold text-gray-800 mt-2"></p>
+        <p class="text-sm text-gray-600 mt-1">Note: This will reject the request</p>
+      </div>
+    </div>
+    <div class="mt-6 grid grid-cols-2 gap-4">
+      <button id="denyCancelBtn" class="w-full border border-gray-300 py-2.5 rounded-lg bg-white text-sm font-semibold hover:bg-gray-50 transition-colors text-gray-700">Cancel</button>
+      <button id="denyConfirmBtn" class="w-full bg-red-600 text-white py-2.5 rounded-lg text-sm font-semibold hover:bg-red-700 transition-colors">Confirm</button>
+    </div>`;
+  const m = createModal({ id: "denyConfirmModal", content });
+  m.classList.add("hidden"); m.style.display = "none";
+  setTimeout(() => { m.classList.remove("hidden"); m.style.display = "flex"; }, 10);
+
+  const nameEl = getElement(m, "#denyItemName");
+  if (nameEl) nameEl.textContent = `${request.itemName} (${request.requestQuantity} ${request.unit})`;
+
+  const hide = () => { m.classList.add("hidden"); m.style.display = ""; };
+  getElement(m, "#closeDenyConfirmModal")?.addEventListener("click", hide);
+  getElement(m, "#denyCancelBtn")?.addEventListener("click", hide);
+  getElement(m, "#denyConfirmBtn")?.addEventListener("click", () => { hide(); onConfirm(); });
+}
+
+/* ================= EDIT DISCREPANCY MODAL ================= */
+function showEditDiscrepancyModal(item) {
+  const expectedRemaining = Number(item.expectedRemaining ?? item.currentQuantity ?? 0);
+  const initialPhysicalCount = Number(item.physicalCount ?? expectedRemaining);
+
+  const content = `
+    <h3 class="text-lg font-semibold mb-1">Edit Discrepancy</h3>
+    <p class="text-sm text-gray-600 mb-4">Update discrepancy values directly for <span class="font-semibold text-gray-800">${item.name}</span>.</p>
+
+    <div class="space-y-3 text-sm">
+      <div class="flex justify-between py-2 border-b border-gray-100">
+        <span class="text-gray-600">Expected Remaining</span>
+        <span class="font-semibold text-gray-900">${expectedRemaining} ${item.unit}</span>
+      </div>
+      <div>
+        <label class="block text-xs text-gray-700 mb-1">Physical Count</label>
+        <input id="discrepancyPhysicalCountInput" type="number" min="0" value="${initialPhysicalCount}" class="w-full border border-gray-300 rounded px-3 py-2" />
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div class="border border-gray-200 rounded-lg p-3 bg-gray-50">
+          <p class="text-xs text-gray-500">Variance</p>
+          <p id="discrepancyVariancePreview" class="text-sm font-semibold text-gray-800 mt-1">0 ${item.unit}</p>
+        </div>
+        <div class="border border-gray-200 rounded-lg p-3 bg-gray-50">
+          <p class="text-xs text-gray-500">Status</p>
+          <p id="discrepancyStatusPreview" class="text-sm font-semibold text-gray-800 mt-1">Balanced</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="mt-5 grid grid-cols-2 gap-3">
+      <button id="editDiscrepancyCancelBtn" class="w-full border border-gray-300 py-2.5 rounded-lg bg-white text-sm font-semibold hover:bg-gray-50 transition-colors text-gray-700">Cancel</button>
+      <button id="editDiscrepancySaveBtn" class="w-full bg-amber-500 text-white py-2.5 rounded-lg text-sm font-semibold hover:bg-amber-600 transition-colors">Save Changes</button>
+    </div>`;
+
+  const modal = createModal({ id: "editDiscrepancyModal", content, width: "480px" });
+
+  const hide = () => {
+    modal.classList.add("hidden");
+    modal.style.display = "";
+    setTimeout(() => modal.remove(), 200);
+  };
+
+  const physicalCountInput = getElement(modal, "#discrepancyPhysicalCountInput");
+  const variancePreview = getElement(modal, "#discrepancyVariancePreview");
+  const statusPreview = getElement(modal, "#discrepancyStatusPreview");
+
+  const updatePreview = () => {
+    const physicalCount = Number(physicalCountInput?.value ?? initialPhysicalCount);
+    const variance = physicalCount - expectedRemaining;
+    const status = variance === 0 ? "Balanced" : "With Variance";
+
+    if (variancePreview) {
+      variancePreview.textContent = `${variance >= 0 ? "+" : ""}${variance} ${item.unit}`;
+      variancePreview.className = `text-sm font-semibold mt-1 ${variance === 0 ? "text-green-700" : "text-amber-700"}`;
+    }
+    if (statusPreview) {
+      statusPreview.textContent = status;
+      statusPreview.className = `text-sm font-semibold mt-1 ${status === "Balanced" ? "text-green-700" : "text-amber-700"}`;
+    }
+  };
+
+  updatePreview();
+  physicalCountInput?.addEventListener("input", updatePreview);
+
+  getElement(modal, "#closeEditDiscrepancyModal")?.addEventListener("click", hide);
+  getElement(modal, "#editDiscrepancyCancelBtn")?.addEventListener("click", hide);
+
+  getElement(modal, "#editDiscrepancySaveBtn")?.addEventListener("click", async () => {
+    const physicalCount = Number(physicalCountInput?.value);
+    if (!Number.isFinite(physicalCount) || physicalCount < 0) {
+      showToast("Physical count must be a non-negative number", "error");
+      return;
+    }
+
+    try {
+      await apiFetch(API.updateDiscrepancy(item.id), {
+        method: "PATCH",
+        body: JSON.stringify({ physicalCount }),
+      });
+
+      showToast("Discrepancy updated successfully", "success");
+      hide();
+      await refreshInventory();
+    } catch (err) {
+      showToast(`Discrepancy update failed: ${err.message}`, "error");
+    }
+  });
+
+  modal.classList.remove("hidden");
+  modal.style.display = "flex";
+}
+
+/* ================= ARCHIVE CONFIRM ================= */
+function showArchiveConfirm(item) {
+  const detailsModal = document.getElementById("itemDetailsModal");
+  const content = `
+    <div class="flex items-start gap-4">
+      <div class="w-10 h-10 rounded-full bg-red-50 flex items-center justify-center">
+        <svg class="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+      </div>
+      <div class="flex-1">
+        <h3 class="text-lg font-semibold text-gray-900">Are you sure you want to Archive this item?</h3>
+        <p id="archiveItemName" class="text-sm font-semibold text-gray-800 mt-2"></p>
+        <p class="text-sm text-gray-600 mt-1">Note: Archived items can be restored later</p>
+      </div>
+    </div>
+    <div class="mt-6 grid grid-cols-2 gap-4">
+      <button id="archiveCancelBtn" class="w-full border border-gray-300 py-2.5 rounded-lg bg-white text-sm font-semibold hover:bg-gray-50 transition-colors text-gray-700">Cancel</button>
+      <button id="archiveConfirmBtn" class="w-full bg-red-600 text-white py-2.5 rounded-lg text-sm font-semibold hover:bg-red-700 transition-colors">Confirm</button>
+    </div>`;
+  const m = createModal({ id: "archiveConfirmModal", content });
+  m.classList.add("hidden"); m.style.display = "none";
+  setTimeout(() => { m.classList.remove("hidden"); m.style.display = "flex"; }, 10);
+
+  const nameEl = getElement(m, "#archiveItemName");
+  if (nameEl) nameEl.textContent = item.name || "";
+  setTimeout(() => { if (detailsModal) { detailsModal.classList.add("hidden"); detailsModal.style.display = ""; } }, 50);
+
+  const hide = () => { m.classList.add("hidden"); m.style.display = ""; };
+  getElement(m, "#closeArchiveConfirmModal")?.addEventListener("click", hide);
+  getElement(m, "#archiveCancelBtn")?.addEventListener("click", hide);
+
+  getElement(m, "#archiveConfirmBtn")?.addEventListener("click", async () => {
+    try {
+      await apiFetch(API.archiveProduct(item.id), { method: "PATCH" });
+      showToast("Archived Successfully", "success");
+      hide();
+      if (detailsModal) { detailsModal.classList.add("hidden"); detailsModal.style.display = ""; }
+      await refreshInventory();
+    } catch (err) {
+      showToast(`Archive failed: ${err.message}`, "error");
+    }
+  });
+}
+
+/* ================= ADD ITEM MODAL ================= */
 function showAddItemModal() {
-    const content = `
-        <h3 class="text-lg font-semibold mb-1">Add Item</h3>
-        <p class="text-sm text-gray-600 mb-4">Items will be added directly to inventory</p>
-        <div class="space-y-3 text-sm">
-            <div><label class="block text-xs text-gray-700 mb-1">Brand :</label>
-                <input id="addBrand" class="w-full border border-gray-300 rounded px-3 py-2" />
-                <p id="addBrandError" class="text-red-600 text-xs mt-1 hidden">Required</p></div>
-            <div><label class="block text-xs text-gray-700 mb-1">Generic :</label>
-                <input id="addGeneric" class="w-full border border-gray-300 rounded px-3 py-2" />
-                <p id="addGenericError" class="text-red-600 text-xs mt-1 hidden">Required</p></div>
-            <div><label class="block text-xs text-gray-700 mb-1">Category :</label>
-                <select id="addCategory" class="w-full border border-gray-300 rounded px-3 py-2 bg-white">
-                    <option value="">Select category</option><option value="medicine">Medicine</option>
-                    <option value="first-aid">First Aid & Medical Supplies</option><option value="vitamins">Vitamins</option>
-                    <option value="personal-care">Personal Care</option>
-                </select>
-                <p id="addCategoryError" class="text-red-600 text-xs mt-1 hidden">Required</p></div>
-            <div><label class="block text-xs text-gray-700 mb-1">Quantity :</label>
-                <input id="addQuantity" type="number" min="0" class="w-full border border-gray-300 rounded px-3 py-2" />
-                <p id="addQuantityError" class="text-red-600 text-xs mt-1 hidden">Required</p></div>
-            <div><label class="block text-xs text-gray-700 mb-1">Unit :</label>
-                <input id="addUnit" placeholder="e.g., tablets, bottles, pieces" class="w-full border border-gray-300 rounded px-3 py-2" />
-                <p id="addUnitError" class="text-red-600 text-xs mt-1 hidden">Required</p></div>
-            <div><label class="block text-xs text-gray-700 mb-1">Min Stock Level :</label>
-                <input id="addMinStock" type="number" min="0" class="w-full border border-gray-300 rounded px-3 py-2" />
-                <p id="addMinStockError" class="text-red-600 text-xs mt-1 hidden">Required</p></div>
-            <div><label class="block text-xs text-gray-700 mb-1">Price (₱) :</label>
-                <input id="addPrice" type="number" min="0" step="0.01" class="w-full border border-gray-300 rounded px-3 py-2" />
-                <p id="addPriceError" class="text-red-600 text-xs mt-1 hidden">Required</p></div>
-            <div><label class="block text-xs text-gray-700 mb-1">Expiration Date :</label>
-                <input id="addExpiry" type="date" class="w-full border border-gray-300 rounded px-3 py-2" />
-                <p id="addExpiryError" class="text-red-600 text-xs mt-1 hidden">Required</p></div>
-            <div><label class="block text-xs text-gray-700 mb-1">Batch No. :</label>
-                <input id="addBatch" class="w-full border border-gray-300 rounded px-3 py-2" />
-                <p id="addBatchError" class="text-red-600 text-xs mt-1 hidden">Required</p></div>
-            <div><label class="block text-xs text-gray-700 mb-1">Description :</label>
-                <textarea id="addDescription" rows="3" class="w-full border border-gray-300 rounded px-3 py-2" placeholder="Optional description..."></textarea>
-            </div>
+  const content = `
+    <h3 class="text-lg font-semibold text-gray-900 mb-1">Add Item</h3>
+    <p class="text-sm text-gray-600 mb-4">Items will be added directly to inventory</p>
+
+    <div class="mb-4 pb-4 border-b border-gray-200">
+      <h4 class="text-sm font-semibold text-gray-900 mb-3">Medicine Information</h4>
+      <div class="space-y-3 text-sm">
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs text-gray-700 mb-1 font-medium">Brand</label>
+            <input id="addBrand" placeholder="e.g., Biogesic" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+          </div>
+          <div>
+            <label class="block text-xs text-gray-700 mb-1 font-medium">Generic <span class="text-red-600">*</span></label>
+            <input id="addGeneric" placeholder="e.g., Acetaminophen" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            <p id="addGenericError" class="text-red-600 text-xs mt-1 hidden">Required</p>
+          </div>
         </div>
-        <div class="mt-5 flex gap-5 justify-between">
-            <button id="addCancelBtn" class="flex-1 border border-gray-300 py-2 px-4 rounded-lg bg-white">Cancel</button>
-            <button id="addSaveBtn" class="flex-1 bg-emerald-700 text-white py-2 px-4 rounded-lg">Save</button>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs text-gray-700 mb-1 font-medium">Category <span class="text-red-600">*</span></label>
+            <select id="addCategory" class="w-full border border-gray-300 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+              <option value="">Select category</option>
+              <option value="Antibiotic">Antibiotic</option>
+              <option value="Analgesic">Analgesic</option>
+              <option value="Antipyretic">Antipyretic</option>
+              <option value="Antihistamine">Antihistamine</option>
+              <option value="Antacid">Antacid</option>
+              <option value="Vitamin">Vitamin</option>
+              <option value="Vaccine">Vaccine</option>
+              <option value="First Aid">First Aid</option>
+              <option value="Personal Care">Personal Care</option>
+            </select>
+            <p id="addCategoryError" class="text-red-600 text-xs mt-1 hidden">Required</p>
+          </div>
+          <div>
+            <label class="block text-xs text-gray-700 mb-1 font-medium">Dosage Form <span class="text-red-600">*</span></label>
+            <select id="addDosageForm" class="w-full border border-gray-300 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+              <option value="">Select dosage form</option>
+              <option value="Tablet">Tablet</option>
+              <option value="Capsule">Capsule</option>
+              <option value="Syrup">Syrup</option>
+              <option value="Injection">Injection</option>
+              <option value="Ointment">Ointment</option>
+              <option value="Cream">Cream</option>
+              <option value="Drops">Drops</option>
+              <option value="Inhaler">Inhaler</option>
+              <option value="Powder">Powder</option>
+            </select>
+            <p id="addDosageFormError" class="text-red-600 text-xs mt-1 hidden">Required</p>
+          </div>
         </div>
-    `;
 
-    const addItemModal = createModal({
-        id: 'addItemModal',
-        content: content,
-        width: '575px'
-    });
-
-    const closeBtn = getElement(addItemModal, '#closeAddItemModal');
-    const cancel = getElement(addItemModal, '#addCancelBtn');
-    const save = getElement(addItemModal, '#addSaveBtn');
-    const hide = () => { addItemModal.classList.add('hidden'); addItemModal.style.display = ''; setTimeout(() => addItemModal.remove(), 200); };
-    if (closeBtn) closeBtn.onclick = hide;
-    if (cancel) cancel.onclick = hide;
-
-    if (save) {
-        save.onclick = () => {
-            const brandEl = getElement(addItemModal, '#addBrand');
-            const genericEl = getElement(addItemModal, '#addGeneric');
-            const categoryEl = getElement(addItemModal, '#addCategory');
-            const qtyEl = getElement(addItemModal, '#addQuantity');
-            const unitEl = getElement(addItemModal, '#addUnit');
-            const minStockEl = getElement(addItemModal, '#addMinStock');
-            const priceEl = getElement(addItemModal, '#addPrice');
-            const expiryEl = getElement(addItemModal, '#addExpiry');
-            const batchEl = getElement(addItemModal, '#addBatch');
-            const descEl = getElement(addItemModal, '#addDescription');
-
-            const brand = (brandEl?.value || '').trim();
-            const generic = (genericEl?.value || '').trim();
-            const category = (categoryEl?.value || '').trim();
-            const qtyRaw = qtyEl?.value ?? '';
-            const qty = qtyRaw === '' ? NaN : parseInt(qtyRaw, 10);
-            const unit = (unitEl?.value || '').trim();
-            const minStockRaw = minStockEl?.value ?? '';
-            const minStock = minStockRaw === '' ? NaN : parseInt(minStockRaw, 10);
-            const priceRaw = priceEl?.value ?? '';
-            const price = priceRaw === '' ? NaN : parseFloat(priceRaw);
-            const expiry = expiryEl?.value || '';
-            const batch = (batchEl?.value || '').trim();
-            const description = (descEl?.value || '').trim();
-
-            // Only validate required fields (description is optional)
-            const requiredFields = {
-                brand: brandEl,
-                generic: genericEl,
-                category: categoryEl,
-                quantity: qtyEl,
-                unit: unitEl,
-                minStock: minStockEl,
-                price: priceEl,
-                expiry: expiryEl,
-                batch: batchEl
-            };
-
-            let hasError = false;
-            Object.keys(requiredFields).forEach(key => {
-                const el = requiredFields[key];
-                const errorEl = document.getElementById(`add${key.charAt(0).toUpperCase() + key.slice(1)}Error`);
-                if (!el?.value || el.value.trim() === '') {
-                    errorEl?.classList.remove("hidden");
-                    hasError = true;
-                } else {
-                    errorEl?.classList.add("hidden");
-                }
-            });
-
-            if (hasError) return;
-
-            const newItem = {
-                id: `ITEM-${Date.now()}`,
-                name: generic || brand,
-                type: brand || generic,
-                category: category || 'general',
-                currentQuantity: isNaN(qty) ? 0 : qty,
-                minStock: isNaN(minStock) ? 0 : minStock,
-                unit: unit || 'pcs',
-                supplier: 'Admin Added',
-                status: 'in-stock',
-                expiryDate: expiry ? new Date(expiry).toLocaleDateString('en-US') : '',
-                expiryDateISO: expiry,
-                batchNumber: batch || '',
-                archived: false,
-                price: isNaN(price) ? 0 : price,
-                description: description || ''
-            };
-
-            inventoryItems.unshift(newItem);
-            logActivity("Added", newItem.name, newItem.currentQuantity, "In Stock");
-            hide();
-            applyFilters();
-            showToast("Item Added Successfully", 'success');
-        };
-    }
-    addItemModal.classList.remove('hidden');
-    addItemModal.style.display = 'flex';
-}
-
-function showRestoreConfirm(item) {
-    const detailsModal = document.getElementById('itemDetailsModal');
-    
-    const content = `
-        <div class="flex items-start gap-4">
-            <div class="w-10 h-10 rounded-full bg-emerald-50 flex items-center justify-center">
-                <svg class="w-6 h-6 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
-                </svg>
-            </div>
-            <div class="flex-1">
-                <h3 class="text-lg font-semibold text-gray-900">Are you sure you want to Restore this item?</h3>
-                <p id="restoreItemName" class="text-sm font-semibold text-gray-800 mt-2"></p>
-                <p class="text-sm text-gray-600 mt-1">Note: Restored items will be returned to the active inventory list.</p>
-            </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs text-gray-700 mb-1 font-medium">Strength / Dosage <span class="text-red-600">*</span></label>
+            <input id="addStrength" placeholder="e.g., 500 mg, 250 mg/5 ml" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            <p id="addStrengthError" class="text-red-600 text-xs mt-1 hidden">Required</p>
+          </div>
+          <div>
+            <label class="block text-xs text-gray-700 mb-1 font-medium">Unit <span class="text-red-600">*</span></label>
+            <select id="addUnit" class="w-full border border-gray-300 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+              <option value="">Select unit</option>
+              <option value="Tablet">Tablet</option>
+              <option value="Capsule">Capsule</option>
+              <option value="Bottle">Bottle</option>
+              <option value="Box">Box</option>
+              <option value="Vial">Vial</option>
+              <option value="Piece">Piece</option>
+              <option value="Tube">Tube</option>
+              <option value="Pack">Pack</option>
+            </select>
+            <p id="addUnitError" class="text-red-600 text-xs mt-1 hidden">Required</p>
+          </div>
         </div>
-        <div class="mt-6 grid grid-cols-2 gap-4">
-            <button id="restoreCancelBtn" class="w-full border border-gray-300 py-2.5 rounded-lg bg-white text-sm font-semibold hover:bg-gray-50 transition-colors text-gray-700">Cancel</button>
-            <button id="restoreConfirmBtn" class="w-full bg-emerald-600 text-white py-2.5 rounded-lg text-sm font-semibold hover:bg-emerald-700 transition-colors">Confirm</button>
+
+        <div>
+          <label class="block text-xs text-gray-700 mb-1 font-medium">Description</label>
+          <div class="relative">
+            <textarea id="addDescription" rows="2" placeholder="Short description of the medicine..." class="w-full border border-gray-300 rounded-lg px-3 py-2 pr-10 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"></textarea>
+            <button type="button" id="voiceInputBtn" class="absolute right-2 top-2 p-1.5 rounded-full hover:bg-gray-100 transition-colors" title="Use voice input">
+              <svg id="micIcon" class="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"></path>
+              </svg>
+            </button>
+          </div>
+          <p id="voiceStatusText" class="text-xs text-blue-600 mt-1 hidden">Listening...</p>
+          <p id="voiceErrorText" class="text-xs text-red-600 mt-1 hidden"></p>
         </div>
-    `;
-    
-    const restoreModal = createModal({
-        id: 'restoreConfirmModal',
-        content: content
-    });
+      </div>
+    </div>
 
-    restoreModal.classList.add('hidden');
-    restoreModal.style.display = 'none';
-    setTimeout(() => {
-        restoreModal.classList.remove('hidden');
-        restoreModal.style.display = 'flex';
-    }, 10);
+    <div class="space-y-3 text-sm">
+      <h4 class="text-sm font-semibold text-gray-900">Inventory Details</h4>
 
-    const nameEl = getElement(restoreModal, '#restoreItemName');
-    if (nameEl) nameEl.textContent = item.name || '';
-    setTimeout(() => { if (detailsModal) { detailsModal.classList.add('hidden'); detailsModal.style.display = ''; } }, 50);
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block text-xs text-gray-700 mb-1 font-medium">Stock Quantity <span class="text-red-600">*</span></label>
+          <input id="addQuantity" type="number" min="0" placeholder="e.g., 100" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+          <p id="addQuantityError" class="text-red-600 text-xs mt-1 hidden">Required</p>
+        </div>
+        <div>
+          <label class="block text-xs text-gray-700 mb-1 font-medium">Reorder Level <span class="text-red-600">*</span></label>
+          <input id="addMinStock" type="number" min="0" placeholder="e.g., 20" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+          <p id="addMinStockError" class="text-red-600 text-xs mt-1 hidden">Required</p>
+        </div>
+      </div>
 
-    const hide = () => { 
-        restoreModal.classList.add('hidden'); 
-        restoreModal.style.display = ''; 
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block text-xs text-gray-700 mb-1 font-medium">Batch Number <span class="text-red-600">*</span></label>
+          <input id="addBatch" placeholder="e.g., BATCH-102" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+          <p id="addBatchError" class="text-red-600 text-xs mt-1 hidden">Required</p>
+        </div>
+        <div>
+          <label class="block text-xs text-gray-700 mb-1 font-medium">Expiration Date <span class="text-red-600">*</span></label>
+          <input id="addExpiry" type="date" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+          <p id="addExpiryError" class="text-red-600 text-xs mt-1 hidden">Required</p>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block text-xs text-gray-700 mb-1 font-medium">Supplier</label>
+          <input id="addSupplier" placeholder="e.g., ABC Pharma" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+        </div>
+        <div>
+          <label class="block text-xs text-gray-700 mb-1 font-medium">Selling Price (₱) <span class="text-red-600">*</span></label>
+          <input id="addPrice" type="number" min="0" step="0.01" placeholder="e.g., 20.00" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+          <p id="addPriceError" class="text-red-600 text-xs mt-1 hidden">Required</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="mt-5 flex gap-3 justify-end">
+      <button id="addCancelBtn" class="border border-gray-300 py-2 px-4 rounded-lg bg-white hover:bg-gray-50 transition-colors text-gray-700">Cancel</button>
+      <button id="addSaveBtn" class="bg-blue-700 text-white py-2 px-4 rounded-lg hover:bg-blue-800 transition-colors">Save</button>
+    </div>`;
+  const addItemModal = createModal({ id: "addItemModal", content, width: "575px" });
+
+  const hide = () => { addItemModal.classList.add("hidden"); addItemModal.style.display = ""; setTimeout(() => addItemModal.remove(), 200); };
+  getElement(addItemModal, "#closeAddItemModal")?.addEventListener("click", hide);
+  getElement(addItemModal, "#addCancelBtn")?.addEventListener("click", hide);
+
+  // Initialize voice recognition for the Description field
+  initVoiceRecognitionForModal(addItemModal);
+
+  getElement(addItemModal, "#addSaveBtn")?.addEventListener("click", async () => {
+    const val = (id) => (getElement(addItemModal, id)?.value || "").trim();
+    const brand      = val("#addBrand");
+    const generic    = val("#addGeneric");
+    const category   = val("#addCategory");
+    const dosageForm = val("#addDosageForm");
+    const strength   = val("#addStrength");
+    const qtyRaw     = val("#addQuantity");
+    const qty        = qtyRaw === "" ? NaN : parseInt(qtyRaw, 10);
+    const unit       = val("#addUnit");
+    const minStockRaw = val("#addMinStock");
+    const minStock    = minStockRaw === "" ? NaN : parseInt(minStockRaw, 10);
+    const priceRaw   = val("#addPrice");
+    const price      = priceRaw === "" ? NaN : parseFloat(priceRaw);
+    const expiry     = val("#addExpiry");
+    const batch      = val("#addBatch");
+    const supplier   = val("#addSupplier");
+    const desc       = val("#addDescription");
+
+    const required = {
+      generic: "#addGeneric",
+      category: "#addCategory",
+      dosageForm: "#addDosageForm",
+      strength: "#addStrength",
+      quantity: "#addQuantity",
+      unit: "#addUnit",
+      minStock: "#addMinStock",
+      price: "#addPrice",
+      expiry: "#addExpiry",
+      batch: "#addBatch",
     };
+    let hasError = false;
+    Object.entries(required).forEach(([key, sel]) => {
+      const el = getElement(addItemModal, sel);
+      const errId = `add${key.charAt(0).toUpperCase() + key.slice(1)}Error`;
+      const errEl = document.getElementById(errId);
+      if (!el?.value || el.value.trim() === "") { errEl?.classList.remove("hidden"); hasError = true; }
+      else { errEl?.classList.add("hidden"); }
+    });
+    if (hasError) return;
 
-    const closeBtn = getElement(restoreModal, '#closeRestoreConfirmModal');
-    const cancelBtn = getElement(restoreModal, '#restoreCancelBtn');
-    const confirmBtn = getElement(restoreModal, '#restoreConfirmBtn');
-
-    if (closeBtn) closeBtn.onclick = hide;
-    if (cancelBtn) cancelBtn.onclick = hide;
-
-    if (confirmBtn) {
-        confirmBtn.onclick = () => {
-            const detailsModalEl = document.getElementById('itemDetailsModal');
-            if (detailsModalEl) { detailsModalEl.classList.add('hidden'); detailsModalEl.style.display = ''; }
-            
-            // Use the item parameter directly instead of relying on detailsModal.currentItem
-            const itemInArray = inventoryItems.find(i => String(i.id) === String(item.id));
-            if (itemInArray) {
-                itemInArray.archived = false;
-                console.log(`✅ Item ${itemInArray.name} restored`);
-                logActivity("Restored", itemInArray.name, itemInArray.currentQuantity, "Restored");
-            } else {
-                console.warn("Item not found in inventory array");
-            }
-            
-            applyFilters();
-            showToast('Restored Successfully', 'success');
-            hide();
-        };
+    try {
+      await apiFetch(API.addProduct, {
+        method: "POST",
+        body: JSON.stringify({
+          name:        generic || brand,
+          genericName: generic,
+          brandName:   brand,
+          category:    category || "general",
+          dosageForm:  dosageForm,
+          strength:    strength,
+          quantity:    isNaN(qty) ? 0 : qty,
+          unit:        unit || "pcs",
+          unitPrice:   isNaN(price) ? 0 : price,
+          minStock:    isNaN(minStock) ? 10 : minStock,
+          expiryDate:  expiry || null,
+          batchNumber: batch || null,
+          supplier:    supplier || null,
+          description: desc || "",
+        }),
+      });
+      showToast("Item Added Successfully", "success");
+      hide();
+      await refreshInventory();
+    } catch (err) {
+      showToast(`Add failed: ${err.message}`, "error");
     }
+  });
+
+  addItemModal.classList.remove("hidden");
+  addItemModal.style.display = "flex";
 }
 
+/* ================= RESTORE CONFIRM ================= */
+function showRestoreConfirm(item) {
+  const detailsModal = document.getElementById("itemDetailsModal");
+  const content = `
+    <div class="flex items-start gap-4">
+      <div class="w-10 h-10 rounded-full bg-emerald-50 flex items-center justify-center">
+        <svg class="w-6 h-6 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+      </div>
+      <div class="flex-1">
+        <h3 class="text-lg font-semibold text-gray-900">Are you sure you want to Restore this item?</h3>
+        <p id="restoreItemName" class="text-sm font-semibold text-gray-800 mt-2"></p>
+        <p class="text-sm text-gray-600 mt-1">Note: Restored items will be returned to the active inventory list.</p>
+      </div>
+    </div>
+    <div class="mt-6 grid grid-cols-2 gap-4">
+      <button id="restoreCancelBtn" class="w-full border border-gray-300 py-2.5 rounded-lg bg-white text-sm font-semibold hover:bg-gray-50 transition-colors text-gray-700">Cancel</button>
+      <button id="restoreConfirmBtn" class="w-full bg-emerald-600 text-white py-2.5 rounded-lg text-sm font-semibold hover:bg-emerald-700 transition-colors">Confirm</button>
+    </div>`;
+  const m = createModal({ id: "restoreConfirmModal", content });
+  m.classList.add("hidden"); m.style.display = "none";
+  setTimeout(() => { m.classList.remove("hidden"); m.style.display = "flex"; }, 10);
+
+  const nameEl = getElement(m, "#restoreItemName");
+  if (nameEl) nameEl.textContent = item.name || "";
+  setTimeout(() => { if (detailsModal) { detailsModal.classList.add("hidden"); detailsModal.style.display = ""; } }, 50);
+
+  const hide = () => { m.classList.add("hidden"); m.style.display = ""; };
+  getElement(m, "#closeRestoreConfirmModal")?.addEventListener("click", hide);
+  getElement(m, "#restoreCancelBtn")?.addEventListener("click", hide);
+
+  getElement(m, "#restoreConfirmBtn")?.addEventListener("click", async () => {
+    try {
+      await apiFetch(API.restoreProduct(item.id), { method: "PATCH" });
+      showToast("Restored Successfully", "success");
+      hide();
+      if (detailsModal) { detailsModal.classList.add("hidden"); detailsModal.style.display = ""; }
+      await refreshInventory();
+    } catch (err) {
+      showToast(`Restore failed: ${err.message}`, "error");
+    }
+  });
+}
+
+/* ================= CLOSE ALL MODALS ================= */
 function closeAllModals() {
-    const modals = [
-        'itemDetailsModal',
-        'reviewRestockModal',
-        'addItemModal',
-        'archiveConfirmModal',
-        'restoreConfirmModal',
-        'approveConfirmModal',
-        'denyConfirmModal'
-    ];
-    
-    modals.forEach(id => {
-        const modal = document.getElementById(id);
-        if (modal) modal.classList.add('hidden');
-    });
+  ["itemDetailsModal","reviewRestockModal","addItemModal","archiveConfirmModal","restoreConfirmModal","approveConfirmModal","denyConfirmModal","editDiscrepancyModal"]
+    .forEach(id => { const m = document.getElementById(id); if (m) m.classList.add("hidden"); });
 }
 
-export function initAdminInventory() {
-    console.log("=== INIT ADMIN INVENTORY STARTED ===");
+/* ================= INIT ================= */
+export async function initAdminInventory() {
+  const auth = window.IBMSAuth;
+  if (auth && !auth.isSessionValid("owner")) {
+    auth.clearAuthData();
+    auth.redirectToLogin(true);
+    return;
+  }
 
-    const tabInventory = document.getElementById("tabInventory");
-    const tabRestock = document.getElementById("tabRestock");
-    const inventorySection = document.getElementById("inventorySection");
-    const restockSection = document.getElementById("restockSection");
+  console.log("=== INIT ADMIN INVENTORY STARTED ===");
 
-    function switchTab(tab) {
-        if (tab === 'inventory') {
-            inventorySection.classList.remove("hidden");
-            restockSection.classList.add("hidden");
-            tabInventory.classList.add("bg-blue-700", "text-white");
-            tabInventory.classList.remove("bg-gray-200", "text-gray-700");
-            tabRestock.classList.remove("bg-blue-700", "text-white");
-            tabRestock.classList.add("bg-gray-200", "text-gray-700");
-            applyFilters();
-        } else {
-            inventorySection.classList.add("hidden");
-            restockSection.classList.remove("hidden");
-            tabRestock.classList.add("bg-blue-700", "text-white");
-            tabRestock.classList.remove("bg-gray-200", "text-gray-700");
-            tabInventory.classList.remove("bg-blue-700", "text-white");
-            tabInventory.classList.add("bg-gray-200", "text-gray-700");
-            applyRestockFilters();
-        }
+  const tabInventory    = document.getElementById("tabInventory");
+  const tabRestock      = document.getElementById("tabRestock");
+  const inventorySection = document.getElementById("inventorySection");
+  const restockSection   = document.getElementById("restockSection");
+
+  /* ---- Tab switching ---- */
+  function switchTab(tab) {
+    if (tab === "inventory") {
+      inventorySection.classList.remove("hidden");
+      restockSection.classList.add("hidden");
+      tabInventory.classList.add("bg-blue-700", "text-white");
+      tabInventory.classList.remove("bg-gray-200", "text-gray-700");
+      tabRestock.classList.remove("bg-blue-700", "text-white");
+      tabRestock.classList.add("bg-gray-200", "text-gray-700");
+      applyFilters();
+    } else {
+      inventorySection.classList.add("hidden");
+      restockSection.classList.remove("hidden");
+      tabRestock.classList.add("bg-blue-700", "text-white");
+      tabRestock.classList.remove("bg-gray-200", "text-gray-700");
+      tabInventory.classList.remove("bg-blue-700", "text-white");
+      tabInventory.classList.add("bg-gray-200", "text-gray-700");
+      applyRestockFilters();
+    }
+  }
+
+  tabInventory?.addEventListener("click", () => switchTab("inventory"));
+  tabRestock?.addEventListener("click", () => switchTab("restock"));
+
+  /* ---- Inventory status filters ---- */
+  document.querySelectorAll(".status-filter").forEach(btn =>
+    btn.addEventListener("click", () => {
+      currentStatusFilter = btn.dataset.status;
+      currentInventoryPage = 1;
+      applyFilters();
+    })
+  );
+
+  /* ---- Restock status filters ---- */
+  document.querySelectorAll(".status-filter-restock").forEach(btn =>
+    btn.addEventListener("click", async () => {
+      currentRestockStatusFilter = btn.dataset.status;
+      await refreshRequests();
+    })
+  );
+
+  /* ---- Category dropdowns (inventory) ---- */
+  const filterBtn       = document.getElementById("filterBtn");
+  const categoryDropdown = document.getElementById("categoryDropdown");
+  filterBtn?.addEventListener("click", (e) => { e.stopPropagation(); categoryDropdown.classList.toggle("hidden"); });
+
+  /* ---- Category dropdowns (restock) ---- */
+  const filterBtnRestock       = document.getElementById("filterBtnRestock");
+  const categoryDropdownRestock = document.getElementById("categoryDropdownRestock");
+  filterBtnRestock?.addEventListener("click", (e) => { e.stopPropagation(); categoryDropdownRestock.classList.toggle("hidden"); });
+
+  document.addEventListener("click", (e) => {
+    if (!categoryDropdown?.contains(e.target) && e.target !== filterBtn) categoryDropdown?.classList.add("hidden");
+    if (!categoryDropdownRestock?.contains(e.target) && e.target !== filterBtnRestock) categoryDropdownRestock?.classList.add("hidden");
+  });
+
+  document.querySelectorAll(".category-dropdown-item").forEach(btn =>
+    btn.addEventListener("click", () => {
+      currentCategoryFilter = btn.dataset.category;
+      currentInventoryPage = 1;
+      categoryDropdown.classList.add("hidden");
+      filterBtn.innerHTML = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"></path></svg> ${btn.textContent}`;
+      applyFilters();
+    })
+  );
+
+  document.querySelectorAll(".category-dropdown-item-restock").forEach(btn =>
+    btn.addEventListener("click", () => {
+      currentRestockCategoryFilter = btn.dataset.category;
+      categoryDropdownRestock.classList.add("hidden");
+      filterBtnRestock.innerHTML = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"></path></svg> ${btn.textContent}`;
+      applyRestockFilters();
+    })
+  );
+
+  /* ---- Search inputs ---- */
+  document.getElementById("searchInventory")?.addEventListener("input", debounce(() => {
+    currentInventoryPage = 1;
+    applyFilters();
+  }, 300));
+  document.getElementById("searchRestock")?.addEventListener("input", debounce(applyRestockFilters, 300));
+
+  /* ---- Archived toggle ---- */
+  const archivedBtn = document.getElementById("archivedBtn");
+  archivedBtn?.addEventListener("click", async () => {
+    if (showLowStockOnly) return;
+    showArchivedItems = !showArchivedItems;
+    if (showArchivedItems) {
+      archivedBtn.classList.remove("bg-white", "text-red-600");
+      archivedBtn.classList.add("bg-red-600", "text-white");
+    } else {
+      archivedBtn.classList.remove("bg-red-600", "text-white");
+      archivedBtn.classList.add("bg-white", "text-red-600");
+    }
+    currentInventoryPage = 1;
+    await refreshInventory();
+  });
+
+  /* ---- Low stock toggle ---- */
+  const lowStockToggle = document.getElementById("lowStockToggle");
+  lowStockToggle?.addEventListener("click", () => {
+    if (showArchivedItems) {
+      showToast("Low stock filter is available only in active inventory view", "error");
+      return;
     }
 
-    tabInventory?.addEventListener("click", () => switchTab('inventory'));
-    tabRestock?.addEventListener("click", () => switchTab('restock'));
-
-    // Inventory status filters
-    document.querySelectorAll(".status-filter").forEach(btn => {
-        btn.addEventListener("click", () => {
-            currentStatusFilter = btn.dataset.status;
-            applyFilters();
-        });
-    });
-
-    // Restock status filters
-    document.querySelectorAll(".status-filter-restock").forEach(btn => {
-        btn.addEventListener("click", () => {
-            currentRestockStatusFilter = btn.dataset.status;
-            applyRestockFilters();
-        });
-    });
-
-    // Inventory category dropdown
-    const filterBtn = document.getElementById("filterBtn");
-    const categoryDropdown = document.getElementById("categoryDropdown");
-    
-    filterBtn?.addEventListener("click", (e) => {
-        e.stopPropagation();
-        categoryDropdown.classList.toggle("hidden");
-    });
-
-    // Restock category dropdown
-    const filterBtnRestock = document.getElementById("filterBtnRestock");
-    const categoryDropdownRestock = document.getElementById("categoryDropdownRestock");
-    
-    filterBtnRestock?.addEventListener("click", (e) => {
-        e.stopPropagation();
-        categoryDropdownRestock.classList.toggle("hidden");
-    });
-
-    document.addEventListener("click", (e) => {
-        if (!categoryDropdown?.contains(e.target) && e.target !== filterBtn) {
-            categoryDropdown?.classList.add("hidden");
-        }
-        if (!categoryDropdownRestock?.contains(e.target) && e.target !== filterBtnRestock) {
-            categoryDropdownRestock?.classList.add("hidden");
-        }
-    });
-
-    // Inventory category items
-    document.querySelectorAll(".category-dropdown-item").forEach(btn => {
-        btn.addEventListener("click", () => {
-            currentCategoryFilter = btn.dataset.category;
-            categoryDropdown.classList.add("hidden");
-            
-            const categoryText = btn.textContent;
-            filterBtn.innerHTML = `
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"></path>
-                </svg>
-                ${categoryText}
-            `;
-            
-            applyFilters();
-        });
-    });
-
-    // Restock category items
-    document.querySelectorAll(".category-dropdown-item-restock").forEach(btn => {
-        btn.addEventListener("click", () => {
-            currentRestockCategoryFilter = btn.dataset.category;
-            categoryDropdownRestock.classList.add("hidden");
-            
-            const categoryText = btn.textContent;
-            filterBtnRestock.innerHTML = `
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"></path>
-                </svg>
-                ${categoryText}
-            `;
-            
-            applyRestockFilters();
-        });
-    });
-
-    // Search inputs
-    document.getElementById("searchInventory")?.addEventListener("input", debounce(applyFilters, 300));
-    document.getElementById("searchRestock")?.addEventListener("input", debounce(applyRestockFilters, 300));
-
-    // Archived toggle - reused from staff inventory pattern
-    const archivedBtn = document.getElementById("archivedBtn");
-    archivedBtn?.addEventListener("click", () => {
-        if (showLowStockOnly) return;
-        showArchivedItems = !showArchivedItems;
-        
-        if (showArchivedItems) {
-            archivedBtn.classList.remove("bg-white", "text-red-600");
-            archivedBtn.classList.add("bg-red-600", "text-white");
-        } else {
-            archivedBtn.classList.remove("bg-red-600", "text-white");
-            archivedBtn.classList.add("bg-white", "text-red-600");
-        }
-        applyFilters();
-    });
-
-    // Add item modal - reused from staff inventory pattern
-    document.getElementById("addItemBtn")?.addEventListener("click", showAddItemModal);
-    document.getElementById("closeAddItemModal")?.addEventListener("click", closeAllModals);
-    document.getElementById("addCancelBtn")?.addEventListener("click", closeAllModals);
-
-    // Item details modal
-    document.getElementById("closeItemDetails")?.addEventListener("click", closeAllModals);
-    document.getElementById("closeDetails")?.addEventListener("click", closeAllModals);
-
-    document.getElementById("moveToArchive")?.addEventListener("click", () => {
-        const modal = document.getElementById("itemDetailsModal");
-        const item = modal?.currentItem;
-        if (item) {
-            closeAllModals();
-            if (item.archived) {
-                showRestoreConfirm(item);
-            } else {
-                showArchiveConfirm(item);
-            }
-        }
-    });
-
-    // Archive confirm modal - reused from staff pattern
-    document.getElementById("archiveCancelBtn")?.addEventListener("click", closeAllModals);
-    document.getElementById("archiveConfirmBtn")?.addEventListener("click", () => {
-        const modal = document.getElementById("archiveConfirmModal");
-        const item = modal.currentItem;
-        if (item) {
-            const itemInArray = inventoryItems.find(i => i.id === item.id);
-            if (itemInArray) {
-                itemInArray.archived = true;
-                logActivity("Archived", itemInArray.name, itemInArray.currentQuantity, "Archived");
-                showToast("Item Archived Successfully");
-                applyFilters();
-            }
-        }
-        closeAllModals();
-    });
-
-    // Review restock modal - reuses Request Restock structure
-    document.getElementById("closeReviewModal")?.addEventListener("click", closeAllModals);
-    document.getElementById("reviewCancelBtn")?.addEventListener("click", closeAllModals);
-
-    // Grid event delegation - Restock
-    document.getElementById("restockGrid")?.addEventListener("click", (e) => {
-        const reviewBtn = e.target.closest(".review-request-btn");
-        if (reviewBtn) {
-            const card = reviewBtn.closest("[data-request-id]");
-            const request = restockRequests.find(r => r.id === card?.dataset.requestId);
-            if (request) showReviewRestockModal(request);
-        }
-    });
-
-    // Grid event delegation - Inventory
-    document.getElementById("inventoryGrid")?.addEventListener("click", (e) => {
-        const viewBtn = e.target.closest(".view-details-btn");
-        const approveBtn = e.target.closest(".approve-btn");
-        const rejectBtn = e.target.closest(".reject-btn");
-        const restoreBtn = e.target.closest(".restore-btn");
-        
-        if (viewBtn) {
-            const card = viewBtn.closest("[data-card-id]");
-            const item = inventoryItems.find(i => i.id === card?.dataset.cardId);
-            if (item) showItemDetails(item);
-        } else if (approveBtn) {
-            const itemId = approveBtn.dataset.itemId;
-            const item = inventoryItems.find(i => i.id === itemId);
-            if (item) {
-                item.status = "in-stock";
-                logActivity("Approved", item.name, item.currentQuantity, "In Stock");
-                showToast("Item Approved");
-                applyFilters();
-            }
-        } else if (rejectBtn) {
-            const itemId = rejectBtn.dataset.itemId;
-            const item = inventoryItems.find(i => i.id === itemId);
-            if (item) {
-                item.archived = true;
-                logActivity("Rejected", item.name, item.currentQuantity, "Rejected");
-                showToast("Item Rejected & Archived");
-                applyFilters();
-            }
-        } else if (restoreBtn) {
-            const itemId = restoreBtn.dataset.itemId;
-            const item = inventoryItems.find(i => i.id === itemId);
-            if (item) {
-                showRestoreConfirm(item);
-            }
-        }
-    });
-
-    // Close modals on backdrop click
-    document.querySelectorAll('[id$="Modal"]').forEach(modal => {
-        modal?.addEventListener("click", (e) => {
-            if (e.target === modal) {
-                closeAllModals();
-            }
-        });
-    });
-
-    // Close on Escape key
-    document.addEventListener("keydown", (e) => {
-        if (e.key === "Escape") {
-            closeAllModals();
-        }
-    });
-
-    // Initialize filter buttons
-    updateFilterButtonStyles('#statusFiltersContainer', currentStatusFilter);
-    updateFilterButtonStyles('#restockStatusFiltersContainer', currentRestockStatusFilter);
+    showLowStockOnly = !showLowStockOnly;
+    currentInventoryPage = 1;
+    if (showLowStockOnly) {
+      lowStockToggle.classList.add("ring-2", "ring-red-300");
+    } else {
+      lowStockToggle.classList.remove("ring-2", "ring-red-300");
+    }
     applyFilters();
-    applyRestockFilters();
-    console.log("Admin Inventory initialized successfully");
+  });
+
+  document.getElementById("inventoryPrevPage")?.addEventListener("click", () => {
+    if (currentInventoryPage > 1) {
+      currentInventoryPage -= 1;
+      renderInventory();
+    }
+  });
+
+  document.getElementById("inventoryNextPage")?.addEventListener("click", () => {
+    const totalPages = Math.max(1, Math.ceil(filteredItems.length / INVENTORY_ITEMS_PER_PAGE));
+    if (currentInventoryPage < totalPages) {
+      currentInventoryPage += 1;
+      renderInventory();
+    }
+  });
+
+  /* ---- Add item ---- */
+  document.getElementById("addItemBtn")?.addEventListener("click", showAddItemModal);
+  document.getElementById("closeAddItemModal")?.addEventListener("click", closeAllModals);
+  document.getElementById("addCancelBtn")?.addEventListener("click", closeAllModals);
+
+  /* ---- Item details modal (static HTML buttons) ---- */
+  document.getElementById("closeItemDetails")?.addEventListener("click", closeAllModals);
+  document.getElementById("closeDetails")?.addEventListener("click", closeAllModals);
+
+  document.getElementById("moveToArchive")?.addEventListener("click", () => {
+    const modal = document.getElementById("itemDetailsModal");
+    const item = modal?.currentItem;
+    if (item) { closeAllModals(); item.archived ? showRestoreConfirm(item) : showArchiveConfirm(item); }
+  });
+
+  document.getElementById("archiveCancelBtn")?.addEventListener("click", closeAllModals);
+  document.getElementById("closeReviewModal")?.addEventListener("click", closeAllModals);
+  document.getElementById("reviewCancelBtn")?.addEventListener("click", closeAllModals);
+
+  /* ---- Grid delegation: Restock ---- */
+  document.getElementById("restockGrid")?.addEventListener("click", (e) => {
+    const reviewBtn = e.target.closest(".review-request-btn");
+    if (reviewBtn) {
+      const card = reviewBtn.closest("[data-request-id]");
+      const req = restockRequests.find(r => r.id === card?.dataset.requestId);
+      if (req) showReviewRestockModal(req);
+    }
+  });
+
+  /* ---- Grid delegation: Inventory ---- */
+  document.getElementById("inventoryGrid")?.addEventListener("click", (e) => {
+    const viewBtn    = e.target.closest(".view-details-btn");
+    const restoreBtn = e.target.closest(".restore-btn");
+    const editDiscrepancyBtn = e.target.closest(".edit-discrepancy-btn");
+    const archiveBtn = e.target.closest(".archive-btn");
+
+    if (viewBtn) {
+      const card = viewBtn.closest("[data-card-id]");
+      const item = inventoryItems.find(i => i.id === card?.dataset.cardId);
+      if (item) showItemDetails(item);
+    } else if (restoreBtn) {
+      const itemId = restoreBtn.dataset.itemId;
+      const item = inventoryItems.find(i => i.id === itemId);
+      if (item) showRestoreConfirm(item);
+    } else if (editDiscrepancyBtn) {
+      const itemId = editDiscrepancyBtn.dataset.itemId;
+      const item = inventoryItems.find(i => i.id === itemId);
+      if (item) showEditDiscrepancyModal(item);
+    } else if (archiveBtn) {
+      const itemId = archiveBtn.dataset.itemId;
+      const item = inventoryItems.find(i => i.id === itemId);
+      if (item) showArchiveConfirm(item);
+    }
+  });
+
+  /* ---- Backdrop / Escape ---- */
+  document.querySelectorAll('[id$="Modal"]').forEach(m =>
+    m?.addEventListener("click", (e) => { if (e.target === m) closeAllModals(); })
+  );
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeAllModals(); });
+
+  /* ---- Initial data load ---- */
+  updateFilterButtonStyles("#statusFiltersContainer", currentStatusFilter);
+  updateFilterButtonStyles("#restockStatusFiltersContainer", currentRestockStatusFilter);
+
+  await refreshAll();
+  console.log("Admin Inventory initialized successfully");
 }

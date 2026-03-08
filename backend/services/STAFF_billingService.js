@@ -15,6 +15,25 @@ class STAFF_BillingError extends Error {
 // Centralized currency rounding keeps stored totals stable and predictable.
 const STAFF_roundCurrency = (value) => Number(Number(value).toFixed(2));
 
+// Generate patient name (temporary generator until patient module is integrated)
+const STAFF_generatePatientName = () => {
+  const firstNames = [
+    "Juan", "Maria", "Pedro", "Ana", "Jose", "Rosa", "Carlos", "Luz",
+    "Miguel", "Elena", "Roberto", "Sofia", "Fernando", "Carmen", "Antonio",
+    "Isabel", "Manuel", "Teresa", "Ricardo", "Patricia", "Rafael", "Gloria"
+  ];
+  const lastNames = [
+    "Dela Cruz", "Santos", "Reyes", "Garcia", "Ramos", "Mendoza", "Torres",
+    "Gonzales", "Lopez", "Flores", "Villanueva", "Castro", "Rivera", "Cruz",
+    "Bautista", "Fernandez", "Aquino", "Santiago", "Morales", "Pascual"
+  ];
+  
+  const firstName = firstNames[Math.floor(Math.random() * firstNames.length)];
+  const lastName = lastNames[Math.floor(Math.random() * lastNames.length)];
+  
+  return `${firstName} ${lastName}`;
+};
+
 const STAFF_makeReceiptNumber = () => {
   const now = new Date();
   const yyyy = now.getFullYear();
@@ -175,20 +194,56 @@ const STAFF_getTransactionForStaff = async (transactionId, staffId, session = nu
   return transaction;
 };
 
-export const STAFF_createBillingTransaction = async ({ staffId, items }) => {
+export const STAFF_createBillingTransaction = async ({ staffId, items, patientId, patientName, discountRate = 0 }) => {
+  if (!patientId || typeof patientId !== "string" || !patientId.trim()) {
+    throw new STAFF_BillingError("Patient ID is required", 400);
+  }
+
+  // Generate patient name if not provided
+  const finalPatientName = patientName && patientName.trim() 
+    ? patientName.trim() 
+    : STAFF_generatePatientName();
+
+  const parsedDiscountRate = Number(discountRate);
+  if (!Number.isFinite(parsedDiscountRate) || parsedDiscountRate < 0 || parsedDiscountRate > 1) {
+    throw new STAFF_BillingError("Discount rate must be a number between 0 and 1", 400);
+  }
+
   const snapshot = await STAFF_buildItemsSnapshot(items);
+  
+  // IMPORTANT: Prices in DB already include 12% VAT
+  // We use REVERSE VAT calculation to show breakdown
+  const subtotal = snapshot.totalAmount;
+  const discountAmount = STAFF_roundCurrency(subtotal * parsedDiscountRate);
+  const totalAmount = STAFF_roundCurrency(subtotal - discountAmount);
+  
+  // Reverse VAT calculation: Total = Net + VAT
+  // Total = Net * 1.12
+  // Net = Total / 1.12
+  // VAT = Total - Net
+  const netAmount = STAFF_roundCurrency(totalAmount / 1.12);
+  const vatIncluded = STAFF_roundCurrency(totalAmount - netAmount);
 
   const transaction = await STAFF_BillingTransaction.create({
     staffId,
+    patientId: patientId.trim(),
+    patientName: finalPatientName,
     items: snapshot.items,
-    totalAmount: snapshot.totalAmount,
+    subtotal,
+    discountRate: parsedDiscountRate,
+    discountAmount,
+    vatRate: 0.12,
+    vatAmount: 0, // Keep for backward compatibility
+    vatIncluded,
+    netAmount,
+    totalAmount,
     status: "PENDING_PAYMENT",
   });
 
   await STAFF_logBillingActivity({
     staffId,
     actionType: "billing-create",
-    description: `Created pending billing transaction ${transaction._id}`,
+    description: `Created pending billing transaction ${transaction._id} for patient ${finalPatientName}`,
     status: "pending",
   });
 
@@ -268,6 +323,8 @@ export const STAFF_completeBillingTransaction = async ({ transactionId, staffId,
         name: process.env.CLINIC_NAME || "IBMS Clinic",
       },
       transactionDateTime: completedAt,
+      patientId: transaction.patientId,
+      patientName: transaction.patientName,
       staffId: transaction.staffId,
       items: transaction.items.map((item) => ({
         productId: item.productId,
@@ -276,7 +333,13 @@ export const STAFF_completeBillingTransaction = async ({ transactionId, staffId,
         quantity: item.quantity,
         lineTotal: item.lineTotal,
       })),
-      subtotal: transaction.totalAmount,
+      subtotal: transaction.subtotal,
+      discountRate: transaction.discountRate,
+      discountAmount: transaction.discountAmount,
+      vatRate: transaction.vatRate,
+      vatAmount: transaction.vatAmount,
+      vatIncluded: transaction.vatIncluded,
+      netAmount: transaction.netAmount,
       totalAmount: transaction.totalAmount,
       cashReceived: STAFF_roundCurrency(parsedCashReceived),
       change,
@@ -306,7 +369,7 @@ export const STAFF_completeBillingTransaction = async ({ transactionId, staffId,
 export const STAFF_getBillingHistory = async ({ staffId }) => {
   return STAFF_BillingTransaction.find({
     staffId,
-    status: "COMPLETED",
+    status: { $in: ["COMPLETED", "VOIDED"] },
   })
     .sort({ createdAt: -1 })
     .lean();
@@ -315,8 +378,8 @@ export const STAFF_getBillingHistory = async ({ staffId }) => {
 export const STAFF_getBillingReceipt = async ({ transactionId, staffId }) => {
   const transaction = await STAFF_getTransactionForStaff(transactionId, staffId);
 
-  if (transaction.status !== "COMPLETED" || !transaction.receiptSnapshot) {
-    throw new STAFF_BillingError("Receipt is only available for completed transactions", 404);
+  if (!["COMPLETED", "VOIDED"].includes(transaction.status) || !transaction.receiptSnapshot) {
+    throw new STAFF_BillingError("Receipt is only available for completed or voided transactions", 404);
   }
 
   return {
@@ -324,6 +387,83 @@ export const STAFF_getBillingReceipt = async ({ transactionId, staffId }) => {
     status: transaction.status,
     receipt: transaction.receiptSnapshot,
   };
+};
+
+export const STAFF_voidBillingTransaction = async ({ transactionId, staffId, reason = "", editedData = null }) => {
+  return STAFF_executeWithOptionalTransaction(async (session) => {
+    const transaction = await STAFF_getTransactionForStaff(transactionId, staffId, session);
+
+    if (transaction.status === "VOIDED") {
+      throw new STAFF_BillingError("Transaction has already been voided", 409);
+    }
+
+    if (transaction.status !== "COMPLETED") {
+      throw new STAFF_BillingError("Only completed transactions can be voided", 400);
+    }
+
+    // Restore inventory quantities
+    for (const item of transaction.items) {
+      const productQuery = Product.findById(item.productId);
+      if (session) {
+        productQuery.session(session);
+      }
+
+      const product = await productQuery;
+
+      if (!product) {
+        throw new STAFF_BillingError(`Product not found for item ${item.name}`, 404);
+      }
+
+      product.quantity = product.quantity + item.quantity;
+      await product.save({ session });
+
+      await createStockLog({
+        productId: product._id,
+        movementType: "VOID_REVERSAL",
+        quantityChange: item.quantity,
+        performedBy: {
+          userId: staffId,
+          role: "staff",
+        },
+        source: "POS",
+        notes: `Voided transaction ${transactionId}`,
+        session,
+      });
+    }
+
+    // Save edited data if provided
+    if (editedData) {
+      if (editedData.patientId) {
+        transaction.editedPatientId = editedData.patientId;
+      }
+      if (editedData.patientName) {
+        transaction.editedPatientName = editedData.patientName;
+      }
+      if (editedData.items && Array.isArray(editedData.items)) {
+        transaction.editedItems = editedData.items;
+      }
+      if (editedData.notes) {
+        transaction.voidNotes = editedData.notes;
+      }
+    }
+
+    transaction.status = "VOIDED";
+    transaction.voidedAt = new Date();
+    transaction.voidedBy = staffId;
+    transaction.voidReason = reason || null;
+
+    await transaction.save({ session });
+
+    await STAFF_logBillingActivity({
+      staffId,
+      actionType: "billing-void",
+      description: `Voided billing transaction ${transaction._id}${reason ? `: ${reason}` : ""}`,
+      status: "completed",
+      session,
+    });
+
+    return transaction;
+  });
 };
 
 export { STAFF_BillingError };

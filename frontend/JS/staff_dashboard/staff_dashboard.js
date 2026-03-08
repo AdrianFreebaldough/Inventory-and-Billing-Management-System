@@ -1,185 +1,482 @@
-import {
-  staffUser,
-  dashboardStats,
-  recentTransactions,
-  inventoryAlerts,
-  topItemsToday
-} from "./data/staff_Dboard_data.js";
+import { apiFetch } from "../utils/apiClient.js";
+import { NotificationWidget } from "../components/notificationWidget.js";
 
+/* ════════════════════════════════════════════════════════════════
+   API endpoints
+   ════════════════════════════════════════════════════════════════ */
+const STAFF_DASHBOARD_API = {
+  summary:            "/api/staff/dashboard/summary",
+  recentTransactions: "/api/staff/dashboard/recent-transactions",
+  inventoryAlerts:    "/api/staff/dashboard/inventory-alerts",
+  topItemsToday:      "/api/staff/dashboard/top-items-today",
+  recentItemUsage:    "/api/staff/dashboard/recent-item-usage",
+};
+
+const REFRESH_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+
+/* ════════════════════════════════════════════════════════════════
+   Parallel data fetch – uses Promise.allSettled so one failing
+   endpoint never blocks the rest of the dashboard.
+   ════════════════════════════════════════════════════════════════ */
+async function STAFF_fetchDashboardData() {
+  const [summary, transactions, alerts, topItems, usage] = await Promise.allSettled([
+    apiFetch(STAFF_DASHBOARD_API.summary),
+    apiFetch(STAFF_DASHBOARD_API.recentTransactions),
+    apiFetch(STAFF_DASHBOARD_API.inventoryAlerts),
+    apiFetch(STAFF_DASHBOARD_API.topItemsToday),
+    apiFetch(STAFF_DASHBOARD_API.recentItemUsage),
+  ]);
+
+  return {
+    summary:      summary.status      === "fulfilled" ? summary.value      : null,
+    transactions: transactions.status === "fulfilled" ? transactions.value : null,
+    alerts:       alerts.status       === "fulfilled" ? alerts.value       : null,
+    topItems:     topItems.status     === "fulfilled" ? topItems.value     : null,
+    usage:        usage.status        === "fulfilled" ? usage.value        : null,
+  };
+}
+
+/* ════════════════════════════════════════════════════════════════
+   Data mappers  (backend response → UI-friendly shape)
+   ════════════════════════════════════════════════════════════════ */
+function mapSummary(raw) {
+  if (!raw) return { revenueToday: 0, transactionsToday: 0, itemsIssuedToday: 0, pendingRestock: 0 };
+  return {
+    revenueToday:      raw.todaysRevenue          ?? 0,
+    transactionsToday: raw.todaysTransactions      ?? 0,
+    itemsIssuedToday:  raw.itemsIssuedToday        ?? 0,
+    pendingRestock:    raw.pendingRestockRequests   ?? 0,
+  };
+}
+
+function mapTransactions(raw) {
+  if (!raw?.data) return [];
+  return raw.data.map(tx => ({
+    id:      tx.transactionId ? String(tx.transactionId).slice(-6).toUpperCase() : "—",
+    patient: tx.patientId || "Walk-in",
+    time:    tx.dateTime
+               ? new Date(tx.dateTime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+               : "",
+    amount:  tx.totalAmount ?? 0,
+    items:   tx.itemCount   ?? 0,
+    status:  tx.status      ?? "",
+  }));
+}
+
+function mapAlerts(raw) {
+  if (!raw?.data) return [];
+  return raw.data.map(item => ({
+    name:      item.itemName          ?? "",
+    status:    item.stockStatus       ?? "low",
+    remaining: item.stockStatus === "out"
+                 ? "Out of stock"
+                 : `${item.remainingQuantity ?? 0} left`,
+  }));
+}
+
+function mapTopItems(raw) {
+  if (!raw?.data) return [];
+  return raw.data.map(item => ({
+    name:  item.itemName          ?? "",
+    sold:  item.quantityDispensed ?? 0,
+    price: item.totalSalesValue   ?? 0,
+  }));
+}
+
+function mapUsage(raw) {
+  if (!raw?.data) return [];
+  return raw.data.map(item => ({
+    name:     item.itemName ?? "",
+    quantity: item.quantity ?? 0,
+    unit:     item.unitType ?? "pcs",
+  }));
+}
+
+/* ════════════════════════════════════════════════════════════════
+   Helpers
+   ════════════════════════════════════════════════════════════════ */
+const formatCurrency = value => `₱${Number(value ?? 0).toLocaleString()}`;
+
+function decodeTokenPayload() {
+  const tokenKeys = ["token", "authToken", "jwtToken", "ibmsToken"];
+  for (const key of tokenKeys) {
+    const token = localStorage.getItem(key);
+    if (!token || !token.trim()) continue;
+    const parts = token.split(".");
+    if (parts.length < 2) continue;
+    try {
+      return JSON.parse(atob(parts[1]));
+    } catch { /* skip */ }
+  }
+  return null;
+}
+
+function getStaffDisplayInfo() {
+  const payload = decodeTokenPayload();
+  const email = localStorage.getItem("userEmail") || payload?.email || "";
+  const name  = localStorage.getItem("userName")  || "";
+
+  let displayName = name;
+  if (!displayName && email) {
+    displayName = email.split("@")[0].replace(/[._-]/g, " ")
+                       .replace(/\b\w/g, c => c.toUpperCase());
+  }
+  if (!displayName) displayName = "Staff";
+
+  const username = email || "staff";
+  const initial  = displayName.charAt(0).toUpperCase();
+
+  return { displayName, username, initial, role: String(payload?.role || "").toLowerCase() };
+}
+
+/* ════════════════════════════════════════════════════════════════
+   Main init
+   ════════════════════════════════════════════════════════════════ */
 document.addEventListener("DOMContentLoaded", () => {
-
-  /* ================= ELEMENTS ================= */
-  const mainContent   = document.getElementById("mainContent");
-  const navDashboard  = document.getElementById("navDashboard");
-  const navBilling    = document.getElementById("navBilling");
-  const navInventory  = document.getElementById("navInventory");
-
-  const staffNameEl     = document.getElementById("staffName");
-  const staffUsernameEl = document.getElementById("staffUsername");
-  const staffAvatarEl   = document.getElementById("staffAvatar");
-  const profileBtn      = document.getElementById("profileBtn");
-
-  /* ================= STAFF INFO ================= */
-  if (staffUser) {
-    staffNameEl.textContent = staffUser.fullName;
-    staffUsernameEl.textContent = staffUser.username;
-    staffAvatarEl.textContent = staffUser.fullName.charAt(0).toUpperCase();
+  const auth = window.IBMSAuth;
+  if (auth) {
+    auth.protectPage({ requiredRole: "staff" });
+    if (!auth.isSessionValid("staff")) return;
   }
 
-  /* ================= NAV ACTIVE ================= */
+  const BILLING_MODE_RETURN_KEY = "lastStaffRoute";
+  const STAFF_CURRENT_ROUTE_KEY = "staffCurrentRoute";
+
+  const mainContent      = document.getElementById("mainContent");
+  const navDashboard     = document.getElementById("navDashboard");
+  const navBilling       = document.getElementById("navBilling");
+  const navInventory     = document.getElementById("navInventory");
+  const navStockRequest  = document.getElementById("navStockRequest");
+  const navExpenses      = document.getElementById("navExpenses");
+  const navActivityLog   = document.getElementById("navActivityLog");
+  const staffNameEl      = document.getElementById("staffName");
+  const staffUsernameEl  = document.getElementById("staffUsername");
+  const staffAvatarEl    = document.getElementById("staffAvatar");
+  const profileBtn       = document.getElementById("profileBtn");
+  const menuPosHeaderBtn = document.getElementById("menuPosHeaderBtn");
+
+  /* ── Staff header display ── */
+  const staffInfo = getStaffDisplayInfo();
+  staffNameEl.textContent     = staffInfo.displayName;
+  staffUsernameEl.textContent = staffInfo.username;
+  staffAvatarEl.textContent   = staffInfo.initial;
+
+  const currentRole = staffInfo.role;
+  let currentStaffRoute = "dashboard";
+  let refreshTimer = null;
+
+  function setCurrentStaffRoute(route) {
+    currentStaffRoute = route;
+    sessionStorage.setItem(STAFF_CURRENT_ROUTE_KEY, route);
+  }
+
+  function enterBillingMode() {
+    sessionStorage.setItem(BILLING_MODE_RETURN_KEY, currentStaffRoute || "dashboard");
+    window.location.href = "../../HTML/Staff_Billing/Staff_Billing.html";
+  }
+
+  if (menuPosHeaderBtn) {
+    if (currentRole === "staff") {
+      menuPosHeaderBtn.classList.remove("hidden");
+    } else {
+      menuPosHeaderBtn.classList.add("hidden");
+    }
+  }
+
   function setActive(activeEl) {
     document.querySelectorAll(".nav-link").forEach(link => {
       link.classList.remove("bg-blue-600", "text-white");
       link.classList.add("text-gray-700");
     });
-
     activeEl.classList.add("bg-blue-600", "text-white");
     activeEl.classList.remove("text-gray-700");
   }
 
-  /* ================= DASHBOARD ================= */
-  function loadDashboard() {
+  /* ─────────────────────────────────────────────
+     Clear / set auto-refresh
+     ───────────────────────────────────────────── */
+  function stopAutoRefresh() {
+    if (refreshTimer) { clearInterval(refreshTimer); refreshTimer = null; }
+  }
+
+  function startAutoRefresh() {
+    stopAutoRefresh();
+    refreshTimer = setInterval(() => {
+      if (currentStaffRoute === "dashboard") refreshDashboardData();
+    }, REFRESH_INTERVAL_MS);
+  }
+
+  /* ─────────────────────────────────────────────
+     loadDashboard  (async, API-driven)
+     ───────────────────────────────────────────── */
+  async function loadDashboard() {
+    setCurrentStaffRoute("dashboard");
     setActive(navDashboard);
 
+    /* Show skeleton / loading state */
     mainContent.innerHTML = `
-      <div class="grid grid-cols-4 gap-4 mb-8">
-        <div class="bg-white p-4 rounded shadow">
-          <p class="text-sm text-gray-500">Today's Revenue</p>
-          <p id="revenueToday" class="text-2xl font-bold">₱0</p>
-        </div>
-        <div class="bg-white p-4 rounded shadow">
-          <p class="text-sm text-gray-500">Transactions</p>
-          <p id="transactionsToday" class="text-2xl font-bold">0</p>
-        </div>
-        <div class="bg-white p-4 rounded shadow">
-          <p class="text-sm text-gray-500">Items Issued</p>
-          <p id="itemsIssuedToday" class="text-2xl font-bold">0</p>
-        </div>
-        <div class="bg-white p-4 rounded shadow">
-          <p class="text-sm text-gray-500">Pending Restock</p>
-          <p id="pendingRestock" class="text-2xl font-bold">0</p>
-        </div>
-      </div>
-
-      <div class="grid grid-cols-3 gap-6">
-        <div class="bg-white p-4 rounded shadow">
-          <h2 class="font-semibold mb-4">Recent Transactions</h2>
-          <div id="recentTransactions"></div>
+      <div class="mx-auto max-w-7xl space-y-6">
+        <div class="flex items-center justify-between">
+          <h1 class="text-lg font-semibold text-gray-900">Dashboard</h1>
+          <button id="refreshDashboardBtn" type="button"
+                  class="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 shadow-sm hover:bg-gray-50 transition">
+            ↻ Refresh
+          </button>
         </div>
 
-        <div class="bg-white p-4 rounded shadow">
-          <h2 class="font-semibold mb-4">Inventory Alerts</h2>
-          <div id="inventoryAlerts"></div>
+        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <div class="h-[140px] rounded-xl border border-gray-200 bg-white p-5 shadow-sm flex flex-col justify-between">
+            <p class="text-xs font-medium text-gray-500">Today's Revenue</p>
+            <p id="revenueToday" class="mt-2 text-4xl font-bold tracking-tight text-gray-900 animate-pulse bg-gray-100 rounded h-10 w-32"></p>
+          </div>
+          <div class="h-[140px] rounded-xl border border-gray-200 bg-white p-5 shadow-sm flex flex-col justify-between">
+            <p class="text-xs font-medium text-gray-500">Today's Transactions</p>
+            <p id="transactionsToday" class="mt-2 text-4xl font-bold tracking-tight text-gray-900 animate-pulse bg-gray-100 rounded h-10 w-16"></p>
+          </div>
+          <div class="h-[140px] rounded-xl border border-gray-200 bg-white p-5 shadow-sm flex flex-col justify-between">
+            <p class="text-xs font-medium text-gray-500">Items Issued Today</p>
+            <p id="itemsIssuedToday" class="mt-2 text-4xl font-bold tracking-tight text-gray-900 animate-pulse bg-gray-100 rounded h-10 w-16"></p>
+          </div>
+          <div class="h-[140px] rounded-xl border border-gray-200 bg-white p-5 shadow-sm flex flex-col justify-between">
+            <p class="text-xs font-medium text-gray-500">Pending Restock Requests</p>
+            <p id="pendingRestock" class="mt-2 text-4xl font-bold tracking-tight text-gray-900 animate-pulse bg-gray-100 rounded h-10 w-12"></p>
+          </div>
         </div>
 
-        <div class="bg-white p-4 rounded shadow">
-          <h2 class="font-semibold mb-4">Top Items Today</h2>
-          <div id="topItemsToday"></div>
+        <div class="grid grid-cols-1 items-start gap-6 xl:grid-cols-2">
+          <div class="space-y-6">
+            <section class="h-[400px] rounded-xl border border-gray-200 bg-white p-5 shadow-sm flex flex-col">
+              <div class="mb-4">
+                <h2 class="text-2xl font-semibold text-gray-900">Recent Transactions</h2>
+                <p class="mt-1 text-xs text-gray-500">Recent sales activity</p>
+              </div>
+              <div id="recentTransactions" class="flex-1 overflow-y-auto divide-y divide-gray-200">
+                <p class="py-3 text-sm text-gray-400 animate-pulse">Loading…</p>
+              </div>
+            </section>
+
+            <section class="h-[400px] rounded-xl border border-gray-200 bg-white p-5 shadow-sm flex flex-col">
+              <div class="mb-4">
+                <h2 class="text-2xl font-semibold text-gray-900">Top Items Today</h2>
+                <p class="mt-1 text-xs text-gray-500">Best performing products</p>
+              </div>
+              <div id="topItemsToday" class="flex-1 overflow-y-auto divide-y divide-gray-200">
+                <p class="py-3 text-sm text-gray-400 animate-pulse">Loading…</p>
+              </div>
+            </section>
+          </div>
+
+          <div class="space-y-6">
+            <section class="h-[400px] rounded-xl border border-gray-200 bg-white p-5 shadow-sm flex flex-col">
+              <div class="mb-4">
+                <h2 class="text-2xl font-semibold text-gray-900">Inventory Alerts</h2>
+                <p class="mt-1 text-xs text-gray-500">Items requiring attention</p>
+              </div>
+
+              <div class="mb-4 flex items-center gap-3 border-b border-gray-200 pb-3 text-xs font-medium text-gray-500">
+                <button type="button" data-inv-filter="all" class="inventory-tab border-b-2 border-gray-900 pb-1 text-gray-900">All</button>
+                <button type="button" data-inv-filter="low" class="inventory-tab border-b-2 border-transparent pb-1 hover:text-gray-700">Low Stock</button>
+                <button type="button" data-inv-filter="out" class="inventory-tab border-b-2 border-transparent pb-1 hover:text-gray-700">Out of Stock</button>
+              </div>
+
+              <div id="inventoryAlerts" class="flex-1 overflow-y-auto divide-y divide-gray-200">
+                <p class="py-3 text-sm text-gray-400 animate-pulse">Loading…</p>
+              </div>
+            </section>
+
+            <section class="h-[400px] rounded-xl border border-gray-200 bg-white p-5 shadow-sm flex flex-col">
+              <div class="mb-4">
+                <h2 class="text-2xl font-semibold text-gray-900">Recent Item Usage</h2>
+                <p class="mt-1 text-xs text-gray-500">Items dispensed today</p>
+              </div>
+              <div id="recentItemUsage" class="flex-1 overflow-y-auto divide-y divide-gray-200">
+                <p class="py-3 text-sm text-gray-400 animate-pulse">Loading…</p>
+              </div>
+            </section>
+          </div>
         </div>
       </div>
     `;
 
-    document.getElementById("revenueToday").textContent =
-      `₱${dashboardStats?.revenueToday ?? 0}`;
-    document.getElementById("transactionsToday").textContent =
-      dashboardStats?.transactionsToday ?? 0;
-    document.getElementById("itemsIssuedToday").textContent =
-      dashboardStats?.itemsIssuedToday ?? 0;
-    document.getElementById("pendingRestock").textContent =
-      dashboardStats?.pendingRestock ?? 0;
+    /* Wire refresh button */
+    document.getElementById("refreshDashboardBtn")?.addEventListener("click", () => refreshDashboardData());
 
-    document.getElementById("recentTransactions").innerHTML =
-      recentTransactions.map(tx => `
-        <div class="flex justify-between py-2 border-b">
-          <div>
-            <p class="font-medium">${tx.id}</p>
-            <p class="text-sm text-gray-500">${tx.patient} · ${tx.time}</p>
-          </div>
-          <p class="font-semibold">₱${tx.amount}</p>
-        </div>
-      `).join("");
+    /* Fetch & render */
+    await refreshDashboardData();
 
-    document.getElementById("inventoryAlerts").innerHTML =
-      inventoryAlerts.map(item => `
-        <div class="py-2 border-b">
-          <p class="font-medium">${item.name}</p>
-          <p class="text-sm ${
-            item.status === "out" ? "text-red-600" : "text-orange-500"
-          }">
-            ${item.status.toUpperCase()} · ${item.remaining}
-          </p>
-        </div>
-      `).join("");
-
-    document.getElementById("topItemsToday").innerHTML =
-      topItemsToday.map(item => `
-        <div class="flex justify-between py-2 border-b">
-          <span>${item.name}</span>
-          <span class="font-semibold">₱${item.price}</span>
-        </div>
-      `).join("");
+    /* Start auto-refresh timer */
+    startAutoRefresh();
   }
 
-  /* ================= BILLING (FIXED) ================= */
-  async function loadBilling() {
-    setActive(navBilling);
+  /* ─────────────────────────────────────────────
+     refreshDashboardData  – fetch + re-render
+     ───────────────────────────────────────────── */
+  let _cachedAlerts = [];  // held for inventory-tab filtering
 
+  async function refreshDashboardData() {
     try {
-      // ✅ correct relative path from staff_dashboard.js
-      const res = await fetch("../../HTML/staffinventory/staffbilling.html");
-      if (!res.ok) throw new Error("Billing HTML not found");
+      const raw = await STAFF_fetchDashboardData();
 
-      mainContent.innerHTML = await res.text();
+      /* ── Summary cards ── */
+      const stats = mapSummary(raw.summary);
+      const revenueEl       = document.getElementById("revenueToday");
+      const transactionsEl  = document.getElementById("transactionsToday");
+      const itemsIssuedEl   = document.getElementById("itemsIssuedToday");
+      const pendingEl       = document.getElementById("pendingRestock");
 
-      // wait briefly for DOM injection to settle
-      await new Promise(r => setTimeout(r, 150));
+      if (revenueEl)      { revenueEl.textContent      = formatCurrency(stats.revenueToday);      revenueEl.className      = "mt-2 text-4xl font-bold tracking-tight text-gray-900"; }
+      if (transactionsEl) { transactionsEl.textContent = stats.transactionsToday;                  transactionsEl.className = "mt-2 text-4xl font-bold tracking-tight text-gray-900"; }
+      if (itemsIssuedEl)  { itemsIssuedEl.textContent  = stats.itemsIssuedToday;                   itemsIssuedEl.className  = "mt-2 text-4xl font-bold tracking-tight text-gray-900"; }
+      if (pendingEl)      { pendingEl.textContent      = stats.pendingRestock;                     pendingEl.className      = "mt-2 text-4xl font-bold tracking-tight text-gray-900"; }
 
-      // ✅ correct module path (now in staff_billing folder)
-      const module = await import("../staff_billing/staff_billing.js");
-
-      if (typeof module.initBilling !== "function") {
-        throw new Error("initBilling() missing");
+      /* ── Recent Transactions ── */
+      const transactions = mapTransactions(raw.transactions);
+      const recentTransactionsEl = document.getElementById("recentTransactions");
+      if (recentTransactionsEl) {
+        recentTransactionsEl.innerHTML = transactions.length
+          ? transactions.map(tx => `
+              <div class="flex items-start justify-between py-3">
+                <div>
+                  <p class="text-sm font-semibold text-gray-900">TX-${tx.id}</p>
+                  <p class="text-xs uppercase tracking-wide text-gray-500">${tx.patient}</p>
+                  <p class="text-xs text-gray-500">${tx.time}</p>
+                </div>
+                <div class="text-right">
+                  <p class="text-sm font-semibold text-gray-900">${formatCurrency(tx.amount)}</p>
+                  <p class="text-xs text-gray-500">${tx.items} ${tx.items === 1 ? "item" : "items"}</p>
+                </div>
+              </div>
+            `).join("")
+          : `<p class="py-3 text-sm text-gray-500">No recent transactions.</p>`;
       }
 
-      module.initBilling();
+      /* ── Inventory Alerts ── */
+      _cachedAlerts = mapAlerts(raw.alerts);
+      renderInventoryAlerts("all");
+      bindInventoryTabs();
 
-    } catch (error) {
-      console.error(error);
-      mainContent.innerHTML = `
-        <div class="text-red-500 p-4 font-medium">
-          Failed to load Billing module.
-        </div>
-      `;
+      /* ── Top Items Today ── */
+      const topItems = mapTopItems(raw.topItems);
+      const topItemsEl = document.getElementById("topItemsToday");
+      if (topItemsEl) {
+        topItemsEl.innerHTML = topItems.length
+          ? topItems.map(item => `
+              <div class="flex items-center justify-between py-3">
+                <div>
+                  <p class="text-sm font-medium text-gray-900">${item.name}</p>
+                  <p class="text-xs text-gray-500">${item.sold} sold</p>
+                </div>
+                <p class="text-right text-sm font-semibold text-gray-900">${formatCurrency(item.price)}</p>
+              </div>
+            `).join("")
+          : `<p class="py-3 text-sm text-gray-500">No top items yet.</p>`;
+      }
+
+      /* ── Recent Item Usage ── */
+      const usageItems = mapUsage(raw.usage);
+      const usageEl = document.getElementById("recentItemUsage");
+      if (usageEl) {
+        usageEl.innerHTML = usageItems.length
+          ? usageItems.map(item => `
+              <div class="flex items-center justify-between py-3">
+                <p class="text-sm font-medium text-gray-900">${item.name}</p>
+                <p class="text-sm text-gray-600">${item.quantity} ${item.unit}</p>
+              </div>
+            `).join("")
+          : `<p class="py-3 text-sm text-gray-500">No recent usage data.</p>`;
+      }
+
+    } catch (err) {
+      console.error("[Staff Dashboard] refresh error:", err);
     }
   }
 
-  /* ================= INVENTORY ================= */
+  /* ─────────────────────────────────────────────
+     Inventory alerts – filter & restock button
+     ───────────────────────────────────────────── */
+  function renderInventoryAlerts(filter) {
+    const alertsEl = document.getElementById("inventoryAlerts");
+    if (!alertsEl) return;
+
+    const filtered = filter === "all"
+      ? _cachedAlerts
+      : _cachedAlerts.filter(item => item.status === filter);
+
+    alertsEl.innerHTML = filtered.length
+      ? filtered.map(item => {
+          const isOut       = item.status === "out";
+          const statusText  = isOut ? "Out of Stock" : "Low Stock";
+          const statusClass = isOut ? "text-red-600"  : "text-orange-500";
+
+          return `
+            <div class="flex items-center justify-between gap-4 py-3">
+              <div>
+                <p class="text-sm font-medium text-gray-900">${item.name}</p>
+                <p class="text-xs ${statusClass}">
+                  ${statusText} · ${item.remaining}
+                </p>
+              </div>
+              <button type="button"
+                      data-restock-item="${item.name}"
+                      class="restock-btn whitespace-nowrap rounded border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50">
+                Request Restock
+              </button>
+            </div>
+          `;
+        }).join("")
+      : `<p class="py-3 text-sm text-gray-500">No items for this filter.</p>`;
+
+    /* Wire restock buttons → navigate to inventory */
+    alertsEl.querySelectorAll(".restock-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        loadInventory();
+      });
+    });
+  }
+
+  function bindInventoryTabs() {
+    const tabs = document.querySelectorAll(".inventory-tab");
+    tabs.forEach(tab => {
+      tab.addEventListener("click", () => {
+        const filter = tab.dataset.invFilter || "all";
+        tabs.forEach(btn => {
+          btn.classList.remove("border-gray-900", "text-gray-900");
+          btn.classList.add("border-transparent", "text-gray-500");
+        });
+        tab.classList.remove("border-transparent", "text-gray-500");
+        tab.classList.add("border-gray-900", "text-gray-900");
+        renderInventoryAlerts(filter);
+      });
+    });
+  }
+
+  /* ─────────────────────────────────────────────
+     Other route loaders (unchanged)
+     ───────────────────────────────────────────── */
+  function loadBilling() {
+    setCurrentStaffRoute(currentStaffRoute || "dashboard");
+    enterBillingMode();
+  }
+
   async function loadInventory() {
+    stopAutoRefresh();
+    setCurrentStaffRoute("inventory");
     setActive(navInventory);
 
     try {
-      // ✅ correct relative path from staff_dashboard.js
       const res = await fetch("../../HTML/staff_Inventory/staff_Inventory.html");
       if (!res.ok) throw new Error("Inventory HTML not found");
 
       mainContent.innerHTML = await res.text();
-
-      // wait briefly for DOM injection to settle
       await new Promise(r => setTimeout(r, 150));
 
-      // ✅ correct module path
-      console.log("Importing staff_inventory module...");
       const module = await import("../staff_inventory/staff_inventory.js");
-
       if (typeof module.initInventory !== "function") {
         throw new Error("initInventory() missing");
       }
 
       module.initInventory();
-      console.log("staff_inventory.initInventory() called");
-
     } catch (error) {
-      console.error(error);
       mainContent.innerHTML = `
         <div class="text-red-500 p-4 font-medium">
           Failed to load Inventory module: ${error.message}
@@ -188,42 +485,31 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  /* ================= USER PROFILE ================= */
   async function loadUserProfile() {
+    stopAutoRefresh();
+    setCurrentStaffRoute("profile");
+
     try {
-      console.log('🔄 Loading User Profile...');
-      
-      // Show loading state
       mainContent.innerHTML = `
         <div class="flex items-center justify-center p-8">
           <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
           <span class="ml-2 text-gray-600">Loading Profile...</span>
         </div>
       `;
-      
-      // Load User Profile HTML
-      const res = await fetch('../../HTML/user_Profile/user_Profile.html');
+
+      const res = await fetch("../../HTML/user_Profile/user_Profile.html");
       if (!res.ok) throw new Error("User Profile HTML not found");
 
       mainContent.innerHTML = await res.text();
-      console.log('✅ User Profile HTML loaded');
-
-      // Reduce wait time
       await new Promise(r => setTimeout(r, 50));
 
-      // Load User Profile JavaScript module
-      console.log('📦 Importing User Profile module...');
-      const module = await import('../../js/user_Profile/user_Profile.js');
-
+      const module = await import("../../js/user_Profile/user_Profile.js");
       if (typeof module.initProfile !== "function") {
         throw new Error("initProfile() missing from user profile module");
       }
 
-      module.initProfile('staff');
-      console.log('✅ User Profile initialized');
-
+      module.initProfile("staff");
     } catch (error) {
-      console.error('❌ Error loading User Profile:', error);
       mainContent.innerHTML = `
         <div class="text-red-500 p-4 font-medium">
           Failed to load User Profile: ${error.message}
@@ -232,7 +518,63 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  /* ================= EVENTS ================= */
+  function loadRequestStock() {
+    stopAutoRefresh();
+    setCurrentStaffRoute("stock-request");
+    if (navStockRequest) setActive(navStockRequest);
+
+    mainContent.innerHTML = `
+      <div class="mx-auto max-w-7xl">
+        <div class="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+          <iframe
+            title="Request Stock"
+            src="../../HTML/STAFF_StockRequest/STAFF_StockRequest.html"
+            class="h-[calc(100vh-220px)] min-h-[560px] w-full border-0"
+          ></iframe>
+        </div>
+      </div>
+    `;
+  }
+
+  function loadExpenses() {
+    stopAutoRefresh();
+    setCurrentStaffRoute("expenses");
+    if (navExpenses) setActive(navExpenses);
+
+    mainContent.innerHTML = `
+      <div class="mx-auto max-w-7xl">
+        <div class="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+          <iframe
+            title="My Expenses"
+            src="../../HTML/STAFF_Expenses/STAFF_Expenses.html"
+            class="h-[calc(100vh-220px)] min-h-[560px] w-full border-0"
+          ></iframe>
+        </div>
+      </div>
+    `;
+  }
+
+  function loadActivityLog() {
+    stopAutoRefresh();
+    setCurrentStaffRoute("activity-log");
+    if (navActivityLog) setActive(navActivityLog);
+
+    mainContent.innerHTML = `
+      <div class="mx-auto max-w-7xl">
+        <div class="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+          <iframe
+            title="Activity Log"
+            src="../../HTML/STAFF_ActivityLog/STAFF_ActivityLog.html"
+            class="h-[calc(100vh-220px)] min-h-[560px] w-full border-0"
+          ></iframe>
+        </div>
+      </div>
+    `;
+  }
+
+  /* ─────────────────────────────────────────────
+     Navigation event listeners
+     ───────────────────────────────────────────── */
   navDashboard.addEventListener("click", e => {
     e.preventDefault();
     loadDashboard();
@@ -248,11 +590,87 @@ document.addEventListener("DOMContentLoaded", () => {
     loadInventory();
   });
 
+  navStockRequest?.addEventListener("click", e => {
+    e.preventDefault();
+    loadRequestStock();
+  });
+
+  navExpenses?.addEventListener("click", e => {
+    e.preventDefault();
+    loadExpenses();
+  });
+
+  navActivityLog?.addEventListener("click", e => {
+    e.preventDefault();
+    loadActivityLog();
+  });
+
+  menuPosHeaderBtn?.addEventListener("click", e => {
+    e.preventDefault();
+    if (currentRole !== "staff") return;
+    loadBilling();
+  });
+
   profileBtn.addEventListener("click", e => {
     e.preventDefault();
     loadUserProfile();
   });
 
-  /* ================= DEFAULT ================= */
-  loadDashboard();
+  /* ─────────────────────────────────────────────
+     Logout functionality
+     ───────────────────────────────────────────── */
+  const logoutBtn = document.getElementById("logoutBtn");
+  if (auth) {
+    auth.bindLogoutButton(logoutBtn, {
+      redirectTo: "../../HTML/loginPage/loginPage.html",
+      replace: true,
+      confirmBeforeLogout: true,
+      confirmTitle: "Confirm Logout",
+      confirmMessage: "Are you sure you want to log out?",
+      confirmButtonText: "Logout",
+      cancelButtonText: "Cancel",
+    });
+  }
+
+  /* ─────────────────────────────────────────────
+     Initial route resolution
+     ───────────────────────────────────────────── */
+  const hashRoute  = window.location.hash.replace("#", "").toLowerCase();
+  const storedRoute = (sessionStorage.getItem(STAFF_CURRENT_ROUTE_KEY) || "").toLowerCase();
+  const initialRoute = ["dashboard", "inventory", "profile", "stock-request", "expenses", "activity-log"].includes(hashRoute)
+    ? hashRoute
+    : ["dashboard", "inventory", "profile", "stock-request", "expenses", "activity-log"].includes(storedRoute)
+      ? storedRoute
+      : "dashboard";
+
+  if (initialRoute === "inventory") {
+    loadInventory();
+  } else if (initialRoute === "stock-request") {
+    loadRequestStock();
+  } else if (initialRoute === "expenses") {
+    loadExpenses();
+  } else if (initialRoute === "activity-log") {
+    loadActivityLog();
+  } else if (initialRoute === "profile") {
+    loadUserProfile();
+  } else {
+    loadDashboard();
+  }
+
+  // Initialize notification widget
+  const notifToken = ["token", "authToken", "jwtToken", "ibmsToken"]
+    .map(k => localStorage.getItem(k))
+    .find(v => v && v.trim()) || "";
+  if (notifToken) {
+    const notificationWidget = new NotificationWidget("http://localhost:3000/api", notifToken);
+    window.notificationWidget = notificationWidget;
+    notificationWidget.init();
+  }
+
+  // Expose navigation functions globally for notification widget
+  window.loadInventory = loadInventory;
+  window.loadRequestStock = loadRequestStock;
+  window.loadExpenses = loadExpenses;
+  window.loadActivityLog = loadActivityLog;
+  window.loadDashboard = loadDashboard;
 });

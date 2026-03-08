@@ -66,6 +66,30 @@ const productSchema = new mongoose.Schema(
       default: "available",
     },
 
+    /* ===== Owner discrepancy reconciliation ===== */
+    physicalCount: {
+      type: Number,
+      min: 0,
+      default: null,
+    },
+
+    expectedRemaining: {
+      type: Number,
+      min: 0,
+      default: null,
+    },
+
+    variance: {
+      type: Number,
+      default: 0,
+    },
+
+    discrepancyStatus: {
+      type: String,
+      enum: ["Balanced", "With Variance"],
+      default: "Balanced",
+    },
+
     /* ===== Archive support ===== */
     isArchived: {
       type: Boolean,

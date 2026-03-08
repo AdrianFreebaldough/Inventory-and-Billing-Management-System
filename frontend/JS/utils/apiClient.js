@@ -34,7 +34,16 @@ const toQueryString = (query = {}) => {
 };
 
 export const apiFetch = async (path, options = {}) => {
-  const token = getStoredToken();
+  const auth = window.IBMSAuth;
+  const token = auth?.getValidToken ? auth.getValidToken() : getStoredToken();
+
+  if (!token) {
+    if (auth) {
+      auth.clearAuthData();
+      auth.redirectToLogin(true);
+    }
+    throw new Error("Authentication required. Please log in again.");
+  }
 
   const headers = {
     ...(options.headers || {}),
@@ -61,6 +70,13 @@ export const apiFetch = async (path, options = {}) => {
       payload = JSON.parse(text);
     } catch {
       payload = { message: text };
+    }
+  }
+
+  if (response.status === 401 || response.status === 403) {
+    if (auth) {
+      auth.clearAuthData();
+      auth.redirectToLogin(true);
     }
   }
 

@@ -31,6 +31,7 @@ export const protect = (req, res, next) => {
       id: String(candidateId),
       role: String(decoded?.role || "").toUpperCase(),
       email: decoded?.email,
+      name: decoded?.name || null,
     };
 
     next();

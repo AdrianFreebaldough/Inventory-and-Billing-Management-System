@@ -5,6 +5,10 @@
 	<meta name="viewport" content="width=device-width, initial-scale=1.0" />
 	<title>Staff Billing</title>
 	<script src="https://cdn.tailwindcss.com"></script>
+	<script src="../../JS/utils/authSession.js"></script>
+	<script>
+		window.IBMSAuth?.protectPage({ requiredRole: "staff" });
+	</script>
 	<style>
 		.pos-qty-input::-webkit-outer-spin-button,
 		.pos-qty-input::-webkit-inner-spin-button {
@@ -73,8 +77,10 @@
 					<div class="border-b border-slate-300 bg-black px-3 py-2 text-[11px] text-slate-200">
 						<p class="uppercase tracking-wider">Transaction ID: <span id="txnId" class="font-semibold text-white"></span></p>
 						<label for="patientIdInput" class="mt-2 block text-[10px] uppercase tracking-wider text-slate-300">Patient ID</label>
-						<input id="patientIdInput" type="text" readonly placeholder="Auto-generated on first item..." class="mt-1 w-full border border-slate-600 bg-slate-900 px-2 py-1 text-xs text-white outline-none focus:border-cyan-500" />
-						<p id="patientIdHint" class="mt-1 text-[10px] text-slate-400">Patient ID auto-generates when first item is added.</p>
+						<input id="patientIdInput" type="text" placeholder="Enter patient ID..." class="mt-1 w-full border border-slate-600 bg-slate-900 px-2 py-1 text-xs text-white outline-none focus:border-cyan-500" />
+						<p id="patientIdHint" class="mt-1 text-[10px] text-slate-400">Patient name auto-fills when a valid Patient ID is entered.</p>
+						<label for="patientNameInput" class="mt-2 block text-[10px] uppercase tracking-wider text-slate-300">Patient Name</label>
+						<input id="patientNameInput" type="text" readonly placeholder="Auto-filled from patient record" class="mt-1 w-full border border-slate-600 bg-slate-900 px-2 py-1 text-xs text-white outline-none focus:border-cyan-500" />
 						<p class="mt-1">Status: <span id="txnStatus" class="font-semibold text-rose-400"></span></p>
 					</div>
 
@@ -114,8 +120,7 @@
 							<tr class="border-b border-slate-400 text-left text-xs font-semibold text-black">
 								<th class="px-2 py-2">Transaction ID</th>
 								<th class="px-2 py-2">Date/Time</th>
-								<th class="px-2 py-2">Items</th>
-								<th class="px-2 py-2">Patient ID</th>
+								<th class="px-2 py-2">Items</th>						<th class="px-2 py-2">Patient Name</th>								<th class="px-2 py-2">Patient ID</th>
 								<th class="px-2 py-2">Total</th>
 								<th class="px-2 py-2 text-right">Actions</th>
 							</tr>
@@ -137,6 +142,7 @@
 					<p>Clinic: <span id="summaryClinic" class="font-semibold text-slate-900"></span></p>
 					<p>Transaction ID: <span id="summaryTxnId" class="font-semibold text-slate-900"></span></p>
 					<p class="sm:col-span-2">Patient ID: <span id="summaryPatientId" class="font-semibold text-slate-900"></span></p>
+					<p class="sm:col-span-2">Patient Name: <span id="summaryPatientName" class="font-semibold text-slate-900"></span></p>
 				</div>
 
 				<div class="max-h-60 overflow-auto border border-slate-200">
@@ -228,6 +234,7 @@
 					<p>Transaction ID: <span id="historyViewTxnId" class="font-semibold text-slate-900"></span></p>
 					<p>Date / Time: <span id="historyViewDateTime" class="font-semibold text-slate-900"></span></p>
 					<p>Patient ID: <span id="historyViewPatientId" class="font-semibold text-slate-900"></span></p>
+					<p>Patient Name: <span id="historyViewPatientName" class="font-semibold text-slate-900"></span></p>
 					<p>Status: <span id="historyViewStatus" class="rounded px-2 py-0.5 text-[10px] font-semibold uppercase"></span></p>
 				</div>
 
@@ -259,7 +266,9 @@
 		<div class="w-full max-w-md border border-slate-300 bg-white shadow-lg">
 			<header class="border-b border-slate-300 bg-black px-4 py-3 text-xs font-semibold uppercase tracking-wider text-white">Void Transaction</header>
 			<div class="p-4 text-xs text-slate-700">
-				<p>Are you sure you want to void this transaction?</p>
+				<p class="mb-3">Are you sure you want to void this transaction? This will restore inventory stock.</p>
+				<label for="voidReasonInput" class="block text-[11px] font-semibold uppercase tracking-wide text-slate-600 mb-1">Reason (optional)</label>
+				<textarea id="voidReasonInput" rows="3" placeholder="Enter reason for voiding..." class="w-full border border-slate-300 px-3 py-2 text-xs text-slate-900 outline-none focus:border-rose-500 resize-none"></textarea>
 			</div>
 			<footer class="flex justify-end gap-2 border-t border-slate-300 bg-slate-50 px-4 py-3">
 				<button id="voidCancelBtn" type="button" class="min-w-20 border border-slate-400 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100">CANCEL</button>

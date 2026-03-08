@@ -12,6 +12,7 @@ import {
 	fetchHistory,
 	fetchReceipt,
 } from "./BillingAPI.js";
+import { apiFetch } from "../utils/apiClient.js";
 
 /* ===== Constants ===== */
 
@@ -27,6 +28,8 @@ const PRODUCT_CATEGORIES = [
 	"General Supplies",
 ];
 
+let patientLookupDebounceTimer = null;
+
 /* ===== State ===== */
 
 const state = {
@@ -36,6 +39,7 @@ const state = {
 	quantities: {},
 	discountRate: 0,
 	patientId: "",
+	patientName: "",
 	activeView: "sale",
 	transactionLog: [],
 	activeTransactionId: null,
@@ -211,6 +215,18 @@ function generatePatientId() {
 	return `PAT-${suffix}`;
 }
 
+async function fetchPatientNameById(patientId) {
+	if (!patientId || !patientId.trim()) return "";
+	try {
+		const encodedPatientId = encodeURIComponent(patientId.trim());
+		const result = await apiFetch(`/api/patients/${encodedPatientId}`, { method: "GET" });
+		const payload = result?.data || result;
+		return payload?.patientName ? String(payload.patientName).trim() : "";
+	} catch {
+		return "";
+	}
+}
+
 function generateHeldId() {
 	const id = `HLD-${String(state.heldCounter).padStart(4, "0")}`;
 	state.heldCounter += 1;
@@ -271,9 +287,11 @@ function computeSaleTotals() {
 	const itemCount = selected.reduce((total, item) => total + item.qty, 0);
 	const subtotal = selected.reduce((total, item) => total + item.price * item.qty, 0);
 	const discount = subtotal * state.discountRate;
-	const taxableAmount = Math.max(subtotal - discount, 0);
-	const vat = taxableAmount * VAT_RATE;
-	const totalDue = taxableAmount + vat;
+	// Prices are VAT-inclusive: total already contains the 12% VAT
+	const totalDue = Math.max(subtotal - discount, 0);
+	// Reverse VAT extraction: Net = Total / 1.12, VAT = Total - Net
+	const netAmount = totalDue / 1.12;
+	const vat = totalDue - netAmount;
 	return { selected, itemCount, subtotal, discount, vat, totalDue };
 }
 
@@ -468,7 +486,7 @@ function renderHistoryTable() {
 	if (!transactions.length) {
 		historyTableBody.innerHTML = `
 			<tr>
-				<td colspan="6" class="px-2 py-6 text-center text-xs text-black">No transactions available.</td>
+				<td colspan="7" class="px-2 py-6 text-center text-xs text-black">No transactions available.</td>
 			</tr>
 		`;
 		return;
@@ -490,7 +508,8 @@ function renderHistoryTable() {
 						<div>${time}</div>
 					</td>
 					<td class="px-2 py-2 ${cellClass}">${itemCount} item(s)</td>
-					<td class="px-2 py-2 ${cellClass}">${txn.patientId || "N/A"}</td>
+					<td class="px-2 py-2 ${cellClass}">${txn.patientName || "N/A"}</td>
+			<td class="px-2 py-2 ${cellClass}">${txn.patientId || "N/A"}</td>
 					<td class="px-2 py-2 font-medium ${cellClass}">
 						${isVoided ? formatPeso(0) : formatPeso(txn.totalAmount || 0)}
 						<div class="text-[10px] ${isVoided ? "text-rose-600" : "text-emerald-600"}">${txn.status}</div>
@@ -563,6 +582,8 @@ function renderActiveView() {
 function refreshUi() {
 	txnIdElement.textContent = state.activeTransactionId ? String(state.activeTransactionId).slice(-8).toUpperCase() : "NEW";
 	patientIdInput.value = state.patientId;
+	const patientNameInputEl = document.getElementById("patientNameInput");
+	if (patientNameInputEl) patientNameInputEl.value = state.patientName;
 	renderTabs();
 	renderItemRows();
 	renderSummaryPanel();
@@ -581,11 +602,9 @@ function setQuantity(itemId, nextQty) {
 	state.quantities[itemId] = boundedQty;
 
 	const { itemCount } = computeSaleTotals();
-	if (itemCount > 0 && !state.patientId) {
-		state.patientId = generatePatientId();
-	}
 	if (itemCount === 0) {
 		state.patientId = "";
+		state.patientName = "";
 	}
 	refreshUi();
 }
@@ -596,6 +615,7 @@ function resetActiveSale() {
 	});
 	state.discountRate = 0;
 	state.patientId = "";
+	state.patientName = "";
 	state.activeTransactionId = null;
 	searchInput.value = "";
 	state.searchTerm = "";
@@ -611,6 +631,8 @@ function openSummaryModal() {
 	summaryClinic.textContent = CLINIC_NAME;
 	summaryTxnId.textContent = state.activeTransactionId ? String(state.activeTransactionId).slice(-8).toUpperCase() : "PENDING";
 	summaryPatientId.textContent = state.patientId;
+	const summaryPatientNameEl = document.getElementById("summaryPatientName");
+	if (summaryPatientNameEl) summaryPatientNameEl.textContent = state.patientName || "N/A";
 	summaryItemsBody.innerHTML = totals.selected
 		.map(
 			(item) => `
@@ -646,6 +668,7 @@ async function handleProceedToPayment() {
 		// Create transaction on backend
 		const result = await createTransaction({
 			patientId: state.patientId,
+			patientName: state.patientName,
 			items,
 			discountRate: state.discountRate,
 		});
@@ -715,6 +738,7 @@ async function handleCompleteSale() {
 			clinicName: CLINIC_NAME,
 			transactionId: result.transactionId,
 			patientId: state.patientId,
+			patientName: state.patientName,
 			selected: totals.selected,
 			subtotal: totals.subtotal,
 			discount: totals.discount,
@@ -757,6 +781,7 @@ function holdCurrentTransaction() {
 	state.heldTransactions.push({
 		heldId: generateHeldId(),
 		patientId: state.patientId,
+		patientName: state.patientName,
 		items: totals.selected,
 		itemCount: totals.itemCount,
 		subtotal: totals.subtotal,
@@ -781,6 +806,7 @@ function resumeHeldTransaction(heldId) {
 		state.quantities[item.id] = item.qty;
 	});
 	state.patientId = held.patientId;
+	state.patientName = held.patientName || "";
 	state.heldTransactions.splice(index, 1);
 	closeAllModals();
 	refreshUi();
@@ -802,6 +828,8 @@ function openHistoryTransactionModal(transactionId) {
 	historyViewTxnId.textContent = String(transaction.transactionId).slice(-8).toUpperCase();
 	historyViewDateTime.textContent = `${date} ${time}`;
 	historyViewPatientId.textContent = transaction.patientId || "N/A";
+	const historyViewPatientNameEl = document.getElementById("historyViewPatientName");
+	if (historyViewPatientNameEl) historyViewPatientNameEl.textContent = transaction.patientName || "N/A";
 	historyViewStatus.textContent = transaction.status;
 	historyViewStatus.className =
 		transaction.status === "VOIDED"
@@ -846,16 +874,19 @@ async function handleVoidTransaction() {
 		return;
 	}
 
+	const voidReasonInputEl = document.getElementById("voidReasonInput");
+	const voidReason = voidReasonInputEl ? voidReasonInputEl.value.trim() : "";
 	showLoading("Voiding transaction...");
 
 	try {
-		await apiVoidTransaction(state.pendingVoidTransactionId);
+		await apiVoidTransaction(state.pendingVoidTransactionId, voidReason);
 
 		// Refresh history and products
 		await Promise.all([loadHistory(), loadProducts()]);
 
 		state.pendingVoidTransactionId = null;
 		hideLoading();
+		if (voidReasonInputEl) voidReasonInputEl.value = "";
 		closeAllModals();
 		refreshUi();
 		showToast("Transaction voided successfully", "success");
@@ -905,6 +936,29 @@ function attachEvents() {
 		if (!(target instanceof HTMLInputElement)) return;
 		state.searchTerm = target.value;
 		renderItemRows();
+	});
+
+	patientIdInput?.addEventListener("input", (event) => {
+		const patientIdValue = String(event.target.value || "").trim();
+		state.patientId = patientIdValue;
+		state.patientName = "";
+		updatePaymentLockStatus();
+
+		if (patientLookupDebounceTimer) {
+			clearTimeout(patientLookupDebounceTimer);
+		}
+
+		if (!patientIdValue) {
+			refreshUi();
+			return;
+		}
+
+		patientLookupDebounceTimer = setTimeout(async () => {
+			const lookedUpName = await fetchPatientNameById(patientIdValue);
+			if (state.patientId !== patientIdValue) return;
+			state.patientName = lookedUpName || "";
+			refreshUi();
+		}, 350);
 	});
 
 	itemsTableBody.addEventListener("click", (event) => {
@@ -1023,6 +1077,8 @@ function attachEvents() {
 
 	voidCancelBtn.addEventListener("click", () => {
 		state.pendingVoidTransactionId = null;
+		const voidReasonInputEl = document.getElementById("voidReasonInput");
+		if (voidReasonInputEl) voidReasonInputEl.value = "";
 		closeAllModals();
 	});
 

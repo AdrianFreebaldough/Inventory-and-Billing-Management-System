@@ -15,6 +15,25 @@ class STAFF_BillingError extends Error {
 // Centralized currency rounding keeps stored totals stable and predictable.
 const STAFF_roundCurrency = (value) => Number(Number(value).toFixed(2));
 
+// Generate patient name (temporary generator until patient module is integrated)
+const STAFF_generatePatientName = () => {
+  const firstNames = [
+    "Juan", "Maria", "Pedro", "Ana", "Jose", "Rosa", "Carlos", "Luz",
+    "Miguel", "Elena", "Roberto", "Sofia", "Fernando", "Carmen", "Antonio",
+    "Isabel", "Manuel", "Teresa", "Ricardo", "Patricia", "Rafael", "Gloria"
+  ];
+  const lastNames = [
+    "Dela Cruz", "Santos", "Reyes", "Garcia", "Ramos", "Mendoza", "Torres",
+    "Gonzales", "Lopez", "Flores", "Villanueva", "Castro", "Rivera", "Cruz",
+    "Bautista", "Fernandez", "Aquino", "Santiago", "Morales", "Pascual"
+  ];
+  
+  const firstName = firstNames[Math.floor(Math.random() * firstNames.length)];
+  const lastName = lastNames[Math.floor(Math.random() * lastNames.length)];
+  
+  return `${firstName} ${lastName}`;
+};
+
 const STAFF_makeReceiptNumber = () => {
   const now = new Date();
   const yyyy = now.getFullYear();
@@ -175,10 +194,15 @@ const STAFF_getTransactionForStaff = async (transactionId, staffId, session = nu
   return transaction;
 };
 
-export const STAFF_createBillingTransaction = async ({ staffId, items, patientId, discountRate = 0 }) => {
+export const STAFF_createBillingTransaction = async ({ staffId, items, patientId, patientName, discountRate = 0 }) => {
   if (!patientId || typeof patientId !== "string" || !patientId.trim()) {
     throw new STAFF_BillingError("Patient ID is required", 400);
   }
+
+  // Generate patient name if not provided
+  const finalPatientName = patientName && patientName.trim() 
+    ? patientName.trim() 
+    : STAFF_generatePatientName();
 
   const parsedDiscountRate = Number(discountRate);
   if (!Number.isFinite(parsedDiscountRate) || parsedDiscountRate < 0 || parsedDiscountRate > 1) {
@@ -187,22 +211,31 @@ export const STAFF_createBillingTransaction = async ({ staffId, items, patientId
 
   const snapshot = await STAFF_buildItemsSnapshot(items);
   
+  // IMPORTANT: Prices in DB already include 12% VAT
+  // We use REVERSE VAT calculation to show breakdown
   const subtotal = snapshot.totalAmount;
   const discountAmount = STAFF_roundCurrency(subtotal * parsedDiscountRate);
-  const taxableAmount = STAFF_roundCurrency(subtotal - discountAmount);
-  const vatRate = 0.12;
-  const vatAmount = STAFF_roundCurrency(taxableAmount * vatRate);
-  const totalAmount = STAFF_roundCurrency(taxableAmount + vatAmount);
+  const totalAmount = STAFF_roundCurrency(subtotal - discountAmount);
+  
+  // Reverse VAT calculation: Total = Net + VAT
+  // Total = Net * 1.12
+  // Net = Total / 1.12
+  // VAT = Total - Net
+  const netAmount = STAFF_roundCurrency(totalAmount / 1.12);
+  const vatIncluded = STAFF_roundCurrency(totalAmount - netAmount);
 
   const transaction = await STAFF_BillingTransaction.create({
     staffId,
     patientId: patientId.trim(),
+    patientName: finalPatientName,
     items: snapshot.items,
     subtotal,
     discountRate: parsedDiscountRate,
     discountAmount,
-    vatRate,
-    vatAmount,
+    vatRate: 0.12,
+    vatAmount: 0, // Keep for backward compatibility
+    vatIncluded,
+    netAmount,
     totalAmount,
     status: "PENDING_PAYMENT",
   });
@@ -210,7 +243,7 @@ export const STAFF_createBillingTransaction = async ({ staffId, items, patientId
   await STAFF_logBillingActivity({
     staffId,
     actionType: "billing-create",
-    description: `Created pending billing transaction ${transaction._id} for patient ${patientId}`,
+    description: `Created pending billing transaction ${transaction._id} for patient ${finalPatientName}`,
     status: "pending",
   });
 
@@ -291,6 +324,7 @@ export const STAFF_completeBillingTransaction = async ({ transactionId, staffId,
       },
       transactionDateTime: completedAt,
       patientId: transaction.patientId,
+      patientName: transaction.patientName,
       staffId: transaction.staffId,
       items: transaction.items.map((item) => ({
         productId: item.productId,
@@ -304,6 +338,8 @@ export const STAFF_completeBillingTransaction = async ({ transactionId, staffId,
       discountAmount: transaction.discountAmount,
       vatRate: transaction.vatRate,
       vatAmount: transaction.vatAmount,
+      vatIncluded: transaction.vatIncluded,
+      netAmount: transaction.netAmount,
       totalAmount: transaction.totalAmount,
       cashReceived: STAFF_roundCurrency(parsedCashReceived),
       change,
@@ -353,7 +389,7 @@ export const STAFF_getBillingReceipt = async ({ transactionId, staffId }) => {
   };
 };
 
-export const STAFF_voidBillingTransaction = async ({ transactionId, staffId, reason = "" }) => {
+export const STAFF_voidBillingTransaction = async ({ transactionId, staffId, reason = "", editedData = null }) => {
   return STAFF_executeWithOptionalTransaction(async (session) => {
     const transaction = await STAFF_getTransactionForStaff(transactionId, staffId, session);
 
@@ -393,6 +429,22 @@ export const STAFF_voidBillingTransaction = async ({ transactionId, staffId, rea
         notes: `Voided transaction ${transactionId}`,
         session,
       });
+    }
+
+    // Save edited data if provided
+    if (editedData) {
+      if (editedData.patientId) {
+        transaction.editedPatientId = editedData.patientId;
+      }
+      if (editedData.patientName) {
+        transaction.editedPatientName = editedData.patientName;
+      }
+      if (editedData.items && Array.isArray(editedData.items)) {
+        transaction.editedItems = editedData.items;
+      }
+      if (editedData.notes) {
+        transaction.voidNotes = editedData.notes;
+      }
     }
 
     transaction.status = "VOIDED";

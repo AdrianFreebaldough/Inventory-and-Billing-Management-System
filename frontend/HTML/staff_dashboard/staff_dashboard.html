@@ -4,6 +4,10 @@
   <meta charset="UTF-8" />
   <title>Staff Dashboard</title>
   <link rel="stylesheet" href="../../css/output.css" />
+  <script src="../../JS/utils/authSession.js"></script>
+  <script>
+    window.IBMSAuth?.protectPage({ requiredRole: "staff" });
+  </script>
 </head>
 
 <body class="flex min-h-screen bg-gray-50">
@@ -12,11 +16,10 @@
 <aside class="w-64 bg-white border-r flex flex-col fixed h-screen">
 
   <!-- Logo -->
-  <div class="p-6 flex items-center gap-3 border-b">
-    <div class="bg-blue-600 text-white p-3 rounded-lg">+</div>
+  <div class="h-16 px-4 flex items-center gap-2 border-b">
+    <img src="../../assets/zealLogo.png" alt="ZCMMF Logo" class="h-9 w-9 object-contain rounded-md shrink-0">
     <div>
-      <p class="font-semibold">General Medicine Clinic</p>
-      <p class="text-sm text-gray-500">Staff Portal</p>
+      <p class="text-base font-semibold text-gray-900 leading-tight">ZCMMF</p>
     </div>
   </div>
 
@@ -45,6 +48,24 @@
   <span>Inventory</span>
 </a>
 
+    <a href="#"
+   id="navStockRequest"
+   class="nav-link flex items-center gap-3 px-4 py-2 rounded-lg text-gray-700 hover:bg-gray-100">
+  <span>Stock Request</span>
+</a>
+
+    <a href="#"
+   id="navExpenses"
+   class="nav-link flex items-center gap-3 px-4 py-2 rounded-lg text-gray-700 hover:bg-gray-100">
+  <span>Expenses</span>
+</a>
+
+    <a href="#"
+   id="navActivityLog"
+   class="nav-link flex items-center gap-3 px-4 py-2 rounded-lg text-gray-700 hover:bg-gray-100">
+  <span>Activity Log</span>
+</a>
+
   </nav>
 
   <!-- LOGOUT -->
@@ -63,13 +84,11 @@
 <main class="ml-64 flex flex-col w-full">
 
   <!-- HEADER -->
-  <header class="flex justify-end items-center px-6 py-4 bg-white border-b">
-    <div class="flex items-center gap-5">
-      <button class="relative p-2 rounded-full hover:bg-gray-100" aria-label="Notifications" title="Notifications" type="button">
-        <img src="../../assets/notif3.png" alt="Notifications" class="w-6 h-6 object-contain" />
-      </button>
-      <button id="profileBtn" class="flex items-center gap-5 hover:bg-gray-50 rounded-lg px-3 py-2 transition-colors cursor-pointer">
-        <div id="staffAvatar" class="w-9 h-9 bg-blue-600 rounded-full text-white flex items-center justify-center font-semibold">A</div>
+  <header class="h-16 flex justify-end items-center px-4 bg-white border-b">
+    <div class="flex items-center gap-3">
+      <div id="notificationWidget" class="scale-90 origin-center"></div>
+      <button id="profileBtn" class="flex items-center gap-3 hover:bg-gray-50 rounded-lg px-2 py-1 transition-colors cursor-pointer">
+        <div id="staffAvatar" class="w-8 h-8 bg-blue-600 rounded-full text-white flex items-center justify-center font-semibold text-sm">A</div>
         <div>
           <p id="staffName" class="font-medium">Staff Name</p>
           <p id="staffUsername" class="text-xs text-left text-gray-500">Username</p>
@@ -78,10 +97,10 @@
       <button
         id="menuPosHeaderBtn"
         type="button"
-        class="hidden p-2 rounded-lg hover:bg-gray-100 transition cursor-pointer"
+        class="hidden p-1.5 rounded-lg hover:bg-gray-100 transition cursor-pointer"
         aria-label="Go to Billing"
         title="Go to Billing">
-        <img src="../../assets/menuPOS.png" alt="MenuPOS" class="w-5 h-5 object-contain" />
+        <img src="../../assets/menuPOS.png" alt="MenuPOS" class="w-4 h-4 object-contain" />
       </button>
     </div>
   </header>

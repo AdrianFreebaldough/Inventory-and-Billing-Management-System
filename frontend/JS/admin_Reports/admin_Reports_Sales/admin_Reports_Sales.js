@@ -23,6 +23,13 @@ let currentModule = null;
 let exportListenerAttached = false;
 
 export function initReports() {
+    const auth = window.IBMSAuth;
+    if (auth && !auth.isSessionValid("owner")) {
+        auth.clearAuthData();
+        auth.redirectToLogin(true);
+        return;
+    }
+
     if (!ReportCache.sales) {
         const contentArea = document.getElementById('contentArea');
         if (contentArea) ReportCache.sales = contentArea.innerHTML;

@@ -3,7 +3,9 @@ import Product from "../models/product.js";
 import InventoryRequest from "../models/InventoryRequest.js";
 import ActivityLog from "../models/activityLog.js";
 import OWNER_ArchivedProduct from "../models/OWNER_archivedProduct.js";
+import InventoryBatch from "../models/InventoryBatch.js";
 import { createStockLog } from "../services/Owner_StockLog.service.js";
+import { getExpirationStatus, getDaysUntilExpiry } from "../services/expirationService.js";
 
 const OWNER_parseNonNegativeNumber = (value) => {
   const parsed = Number(value);
@@ -13,16 +15,153 @@ const OWNER_parseNonNegativeNumber = (value) => {
   return parsed;
 };
 
+const OWNER_generateBatchNumber = (prefix = "BATCH") => {
+  const datePart = new Date().toISOString().replace(/[-:TZ.]/g, "").slice(0, 14);
+  const randomPart = Math.random().toString(36).slice(2, 6).toUpperCase();
+  return `${prefix}-${datePart}-${randomPart}`;
+};
+
+const OWNER_buildLegacyBatch = (product) => {
+  if (!product || Number(product.quantity ?? 0) <= 0) {
+    return null;
+  }
+
+  const fallbackBatchNumber = product.batchNumber || `BATCH-INITIAL-${String(product._id).slice(-6).toUpperCase()}`;
+
+  return {
+    _id: `legacy-${product._id}`,
+    product: product._id,
+    batchNumber: fallbackBatchNumber,
+    quantity: Number(product.quantity ?? 0),
+    expiryDate: product.expiryDate || null,
+    supplier: product.supplier || null,
+    createdAt: product.createdAt || null,
+    isLegacy: true,
+  };
+};
+
+const OWNER_attachBatchDataToProducts = async (products) => {
+  if (!products.length) return products;
+
+  const productIds = products.map((product) => product._id);
+
+  const batches = await InventoryBatch.find({
+    product: { $in: productIds },
+  })
+    .sort({ expiryDate: 1, createdAt: 1 })
+    .lean();
+
+  const batchesByProduct = new Map();
+
+  for (const batch of batches) {
+    const key = String(batch.product);
+    if (!batchesByProduct.has(key)) {
+      batchesByProduct.set(key, []);
+    }
+    batchesByProduct.get(key).push(batch);
+  }
+
+  return products.map((product) => {
+    const key = String(product._id);
+    const existingBatches = batchesByProduct.get(key) || [];
+    const availableBatches = existingBatches.filter((batch) => Number(batch.quantity) > 0);
+    const fallbackLegacyBatch = availableBatches.length === 0 ? OWNER_buildLegacyBatch(product) : null;
+    const finalBatches = fallbackLegacyBatch ? [fallbackLegacyBatch] : availableBatches;
+    const totalBatchQuantity = finalBatches.reduce((sum, batch) => sum + Number(batch.quantity || 0), 0);
+    const resolvedQuantity = finalBatches.length > 0 ? totalBatchQuantity : Number(product.quantity ?? 0);
+
+    const nearestBatch = finalBatches
+      .filter((batch) => batch.expiryDate)
+      .sort((a, b) => new Date(a.expiryDate) - new Date(b.expiryDate))[0] || null;
+
+    return {
+      ...product,
+      quantity: resolvedQuantity,
+      batches: finalBatches,
+      batchCount: finalBatches.length,
+      totalBatchQuantity: resolvedQuantity,
+      nearestExpiryDate: nearestBatch?.expiryDate || product.expiryDate || null,
+      nearestBatchNumber: nearestBatch?.batchNumber || product.batchNumber || null,
+      nearestBatchSupplier: nearestBatch?.supplier || product.supplier || null,
+    };
+  });
+};
+
+const OWNER_enrichProductWithExpiration = (product) => {
+  const referenceExpiryDate = product.nearestExpiryDate || product.expiryDate;
+  const expectedRemaining = Number.isFinite(Number(product.expectedRemaining))
+    ? Number(product.expectedRemaining)
+    : Number(product.quantity ?? 0);
+
+  const physicalCount = Number.isFinite(Number(product.physicalCount))
+    ? Number(product.physicalCount)
+    : expectedRemaining;
+
+  const variance = Number.isFinite(Number(product.variance))
+    ? Number(product.variance)
+    : physicalCount - expectedRemaining;
+
+  const discrepancyStatus = variance === 0 ? "Balanced" : "With Variance";
+
+  return {
+    ...product,
+    expiryDate: referenceExpiryDate || null,
+    batchNumber: product.nearestBatchNumber || product.batchNumber || null,
+    supplier: product.nearestBatchSupplier || product.supplier || null,
+    expirationStatus: getExpirationStatus(referenceExpiryDate),
+    daysUntilExpiry: getDaysUntilExpiry(referenceExpiryDate),
+    expectedRemaining,
+    physicalCount,
+    variance,
+    discrepancyStatus,
+  };
+};
+
+const OWNER_syncDiscrepancyFromQuantity = (productLike) => {
+  const expectedRemaining = Number(productLike.quantity ?? 0);
+  const physicalCount = Number.isFinite(Number(productLike.physicalCount))
+    ? Number(productLike.physicalCount)
+    : expectedRemaining;
+  const variance = physicalCount - expectedRemaining;
+  const discrepancyStatus = variance === 0 ? "Balanced" : "With Variance";
+
+  productLike.expectedRemaining = expectedRemaining;
+  productLike.physicalCount = physicalCount;
+  productLike.variance = variance;
+  productLike.discrepancyStatus = discrepancyStatus;
+};
+
 export const OWNER_getActiveInventory = async (req, res) => {
   try {
-    const products = await Product.find({ isArchived: { $ne: true } })
+    const { expirationFilter } = req.query;
+    
+    const filter = { isArchived: { $ne: true } };
+
+    // Expiration filters
+    if (expirationFilter) {
+      const now = new Date();
+      if (expirationFilter === "expiring_week") {
+        const weekFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+        filter.expiryDate = { $ne: null, $lte: weekFromNow, $gte: now };
+      } else if (expirationFilter === "expiring_month") {
+        const monthFromNow = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+        filter.expiryDate = { $ne: null, $lte: monthFromNow, $gte: now };
+      } else if (expirationFilter === "out_of_stock") {
+        filter.status = "out";
+      }
+    }
+
+    const products = await Product.find(filter)
       .sort({ name: 1 })
       .lean();
 
+    const productsWithBatches = await OWNER_attachBatchDataToProducts(products);
+    const enrichedProducts = productsWithBatches.map(OWNER_enrichProductWithExpiration);
+
     return res.status(200).json({
       message: "Active inventory fetched successfully",
-      count: products.length,
-      data: products,
+      count: enrichedProducts.length,
+      data: enrichedProducts,
     });
   } catch (error) {
     return res.status(500).json({ message: error.message });
@@ -74,10 +213,26 @@ export const OWNER_addProduct = async (req, res) => {
       batchNumber: batchNumber ? String(batchNumber).trim() : null,
       description: description ? String(description).trim() : "",
       supplier: supplier ? String(supplier).trim() : null,
+      physicalCount: parsedQuantity,
+      expectedRemaining: parsedQuantity,
+      variance: 0,
+      discrepancyStatus: "Balanced",
       isArchived: false,
       archivedAt: null,
       archivedBy: null,
     });
+
+    if (parsedQuantity > 0) {
+      await InventoryBatch.create({
+        product: product._id,
+        batchNumber: batchNumber ? String(batchNumber).trim() : OWNER_generateBatchNumber("ADD"),
+        quantity: parsedQuantity,
+        expiryDate: expiryDate || null,
+        supplier: supplier ? String(supplier).trim() : null,
+        createdBy: req.user.id,
+        notes: "Initial owner add-item stock",
+      });
+    }
 
     await ActivityLog.create({
       action: "ADD_PRODUCT",
@@ -154,7 +309,7 @@ export const OWNER_getPendingInventoryRequests = async (req, res) => {
 export const OWNER_approveInventoryRequest = async (req, res) => {
   const { requestId } = req.params;
   const ownerId = req.user?.id;
-  const { approvedQuantity } = req.body;
+  const { approvedQuantity, expirationDate, batchNumber, supplier } = req.body;
 
   if (!mongoose.Types.ObjectId.isValid(ownerId)) {
     return res.status(401).json({
@@ -196,6 +351,10 @@ export const OWNER_approveInventoryRequest = async (req, res) => {
               description: request.description || "",
               expiryDate: request.expiryDate || null,
               batchNumber: request.batchNumber || null,
+              physicalCount: finalQuantity,
+              expectedRemaining: finalQuantity,
+              variance: 0,
+              discrepancyStatus: "Balanced",
               isArchived: false,
               archivedAt: null,
               archivedBy: null,
@@ -205,6 +364,24 @@ export const OWNER_approveInventoryRequest = async (req, res) => {
         );
 
         const product = createdProduct[0];
+
+        if (finalQuantity > 0) {
+          await InventoryBatch.create(
+            [
+              {
+                product: product._id,
+                batchNumber: request.batchNumber || OWNER_generateBatchNumber("ADD"),
+                quantity: finalQuantity,
+                expiryDate: request.expiryDate || null,
+                supplier: null,
+                sourceRequest: request._id,
+                createdBy: ownerId,
+                notes: "Batch created from approved add-item request",
+              },
+            ],
+            { session }
+          );
+        }
 
         request.product = product._id;
         request.status = "approved";
@@ -275,9 +452,36 @@ export const OWNER_approveInventoryRequest = async (req, res) => {
             ? Number(approvedQuantity)
             : request.requestedQuantity;
 
+        const normalizedExpiryDate = expirationDate ? new Date(expirationDate) : null;
+        if (!(normalizedExpiryDate instanceof Date) || Number.isNaN(normalizedExpiryDate?.getTime?.())) {
+          throw new Error("INVALID_BATCH_EXPIRATION");
+        }
+
+        const normalizedBatchNumber = String(batchNumber || "").trim() || OWNER_generateBatchNumber("RST");
+        const normalizedSupplier = supplier ? String(supplier).trim() : null;
+
         const quantityBefore = product.quantity;
         product.quantity += finalQuantity;
+        OWNER_syncDiscrepancyFromQuantity(product);
         await product.save({ session });
+
+        if (finalQuantity > 0) {
+          await InventoryBatch.create(
+            [
+              {
+                product: product._id,
+                batchNumber: normalizedBatchNumber,
+                quantity: finalQuantity,
+                expiryDate: normalizedExpiryDate,
+                supplier: normalizedSupplier,
+                sourceRequest: request._id,
+                createdBy: ownerId,
+                notes: "Batch created from approved restock request",
+              },
+            ],
+            { session }
+          );
+        }
 
         request.status = "approved";
         request.reviewedBy = ownerId;
@@ -328,6 +532,9 @@ export const OWNER_approveInventoryRequest = async (req, res) => {
           quantityBefore,
           quantityAdded: finalQuantity,
           quantityAfter: product.quantity,
+          batchNumber: normalizedBatchNumber,
+          expirationDate: normalizedExpiryDate,
+          supplier: normalizedSupplier,
         };
       } else {
         throw new Error("INVALID_REQUEST_TYPE");
@@ -349,6 +556,10 @@ export const OWNER_approveInventoryRequest = async (req, res) => {
 
     if (error.message === "INVALID_REQUEST_TYPE") {
       return res.status(400).json({ message: "Invalid request type" });
+    }
+
+    if (error.message === "INVALID_BATCH_EXPIRATION") {
+      return res.status(400).json({ message: "Valid expirationDate is required for restock batch approval" });
     }
 
     return res.status(500).json({ message: error.message });
@@ -523,6 +734,7 @@ export const OWNER_adjustProductStock = async (req, res) => {
     }
 
     product.quantity = quantityAfter;
+    OWNER_syncDiscrepancyFromQuantity(product);
     await product.save();
 
     await ActivityLog.create({
@@ -645,6 +857,89 @@ export const OWNER_getAllInventoryRequests = async (req, res) => {
       message: "All inventory requests fetched successfully",
       count: requests.length,
       data: requests,
+    });
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+};
+
+export const OWNER_updateDiscrepancy = async (req, res) => {
+  const { productId } = req.params;
+  const { physicalCount } = req.body || {};
+
+  const parsedPhysicalCount = Number(physicalCount);
+  if (!Number.isFinite(parsedPhysicalCount) || parsedPhysicalCount < 0) {
+    return res.status(400).json({ message: "physicalCount must be a valid non-negative number" });
+  }
+
+  try {
+    const product = await Product.findOne({
+      _id: productId,
+      isArchived: { $ne: true },
+    });
+
+    if (!product) {
+      return res.status(404).json({ message: "Active product not found" });
+    }
+
+    const previous = {
+      expectedRemaining: Number.isFinite(Number(product.expectedRemaining))
+        ? Number(product.expectedRemaining)
+        : Number(product.quantity ?? 0),
+      physicalCount: Number.isFinite(Number(product.physicalCount))
+        ? Number(product.physicalCount)
+        : Number(product.quantity ?? 0),
+      variance: Number.isFinite(Number(product.variance))
+        ? Number(product.variance)
+        : 0,
+      status: product.discrepancyStatus || "Balanced",
+    };
+
+    product.expectedRemaining = Number(product.quantity ?? 0);
+    product.physicalCount = parsedPhysicalCount;
+    product.variance = parsedPhysicalCount - product.expectedRemaining;
+    product.discrepancyStatus = product.variance === 0 ? "Balanced" : "With Variance";
+
+    await product.save();
+
+    await ActivityLog.create({
+      action: "EDIT_DISCREPANCY",
+      actionType: "OWNER_EDIT_DISCREPANCY",
+      category: "Inventory",
+      actorId: req.user.id,
+      actorRole: "OWNER",
+      actorName: req.user.name || null,
+      actorEmail: req.user.email || null,
+      performedBy: req.user.id,
+      entityType: "Product",
+      entityId: product._id,
+      description: `Owner updated discrepancy for ${product.name}`,
+      details: {
+        itemName: product.name,
+        previousValue: previous,
+        updatedValue: {
+          expectedRemaining: product.expectedRemaining,
+          physicalCount: product.physicalCount,
+          variance: product.variance,
+          status: product.discrepancyStatus,
+        },
+        notes: "Owner directly edited discrepancy values",
+      },
+    });
+
+    return res.status(200).json({
+      message: "Discrepancy updated successfully",
+      data: {
+        productId: product._id,
+        itemName: product.name,
+        previousValue: previous,
+        updatedValue: {
+          expectedRemaining: product.expectedRemaining,
+          physicalCount: product.physicalCount,
+          variance: product.variance,
+          status: product.discrepancyStatus,
+        },
+      },
     });
   } catch (error) {
     return res.status(500).json({ message: error.message });

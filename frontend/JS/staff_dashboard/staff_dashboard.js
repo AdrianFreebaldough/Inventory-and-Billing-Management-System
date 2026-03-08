@@ -1,4 +1,5 @@
 import { apiFetch } from "../utils/apiClient.js";
+import { NotificationWidget } from "../components/notificationWidget.js";
 
 /* ════════════════════════════════════════════════════════════════
    API endpoints
@@ -132,6 +133,12 @@ function getStaffDisplayInfo() {
    Main init
    ════════════════════════════════════════════════════════════════ */
 document.addEventListener("DOMContentLoaded", () => {
+  const auth = window.IBMSAuth;
+  if (auth) {
+    auth.protectPage({ requiredRole: "staff" });
+    if (!auth.isSessionValid("staff")) return;
+  }
+
   const BILLING_MODE_RETURN_KEY = "lastStaffRoute";
   const STAFF_CURRENT_ROUTE_KEY = "staffCurrentRoute";
 
@@ -139,6 +146,9 @@ document.addEventListener("DOMContentLoaded", () => {
   const navDashboard     = document.getElementById("navDashboard");
   const navBilling       = document.getElementById("navBilling");
   const navInventory     = document.getElementById("navInventory");
+  const navStockRequest  = document.getElementById("navStockRequest");
+  const navExpenses      = document.getElementById("navExpenses");
+  const navActivityLog   = document.getElementById("navActivityLog");
   const staffNameEl      = document.getElementById("staffName");
   const staffUsernameEl  = document.getElementById("staffUsername");
   const staffAvatarEl    = document.getElementById("staffAvatar");
@@ -215,19 +225,19 @@ document.addEventListener("DOMContentLoaded", () => {
         </div>
 
         <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+          <div class="h-[140px] rounded-xl border border-gray-200 bg-white p-5 shadow-sm flex flex-col justify-between">
             <p class="text-xs font-medium text-gray-500">Today's Revenue</p>
             <p id="revenueToday" class="mt-2 text-4xl font-bold tracking-tight text-gray-900 animate-pulse bg-gray-100 rounded h-10 w-32"></p>
           </div>
-          <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+          <div class="h-[140px] rounded-xl border border-gray-200 bg-white p-5 shadow-sm flex flex-col justify-between">
             <p class="text-xs font-medium text-gray-500">Today's Transactions</p>
             <p id="transactionsToday" class="mt-2 text-4xl font-bold tracking-tight text-gray-900 animate-pulse bg-gray-100 rounded h-10 w-16"></p>
           </div>
-          <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+          <div class="h-[140px] rounded-xl border border-gray-200 bg-white p-5 shadow-sm flex flex-col justify-between">
             <p class="text-xs font-medium text-gray-500">Items Issued Today</p>
             <p id="itemsIssuedToday" class="mt-2 text-4xl font-bold tracking-tight text-gray-900 animate-pulse bg-gray-100 rounded h-10 w-16"></p>
           </div>
-          <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+          <div class="h-[140px] rounded-xl border border-gray-200 bg-white p-5 shadow-sm flex flex-col justify-between">
             <p class="text-xs font-medium text-gray-500">Pending Restock Requests</p>
             <p id="pendingRestock" class="mt-2 text-4xl font-bold tracking-tight text-gray-900 animate-pulse bg-gray-100 rounded h-10 w-12"></p>
           </div>
@@ -235,29 +245,29 @@ document.addEventListener("DOMContentLoaded", () => {
 
         <div class="grid grid-cols-1 items-start gap-6 xl:grid-cols-2">
           <div class="space-y-6">
-            <section class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+            <section class="h-[400px] rounded-xl border border-gray-200 bg-white p-5 shadow-sm flex flex-col">
               <div class="mb-4">
                 <h2 class="text-2xl font-semibold text-gray-900">Recent Transactions</h2>
                 <p class="mt-1 text-xs text-gray-500">Recent sales activity</p>
               </div>
-              <div id="recentTransactions" class="divide-y divide-gray-200">
+              <div id="recentTransactions" class="flex-1 overflow-y-auto divide-y divide-gray-200">
                 <p class="py-3 text-sm text-gray-400 animate-pulse">Loading…</p>
               </div>
             </section>
 
-            <section class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+            <section class="h-[400px] rounded-xl border border-gray-200 bg-white p-5 shadow-sm flex flex-col">
               <div class="mb-4">
                 <h2 class="text-2xl font-semibold text-gray-900">Top Items Today</h2>
                 <p class="mt-1 text-xs text-gray-500">Best performing products</p>
               </div>
-              <div id="topItemsToday" class="divide-y divide-gray-200">
+              <div id="topItemsToday" class="flex-1 overflow-y-auto divide-y divide-gray-200">
                 <p class="py-3 text-sm text-gray-400 animate-pulse">Loading…</p>
               </div>
             </section>
           </div>
 
           <div class="space-y-6">
-            <section class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+            <section class="h-[400px] rounded-xl border border-gray-200 bg-white p-5 shadow-sm flex flex-col">
               <div class="mb-4">
                 <h2 class="text-2xl font-semibold text-gray-900">Inventory Alerts</h2>
                 <p class="mt-1 text-xs text-gray-500">Items requiring attention</p>
@@ -269,17 +279,17 @@ document.addEventListener("DOMContentLoaded", () => {
                 <button type="button" data-inv-filter="out" class="inventory-tab border-b-2 border-transparent pb-1 hover:text-gray-700">Out of Stock</button>
               </div>
 
-              <div id="inventoryAlerts" class="divide-y divide-gray-200">
+              <div id="inventoryAlerts" class="flex-1 overflow-y-auto divide-y divide-gray-200">
                 <p class="py-3 text-sm text-gray-400 animate-pulse">Loading…</p>
               </div>
             </section>
 
-            <section class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+            <section class="h-[400px] rounded-xl border border-gray-200 bg-white p-5 shadow-sm flex flex-col">
               <div class="mb-4">
                 <h2 class="text-2xl font-semibold text-gray-900">Recent Item Usage</h2>
                 <p class="mt-1 text-xs text-gray-500">Items dispensed today</p>
               </div>
-              <div id="recentItemUsage" class="divide-y divide-gray-200">
+              <div id="recentItemUsage" class="flex-1 overflow-y-auto divide-y divide-gray-200">
                 <p class="py-3 text-sm text-gray-400 animate-pulse">Loading…</p>
               </div>
             </section>
@@ -493,7 +503,7 @@ document.addEventListener("DOMContentLoaded", () => {
       mainContent.innerHTML = await res.text();
       await new Promise(r => setTimeout(r, 50));
 
-      const module = await import("../../JS/user_Profile/user_Profile.js");
+      const module = await import("../../js/user_Profile/user_Profile.js");
       if (typeof module.initProfile !== "function") {
         throw new Error("initProfile() missing from user profile module");
       }
@@ -506,6 +516,60 @@ document.addEventListener("DOMContentLoaded", () => {
         </div>
       `;
     }
+  }
+
+  function loadRequestStock() {
+    stopAutoRefresh();
+    setCurrentStaffRoute("stock-request");
+    if (navStockRequest) setActive(navStockRequest);
+
+    mainContent.innerHTML = `
+      <div class="mx-auto max-w-7xl">
+        <div class="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+          <iframe
+            title="Request Stock"
+            src="../../HTML/STAFF_StockRequest/STAFF_StockRequest.html"
+            class="h-[calc(100vh-220px)] min-h-[560px] w-full border-0"
+          ></iframe>
+        </div>
+      </div>
+    `;
+  }
+
+  function loadExpenses() {
+    stopAutoRefresh();
+    setCurrentStaffRoute("expenses");
+    if (navExpenses) setActive(navExpenses);
+
+    mainContent.innerHTML = `
+      <div class="mx-auto max-w-7xl">
+        <div class="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+          <iframe
+            title="My Expenses"
+            src="../../HTML/STAFF_Expenses/STAFF_Expenses.html"
+            class="h-[calc(100vh-220px)] min-h-[560px] w-full border-0"
+          ></iframe>
+        </div>
+      </div>
+    `;
+  }
+
+  function loadActivityLog() {
+    stopAutoRefresh();
+    setCurrentStaffRoute("activity-log");
+    if (navActivityLog) setActive(navActivityLog);
+
+    mainContent.innerHTML = `
+      <div class="mx-auto max-w-7xl">
+        <div class="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+          <iframe
+            title="Activity Log"
+            src="../../HTML/STAFF_ActivityLog/STAFF_ActivityLog.html"
+            class="h-[calc(100vh-220px)] min-h-[560px] w-full border-0"
+          ></iframe>
+        </div>
+      </div>
+    `;
   }
 
   /* ─────────────────────────────────────────────
@@ -526,6 +590,21 @@ document.addEventListener("DOMContentLoaded", () => {
     loadInventory();
   });
 
+  navStockRequest?.addEventListener("click", e => {
+    e.preventDefault();
+    loadRequestStock();
+  });
+
+  navExpenses?.addEventListener("click", e => {
+    e.preventDefault();
+    loadExpenses();
+  });
+
+  navActivityLog?.addEventListener("click", e => {
+    e.preventDefault();
+    loadActivityLog();
+  });
+
   menuPosHeaderBtn?.addEventListener("click", e => {
     e.preventDefault();
     if (currentRole !== "staff") return;
@@ -538,21 +617,60 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   /* ─────────────────────────────────────────────
+     Logout functionality
+     ───────────────────────────────────────────── */
+  const logoutBtn = document.getElementById("logoutBtn");
+  if (auth) {
+    auth.bindLogoutButton(logoutBtn, {
+      redirectTo: "../../HTML/loginPage/loginPage.html",
+      replace: true,
+      confirmBeforeLogout: true,
+      confirmTitle: "Confirm Logout",
+      confirmMessage: "Are you sure you want to log out?",
+      confirmButtonText: "Logout",
+      cancelButtonText: "Cancel",
+    });
+  }
+
+  /* ─────────────────────────────────────────────
      Initial route resolution
      ───────────────────────────────────────────── */
   const hashRoute  = window.location.hash.replace("#", "").toLowerCase();
   const storedRoute = (sessionStorage.getItem(STAFF_CURRENT_ROUTE_KEY) || "").toLowerCase();
-  const initialRoute = ["dashboard", "inventory", "profile"].includes(hashRoute)
+  const initialRoute = ["dashboard", "inventory", "profile", "stock-request", "expenses", "activity-log"].includes(hashRoute)
     ? hashRoute
-    : ["dashboard", "inventory", "profile"].includes(storedRoute)
+    : ["dashboard", "inventory", "profile", "stock-request", "expenses", "activity-log"].includes(storedRoute)
       ? storedRoute
       : "dashboard";
 
   if (initialRoute === "inventory") {
     loadInventory();
+  } else if (initialRoute === "stock-request") {
+    loadRequestStock();
+  } else if (initialRoute === "expenses") {
+    loadExpenses();
+  } else if (initialRoute === "activity-log") {
+    loadActivityLog();
   } else if (initialRoute === "profile") {
     loadUserProfile();
   } else {
     loadDashboard();
   }
+
+  // Initialize notification widget
+  const notifToken = ["token", "authToken", "jwtToken", "ibmsToken"]
+    .map(k => localStorage.getItem(k))
+    .find(v => v && v.trim()) || "";
+  if (notifToken) {
+    const notificationWidget = new NotificationWidget("http://localhost:3000/api", notifToken);
+    window.notificationWidget = notificationWidget;
+    notificationWidget.init();
+  }
+
+  // Expose navigation functions globally for notification widget
+  window.loadInventory = loadInventory;
+  window.loadRequestStock = loadRequestStock;
+  window.loadExpenses = loadExpenses;
+  window.loadActivityLog = loadActivityLog;
+  window.loadDashboard = loadDashboard;
 });

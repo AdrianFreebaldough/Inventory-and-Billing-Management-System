@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+	<title>Staff - Expenses</title>
+	<script src="https://cdn.tailwindcss.com"></script>
+	<script src="../../JS/utils/authSession.js"></script>
+	<script>
+		window.IBMSAuth?.protectPage({ requiredRole: "staff" });
+	</script>
+</head>
+<body class="bg-slate-100">
+	<div class="container mx-auto p-6">
+		<!-- Submit Expense Form -->
+		<div class="bg-white rounded-lg shadow-md p-6 mb-6">
+			<h2 class="text-lg font-semibold mb-4">Submit New Expense</h2>
+			<form id="expenseForm" class="space-y-4">
+				<div>
+					<label class="block text-sm font-medium mb-2">Expense Title*</label>
+					<input type="text" id="expenseTitle" required class="w-full border border-slate-300 rounded px-3 py-2" placeholder="e.g., Office Supplies" />
+				</div>
+
+				<div>
+					<label class="block text-sm font-medium mb-2">Category*</label>
+					<select id="expenseCategory" required class="w-full border border-slate-300 rounded px-3 py-2">
+						<option value="">Select Category</option>
+						<option value="Meals">Meals</option>
+						<option value="Supplies">Supplies</option>
+						<option value="Transportation">Transportation</option>
+						<option value="Others">Others</option>
+					</select>
+				</div>
+
+				<div>
+					<label class="block text-sm font-medium mb-2">Amount (₱)*</label>
+					<input type="number" id="expenseAmount" required step="0.01" min="0" class="w-full border border-slate-300 rounded px-3 py-2" placeholder="0.00" />
+				</div>
+
+				<div>
+					<label class="block text-sm font-medium mb-2">Date*</label>
+					<input type="date" id="expenseDate" required class="w-full border border-slate-300 rounded px-3 py-2" />
+				</div>
+
+				<div>
+					<label class="block text-sm font-medium mb-2">Description</label>
+					<textarea id="expenseDescription" rows="3" class="w-full border border-slate-300 rounded px-3 py-2" placeholder="Additional details about the expense"></textarea>
+				</div>
+
+				<div>
+					<label class="block text-sm font-medium mb-2">Receipt Image (Optional)</label>
+					<input type="file" id="receiptImage" accept="image/*" class="w-full border border-slate-300 rounded px-3 py-2" />
+				</div>
+
+				<button type="submit" class="bg-blue-600 text-white px-6 py-2 rounded hover:bg-blue-700">
+					Submit Expense
+				</button>
+			</form>
+		</div>
+
+		<!-- Expense History -->
+		<div class="bg-white rounded-lg shadow-md p-6">
+			<h2 class="text-lg font-semibold mb-4">My Expense History</h2>
+			<div class="overflow-x-auto">
+				<table class="w-full text-sm">
+					<thead class="bg-slate-100">
+						<tr>
+							<th class="px-4 py-2 text-left">Date</th>
+							<th class="px-4 py-2 text-left">Title</th>
+							<th class="px-4 py-2 text-left">Category</th>
+							<th class="px-4 py-2 text-right">Amount</th>
+							<th class="px-4 py-2 text-center">Status</th>
+						</tr>
+					</thead>
+					<tbody id="expenseHistory">
+						<tr>
+							<td colspan="5" class="text-center py-4 text-slate-500">Loading expenses...</td>
+						</tr>
+					</tbody>
+				</table>
+			</div>
+		</div>
+	</div>
+
+	<script>
+		const API_BASE = 'http://localhost:3000/api';
+		const TOKEN_KEYS = ['token', 'authToken', 'jwtToken', 'ibmsToken'];
+		const token = TOKEN_KEYS.map(k => localStorage.getItem(k)).find(v => v && v.trim()) || '';
+
+		// Set default date to today
+		document.getElementById('expenseDate').valueAsDate = new Date();
+
+		// Submit expense form
+		document.getElementById('expenseForm').addEventListener('submit', async (e) => {
+			e.preventDefault();
+
+			const formData = {
+				title: document.getElementById('expenseTitle').value,
+				category: document.getElementById('expenseCategory').value,
+				amount: parseFloat(document.getElementById('expenseAmount').value),
+				date: document.getElementById('expenseDate').value,
+				description: document.getElementById('expenseDescription').value,
+			};
+
+			// Handle receipt image if uploaded
+			const receiptFile = document.getElementById('receiptImage').files[0];
+			if (receiptFile) {
+				// In production, upload to image service and get URL
+				// For demo, we'll skip this
+				formData.receiptImage = null;
+			}
+
+			try {
+				const response = await fetch(`${API_BASE}/staff/expenses`, {
+					method: 'POST',
+					headers: {
+						'Content-Type': 'application/json',
+						'Authorization': `Bearer ${token}`
+					},
+					body: JSON.stringify(formData)
+				});
+
+				const result = await response.json();
+
+				if (response.ok) {
+					alert('Expense submitted successfully!');
+					e.target.reset();
+					document.getElementById('expenseDate').valueAsDate = new Date();
+					loadExpenses();
+				} else {
+					alert(`Error: ${result.message}`);
+				}
+			} catch (error) {
+				alert(`Error: ${error.message}`);
+			}
+		});
+
+		// Load expense history
+		async function loadExpenses() {
+			try {
+				const response = await fetch(`${API_BASE}/staff/expenses`, {
+					headers: {
+						'Authorization': `Bearer ${token}`
+					}
+				});
+
+				const result = await response.json();
+
+				if (response.ok) {
+					const tbody = document.getElementById('expenseHistory');
+					
+					if (result.data.length === 0) {
+						tbody.innerHTML = '<tr><td colspan="5" class="text-center py-4 text-slate-500">No expenses yet</td></tr>';
+						return;
+					}
+
+					tbody.innerHTML = result.data.map(expense => {
+						const statusColor = {
+							'Pending': 'bg-yellow-100 text-yellow-800',
+							'Reviewed': 'bg-blue-100 text-blue-800',
+							'Approved': 'bg-green-100 text-green-800'
+						}[expense.status] || 'bg-slate-100 text-slate-800';
+
+						return `
+							<tr class="border-b hover:bg-slate-50">
+								<td class="px-4 py-2">${new Date(expense.date).toLocaleDateString()}</td>
+								<td class="px-4 py-2">${expense.title}</td>
+								<td class="px-4 py-2">${expense.category}</td>
+								<td class="px-4 py-2 text-right">₱${expense.amount.toFixed(2)}</td>
+								<td class="px-4 py-2 text-center">
+									<span class="px-2 py-1 rounded text-xs font-medium ${statusColor}">
+										${expense.status}
+									</span>
+								</td>
+							</tr>
+						`;
+					}).join('');
+				}
+			} catch (error) {
+				console.error('Error loading expenses:', error);
+			}
+		}
+
+		// Load expenses on page load
+		loadExpenses();
+	</script>
+</body>
+</html>

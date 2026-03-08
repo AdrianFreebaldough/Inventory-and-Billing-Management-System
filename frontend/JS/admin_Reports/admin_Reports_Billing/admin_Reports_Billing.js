@@ -13,6 +13,13 @@ const State = {
 const DOM = {};
 
 export function initReports() {
+    const auth = window.IBMSAuth;
+    if (auth && !auth.isSessionValid("owner")) {
+        auth.clearAuthData();
+        auth.redirectToLogin(true);
+        return;
+    }
+
     cacheDOM();
     if (typeof Chart === 'undefined') return;
     initializeView();

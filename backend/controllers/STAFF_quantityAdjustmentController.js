@@ -98,6 +98,7 @@ export const OWNER_getQuantityAdjustments = async (req, res) => {
 
     const adjustments = await STAFF_QuantityAdjustment.find(filter)
       .sort({ createdAt: -1 })
+      .populate("productId", "category")
       .populate("staffId", "name email")
       .populate("reviewedBy", "name email")
       .lean();
@@ -145,7 +146,7 @@ export const OWNER_reviewQuantityAdjustment = async (req, res) => {
         // Create stock log
         await createStockLog({
           productId: product._id,
-          movementType: "ADJUSTMENT",
+          movementType: "ADJUST",
           quantityChange: adjustment.difference,
           performedBy: {
             userId: req.user.id,

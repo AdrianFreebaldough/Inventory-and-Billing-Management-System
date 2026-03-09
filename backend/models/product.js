@@ -49,6 +49,36 @@ const productSchema = new mongoose.Schema(
       default: "",
     },
 
+    genericName: {
+      type: String,
+      trim: true,
+      default: null,
+    },
+
+    brandName: {
+      type: String,
+      trim: true,
+      default: null,
+    },
+
+    dosageForm: {
+      type: String,
+      trim: true,
+      default: null,
+    },
+
+    strength: {
+      type: String,
+      trim: true,
+      default: null,
+    },
+
+    medicineName: {
+      type: String,
+      trim: true,
+      default: null,
+    },
+
     expiryDate: {
       type: Date,
       default: null,

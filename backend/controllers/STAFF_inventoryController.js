@@ -23,6 +23,15 @@ const STAFF_toBoolean = (value) => {
   return value === true || value === "true" || value === 1 || value === "1";
 };
 
+const STAFF_pickFirstNonEmpty = (...values) => {
+  for (const value of values) {
+    if (value === null || value === undefined) continue;
+    const asString = String(value).trim();
+    if (asString) return value;
+  }
+  return null;
+};
+
 /**
  * Map internal DB status to canonical API status vocabulary.
  * DB: "available" | "low" | "out"
@@ -78,7 +87,7 @@ const STAFF_attachBatchDataToItems = async (items) => {
     const fallbackLegacyBatch = availableBatches.length === 0 ? STAFF_buildLegacyBatch(item) : null;
     const finalBatches = fallbackLegacyBatch ? [fallbackLegacyBatch] : availableBatches;
     const totalBatchQuantity = finalBatches.reduce((sum, batch) => sum + Number(batch.quantity || 0), 0);
-    const resolvedQuantity = finalBatches.length > 0 ? totalBatchQuantity : Number(item.quantity ?? 0);
+    const productQuantity = Number(item.quantity ?? 0);
 
     const nearestBatch = finalBatches
       .filter((batch) => batch.expiryDate)
@@ -86,13 +95,64 @@ const STAFF_attachBatchDataToItems = async (items) => {
 
     return {
       ...item,
-      quantity: resolvedQuantity,
+      productQuantity,
       batches: finalBatches,
       batchCount: finalBatches.length,
-      totalBatchQuantity: resolvedQuantity,
+      totalBatchQuantity,
       nearestExpiryDate: nearestBatch?.expiryDate || item.expiryDate || null,
       nearestBatchNumber: nearestBatch?.batchNumber || item.batchNumber || null,
       nearestBatchSupplier: nearestBatch?.supplier || item.supplier || null,
+    };
+  });
+};
+
+const STAFF_enrichMissingFieldsFromApprovedRequests = async (items) => {
+  if (!Array.isArray(items) || items.length === 0) return items;
+
+  const itemsNeedingFallback = items.filter((item) =>
+    !STAFF_pickFirstNonEmpty(
+      item.genericName,
+      item.generic,
+      item.dosageForm,
+      item.dosage,
+      item.strength,
+      item.supplier,
+      item.supplierName
+    )
+  );
+
+  if (!itemsNeedingFallback.length) return items;
+
+  const productIds = itemsNeedingFallback.map((item) => item._id);
+  const approvedAddItemRequests = await InventoryRequest.find({
+    requestType: "ADD_ITEM",
+    status: "approved",
+    product: { $in: productIds },
+  })
+    .sort({ reviewedAt: -1, createdAt: -1 })
+    .select("product genericName brandName dosageForm strength medicineName supplier")
+    .lean();
+
+  const requestByProductId = new Map();
+  for (const request of approvedAddItemRequests) {
+    const key = String(request.product);
+    if (!requestByProductId.has(key)) {
+      requestByProductId.set(key, request);
+    }
+  }
+
+  return items.map((item) => {
+    const fallback = requestByProductId.get(String(item._id));
+    if (!fallback) return item;
+
+    return {
+      ...item,
+      genericName: STAFF_pickFirstNonEmpty(item.genericName, item.generic, fallback.genericName),
+      brandName: STAFF_pickFirstNonEmpty(item.brandName, item.brand, fallback.brandName),
+      dosageForm: STAFF_pickFirstNonEmpty(item.dosageForm, item.dosage, fallback.dosageForm),
+      strength: STAFF_pickFirstNonEmpty(item.strength, fallback.strength),
+      medicineName: STAFF_pickFirstNonEmpty(item.medicineName, fallback.medicineName, item.name),
+      supplier: STAFF_pickFirstNonEmpty(item.supplier, item.supplierName, fallback.supplier),
     };
   });
 };
@@ -110,11 +170,12 @@ const STAFF_buildItemPayload = (item) => {
     itemName: item.name,
     category: item.category,
     stockStatus: STAFF_mapStockStatus(item.status),
-    currentQuantity: item.quantity,
+    currentQuantity: Number(item.productQuantity ?? item.quantity ?? 0),
+    batchQuantity: Number(item.totalBatchQuantity ?? 0),
     unit: item.unit || "pcs",
     unitPrice: item.unitPrice ?? 0,
     minStock: item.minStock ?? 10,
-    supplier: item.nearestBatchSupplier || item.supplier || null,
+    supplier: STAFF_pickFirstNonEmpty(item.nearestBatchSupplier, item.supplier, item.supplierName),
     description: item.description || "",
     expiryDate: referenceExpiryDate || null,
     batchNumber: item.nearestBatchNumber || item.batchNumber || null,
@@ -129,6 +190,11 @@ const STAFF_buildItemPayload = (item) => {
       isLegacy: !!batch.isLegacy,
     })) : [],
     isArchived: !!item.isArchived,
+    genericName: STAFF_pickFirstNonEmpty(item.genericName, item.generic),
+    brandName: STAFF_pickFirstNonEmpty(item.brandName, item.brand),
+    dosageForm: STAFF_pickFirstNonEmpty(item.dosageForm, item.dosage),
+    strength: STAFF_pickFirstNonEmpty(item.strength),
+    medicineName: STAFF_pickFirstNonEmpty(item.medicineName, item.name),
     expirationStatus,
     daysUntilExpiry,
   };
@@ -192,11 +258,12 @@ export const STAFF_getInventory = async (req, res) => {
 
     const items = await Product.find(filter)
       .sort({ name: 1 })
-      .select("name category status quantity unit unitPrice minStock supplier description expiryDate batchNumber isArchived createdAt")
+      .select("name category status quantity unit unitPrice minStock supplier description expiryDate batchNumber isArchived createdAt genericName brandName dosageForm strength medicineName")
       .lean();
 
     const itemsWithBatches = await STAFF_attachBatchDataToItems(items);
-    const data = itemsWithBatches.map(STAFF_buildItemPayload);
+    const enrichedItems = await STAFF_enrichMissingFieldsFromApprovedRequests(itemsWithBatches);
+    const data = enrichedItems.map(STAFF_buildItemPayload);
 
     /* ---- Optionally include pending ADD_ITEM requests as virtual items ---- */
     if (includePending && !includeArchived) {
@@ -250,7 +317,7 @@ export const STAFF_getInventoryItemDetails = async (req, res) => {
     const { itemId } = req.params;
 
     const item = await Product.findById(itemId)
-      .select("name category status quantity unit unitPrice minStock supplier description expiryDate batchNumber isArchived createdAt")
+      .select("name category status quantity unit unitPrice minStock supplier description expiryDate batchNumber isArchived createdAt genericName brandName dosageForm strength medicineName")
       .lean();
 
     if (!item) {
@@ -258,9 +325,10 @@ export const STAFF_getInventoryItemDetails = async (req, res) => {
     }
 
     const [itemWithBatches] = await STAFF_attachBatchDataToItems([item]);
+    const [enrichedItem] = await STAFF_enrichMissingFieldsFromApprovedRequests([itemWithBatches]);
 
     return res.status(200).json({
-      data: STAFF_buildItemPayload(itemWithBatches),
+      data: STAFF_buildItemPayload(enrichedItem),
     });
   } catch (error) {
     return res.status(500).json({ message: error.message });
@@ -271,7 +339,7 @@ export const STAFF_getInventoryItemDetails = async (req, res) => {
 
 export const STAFF_createAddItemRequest = async (req, res) => {
   try {
-    const { itemName, category, initialQuantity, unitPrice, unit, minStock, description, expiryDate, batchNumber } = req.body;
+    const { itemName, category, initialQuantity, unitPrice, unit, minStock, description, expiryDate, batchNumber, genericName, brandName, dosageForm, strength, medicineName, supplier } = req.body;
 
     const parsedQuantity = STAFF_parsePositiveNumber(initialQuantity);
     const parsedUnitPrice = Number(unitPrice ?? 0);
@@ -306,6 +374,12 @@ export const STAFF_createAddItemRequest = async (req, res) => {
       description: description ? String(description).trim() : "",
       expiryDate: expiryDate ? new Date(expiryDate) : null,
       batchNumber: batchNumber ? String(batchNumber).trim() : null,
+      genericName: genericName ? String(genericName).trim() : null,
+      brandName: brandName ? String(brandName).trim() : null,
+      dosageForm: dosageForm ? String(dosageForm).trim() : null,
+      strength: strength ? String(strength).trim() : null,
+      medicineName: medicineName ? String(medicineName).trim() : null,
+      supplier: supplier ? String(supplier).trim() : null,
       status: "pending",
     });
 

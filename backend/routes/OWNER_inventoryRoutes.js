@@ -2,6 +2,7 @@ import express from "express";
 import { protect, authorizeRoles } from "../middleware/AuthMiddlewareUser.js";
 import {
   OWNER_getActiveInventory,
+  OWNER_getInventoryItemDetails,
   OWNER_getArchivedInventory,
   OWNER_addProduct,
   OWNER_getPendingInventoryRequests,
@@ -22,6 +23,7 @@ OWNER_router.use(protect, authorizeRoles("owner"));
 /* 📦 INVENTORY */
 OWNER_router.get("/", OWNER_getActiveInventory);
 OWNER_router.get("/archived", OWNER_getArchivedInventory);
+OWNER_router.get("/items/:itemId", OWNER_getInventoryItemDetails);
 OWNER_router.post("/", OWNER_addProduct);
 
 /* 📨 STAFF REQUESTS */

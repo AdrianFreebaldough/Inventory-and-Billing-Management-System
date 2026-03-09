@@ -21,6 +21,15 @@ const OWNER_generateBatchNumber = (prefix = "BATCH") => {
   return `${prefix}-${datePart}-${randomPart}`;
 };
 
+const OWNER_pickFirstNonEmpty = (...values) => {
+  for (const value of values) {
+    if (value === null || value === undefined) continue;
+    const asString = String(value).trim();
+    if (asString) return value;
+  }
+  return null;
+};
+
 const OWNER_buildLegacyBatch = (product) => {
   if (!product || Number(product.quantity ?? 0) <= 0) {
     return null;
@@ -68,7 +77,7 @@ const OWNER_attachBatchDataToProducts = async (products) => {
     const fallbackLegacyBatch = availableBatches.length === 0 ? OWNER_buildLegacyBatch(product) : null;
     const finalBatches = fallbackLegacyBatch ? [fallbackLegacyBatch] : availableBatches;
     const totalBatchQuantity = finalBatches.reduce((sum, batch) => sum + Number(batch.quantity || 0), 0);
-    const resolvedQuantity = finalBatches.length > 0 ? totalBatchQuantity : Number(product.quantity ?? 0);
+    const productQuantity = Number(product.quantity ?? 0);
 
     const nearestBatch = finalBatches
       .filter((batch) => batch.expiryDate)
@@ -76,13 +85,64 @@ const OWNER_attachBatchDataToProducts = async (products) => {
 
     return {
       ...product,
-      quantity: resolvedQuantity,
+      productQuantity,
       batches: finalBatches,
       batchCount: finalBatches.length,
-      totalBatchQuantity: resolvedQuantity,
+      totalBatchQuantity,
       nearestExpiryDate: nearestBatch?.expiryDate || product.expiryDate || null,
       nearestBatchNumber: nearestBatch?.batchNumber || product.batchNumber || null,
       nearestBatchSupplier: nearestBatch?.supplier || product.supplier || null,
+    };
+  });
+};
+
+const OWNER_enrichMissingFieldsFromApprovedRequests = async (products) => {
+  if (!Array.isArray(products) || products.length === 0) return products;
+
+  const productsNeedingFallback = products.filter((product) =>
+    !OWNER_pickFirstNonEmpty(
+      product.genericName,
+      product.generic,
+      product.dosageForm,
+      product.dosage,
+      product.strength,
+      product.supplier,
+      product.supplierName
+    )
+  );
+
+  if (!productsNeedingFallback.length) return products;
+
+  const productIds = productsNeedingFallback.map((product) => product._id);
+  const approvedAddItemRequests = await InventoryRequest.find({
+    requestType: "ADD_ITEM",
+    status: "approved",
+    product: { $in: productIds },
+  })
+    .sort({ reviewedAt: -1, createdAt: -1 })
+    .select("product genericName brandName dosageForm strength medicineName supplier")
+    .lean();
+
+  const requestByProductId = new Map();
+  for (const request of approvedAddItemRequests) {
+    const key = String(request.product);
+    if (!requestByProductId.has(key)) {
+      requestByProductId.set(key, request);
+    }
+  }
+
+  return products.map((product) => {
+    const fallback = requestByProductId.get(String(product._id));
+    if (!fallback) return product;
+
+    return {
+      ...product,
+      genericName: OWNER_pickFirstNonEmpty(product.genericName, product.generic, fallback.genericName),
+      brandName: OWNER_pickFirstNonEmpty(product.brandName, product.brand, fallback.brandName),
+      dosageForm: OWNER_pickFirstNonEmpty(product.dosageForm, product.dosage, fallback.dosageForm),
+      strength: OWNER_pickFirstNonEmpty(product.strength, fallback.strength),
+      medicineName: OWNER_pickFirstNonEmpty(product.medicineName, fallback.medicineName, product.name),
+      supplier: OWNER_pickFirstNonEmpty(product.supplier, product.supplierName, fallback.supplier),
     };
   });
 };
@@ -91,7 +151,7 @@ const OWNER_enrichProductWithExpiration = (product) => {
   const referenceExpiryDate = product.nearestExpiryDate || product.expiryDate;
   const expectedRemaining = Number.isFinite(Number(product.expectedRemaining))
     ? Number(product.expectedRemaining)
-    : Number(product.quantity ?? 0);
+    : Number(product.productQuantity ?? product.quantity ?? 0);
 
   const physicalCount = Number.isFinite(Number(product.physicalCount))
     ? Number(product.physicalCount)
@@ -105,9 +165,16 @@ const OWNER_enrichProductWithExpiration = (product) => {
 
   return {
     ...product,
+    quantity: Number(product.productQuantity ?? product.quantity ?? 0),
+    batchQuantity: Number(product.totalBatchQuantity ?? 0),
     expiryDate: referenceExpiryDate || null,
     batchNumber: product.nearestBatchNumber || product.batchNumber || null,
-    supplier: product.nearestBatchSupplier || product.supplier || null,
+    supplier: OWNER_pickFirstNonEmpty(product.nearestBatchSupplier, product.supplier, product.supplierName),
+    genericName: OWNER_pickFirstNonEmpty(product.genericName, product.generic),
+    brandName: OWNER_pickFirstNonEmpty(product.brandName, product.brand),
+    dosageForm: OWNER_pickFirstNonEmpty(product.dosageForm, product.dosage),
+    strength: OWNER_pickFirstNonEmpty(product.strength),
+    medicineName: OWNER_pickFirstNonEmpty(product.medicineName, product.name),
     expirationStatus: getExpirationStatus(referenceExpiryDate),
     daysUntilExpiry: getDaysUntilExpiry(referenceExpiryDate),
     expectedRemaining,
@@ -156,12 +223,33 @@ export const OWNER_getActiveInventory = async (req, res) => {
       .lean();
 
     const productsWithBatches = await OWNER_attachBatchDataToProducts(products);
-    const enrichedProducts = productsWithBatches.map(OWNER_enrichProductWithExpiration);
+    const enrichedWithRequestFields = await OWNER_enrichMissingFieldsFromApprovedRequests(productsWithBatches);
+    const enrichedProducts = enrichedWithRequestFields.map(OWNER_enrichProductWithExpiration);
 
     return res.status(200).json({
       message: "Active inventory fetched successfully",
       count: enrichedProducts.length,
       data: enrichedProducts,
+    });
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+};
+
+export const OWNER_getInventoryItemDetails = async (req, res) => {
+  try {
+    const { itemId } = req.params;
+
+    const product = await Product.findById(itemId).lean();
+    if (!product) {
+      return res.status(404).json({ message: "Inventory item not found" });
+    }
+
+    const [productWithBatches] = await OWNER_attachBatchDataToProducts([product]);
+    const [enrichedProduct] = await OWNER_enrichMissingFieldsFromApprovedRequests([productWithBatches]);
+
+    return res.status(200).json({
+      data: OWNER_enrichProductWithExpiration(enrichedProduct),
     });
   } catch (error) {
     return res.status(500).json({ message: error.message });
@@ -186,7 +274,7 @@ export const OWNER_getArchivedInventory = async (req, res) => {
 
 export const OWNER_addProduct = async (req, res) => {
   try {
-    const { name, category, quantity, unit, unitPrice, minStock, expiryDate, batchNumber, description, supplier } = req.body;
+    const { name, category, quantity, unit, unitPrice, minStock, expiryDate, batchNumber, description, supplier, genericName, brandName, dosageForm, strength, medicineName } = req.body;
 
     const parsedQuantity = OWNER_parseNonNegativeNumber(quantity ?? 0);
     const parsedUnitPrice = Number(unitPrice ?? 0);
@@ -213,6 +301,11 @@ export const OWNER_addProduct = async (req, res) => {
       batchNumber: batchNumber ? String(batchNumber).trim() : null,
       description: description ? String(description).trim() : "",
       supplier: supplier ? String(supplier).trim() : null,
+      genericName: genericName ? String(genericName).trim() : null,
+      brandName: brandName ? String(brandName).trim() : null,
+      dosageForm: dosageForm ? String(dosageForm).trim() : null,
+      strength: strength ? String(strength).trim() : null,
+      medicineName: medicineName ? String(medicineName).trim() : null,
       physicalCount: parsedQuantity,
       expectedRemaining: parsedQuantity,
       variance: 0,
@@ -349,8 +442,14 @@ export const OWNER_approveInventoryRequest = async (req, res) => {
               unit: request.unit || "pcs",
               minStock: Number(request.minStock ?? 10),
               description: request.description || "",
+              supplier: request.supplier || null,
               expiryDate: request.expiryDate || null,
               batchNumber: request.batchNumber || null,
+              genericName: request.genericName || null,
+              brandName: request.brandName || null,
+              dosageForm: request.dosageForm || null,
+              strength: request.strength || null,
+              medicineName: request.medicineName || null,
               physicalCount: finalQuantity,
               expectedRemaining: finalQuantity,
               variance: 0,
@@ -373,7 +472,7 @@ export const OWNER_approveInventoryRequest = async (req, res) => {
                 batchNumber: request.batchNumber || OWNER_generateBatchNumber("ADD"),
                 quantity: finalQuantity,
                 expiryDate: request.expiryDate || null,
-                supplier: null,
+                supplier: request.supplier || null,
                 sourceRequest: request._id,
                 createdBy: ownerId,
                 notes: "Batch created from approved add-item request",

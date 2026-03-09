@@ -8,6 +8,7 @@ import { apiFetch } from "../utils/apiClient.js";
 /* ================= API ENDPOINTS ================= */
 const API = {
   activeInventory:   "/api/owner/inventory",
+  itemDetails:       (id) => `/api/owner/inventory/items/${id}`,
   archivedInventory: "/api/owner/inventory/archived",
   addProduct:        "/api/owner/inventory",
   pendingRequests:   "/api/owner/inventory/requests/pending",
@@ -18,6 +19,8 @@ const API = {
   restoreProduct:    (id) => `/api/owner/inventory/${id}/restore`,
   adjustStock:       (id) => `/api/owner/inventory/${id}/adjust-stock`,
   updateDiscrepancy: (id) => `/api/owner/inventory/${id}/discrepancy`,
+  quantityAdjustments: "/api/owner/quantity-adjustments",
+  reviewQuantityAdjustment: (id) => `/api/owner/quantity-adjustments/${id}/review`,
 };
 
 /* ================= LOCAL UI STATE ================= */
@@ -47,6 +50,12 @@ const DB_REQUEST_STATUS_TO_UI = {
   rejected: "denied",
 };
 
+const DB_ADJUSTMENT_STATUS_TO_UI = {
+  Pending: "pending",
+  Approved: "approved",
+  Rejected: "denied",
+};
+
 /* ================= FILTER & COLOR CONFIGS ================= */
 const FILTER_CONFIG = {
   all:           { activeBg:'bg-blue-600',   activeText:'text-white', activeBorder:'border-blue-600',   hoverBg:'hover:bg-blue-50',   hoverBorder:'hover:border-blue-500',   hoverText:'hover:text-blue-700' },
@@ -70,7 +79,7 @@ const STATUS_COLORS = {
 
 const STATUS_DISPLAY = {
   'in-stock': 'In Stock', pending: 'Pending', 'low-stock': 'Low Stock',
-  'out-of-stock': 'Out of Stock', archived: 'Archived', approved: 'Approved', denied: 'Denied',
+  'out-of-stock': 'Out of Stock', archived: 'Archived', approved: 'Approved', denied: 'Rejected',
 };
 
 const STATUS_SORT_PRIORITY = {
@@ -101,14 +110,14 @@ function mapBackendItemToUI(p) {
   const batchCount = Number.isFinite(Number(p.batchCount)) ? Number(p.batchCount) : batches.length;
 
   return {
-    id:              p._id,
-    name:            p.name || "",
+    id:              String(p._id || p.itemId || ""),
+    name:            p.name || p.itemName || "",
     type:            p.name || "",              // brand column – use name
     category:        p.category || "",
-    currentQuantity: p.quantity ?? 0,
+    currentQuantity: p.currentQuantity ?? p.quantity ?? 0,
     minStock:        p.minStock ?? 10,
     unit:            p.unit || "pcs",
-    supplier:        p.nearestBatchSupplier || p.supplier || "—",
+    supplier:        p.nearestBatchSupplier || p.supplier || p.supplierName || "—",
     status:          p.isArchived ? "archived" : (DB_STATUS_TO_UI[p.status] || "in-stock"),
     expiryDate:      nearestExpiry ? formatDateDisplay(nearestExpiry, "—") : "—",
     expiryDateISO:   nearestExpiry ? new Date(nearestExpiry).toISOString().split("T")[0] : "",
@@ -118,11 +127,11 @@ function mapBackendItemToUI(p) {
     archived:        !!p.isArchived,
     price:           p.unitPrice ?? 0,
     description:     p.description || "",
-    genericName:     p.genericName || "",
-    brandName:       p.brandName || p.name || "",
-    medicineName:    p.medicineName || p.name || "",
-    dosageForm:      p.dosageForm || "",
-    strength:        p.strength || "",
+    genericName:     p.genericName || p.generic || "",
+    brandName:       p.brandName || p.brand || p.name || p.itemName || "",
+    medicineName:    p.medicineName || p.name || p.itemName || "",
+    dosageForm:      p.dosageForm || p.dosage || "",
+    strength:        p.strength || p.dose || "",
     expectedRemaining: Number.isFinite(Number(p.expectedRemaining))
       ? Number(p.expectedRemaining)
       : Number(p.quantity ?? 0),
@@ -155,6 +164,43 @@ function mapBackendRequestToUI(r) {
     supplier:        "",
     productId:       isRestock ? (product._id || null) : null,
     notes:           r.rejectionReason || "",
+  };
+}
+
+function mapBackendDiscrepancyToUI(r) {
+  const requestDate = r.createdAt
+    ? new Date(r.createdAt).toLocaleString("en-US", {
+        month: "2-digit",
+        day: "2-digit",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: true,
+      })
+    : "—";
+
+  return {
+    id: String(r._id),
+    requestType: "DISCREPANCY",
+    itemName: r.productName || "Unknown",
+    type: r.productName || "Unknown",
+    category: r.productId?.category || "",
+    currentQuantity: Number(r.systemQuantity ?? 0),
+    minStock: 0,
+    unit: "",
+    requestQuantity: Number(r.actualQuantity ?? 0),
+    requestedBy: r.staffName || r.staffId?.name || "Staff",
+    requestDate,
+    status: DB_ADJUSTMENT_STATUS_TO_UI[r.status] || "pending",
+    supplier: "",
+    productId: String(r.productId?._id || r.productId || ""),
+    notes: r.rejectionReason || "",
+    isDiscrepancy: true,
+    systemQuantity: Number(r.systemQuantity ?? 0),
+    actualQuantity: Number(r.actualQuantity ?? 0),
+    variance: Number(r.difference ?? 0),
+    reason: r.reason || "",
+    submittedAt: r.createdAt || null,
   };
 }
 
@@ -199,6 +245,16 @@ async function fetchAllRequests() {
   }
 }
 
+async function fetchDiscrepancyRequests() {
+  try {
+    const res = await apiFetch(API.quantityAdjustments);
+    return (res?.data || []).map(mapBackendDiscrepancyToUI);
+  } catch (err) {
+    showToast(`Failed to load discrepancy requests: ${err.message}`, "error");
+    return [];
+  }
+}
+
 async function refreshInventory() {
   if (showArchivedItems) {
     inventoryItems = await fetchArchivedItems();
@@ -209,12 +265,12 @@ async function refreshInventory() {
 }
 
 async function refreshRequests() {
-  /* When filter is 'all' we need every status → use allRequests */
-  if (currentRestockStatusFilter === "all" || currentRestockStatusFilter !== "pending") {
-    restockRequests = await fetchAllRequests();
-  } else {
-    restockRequests = await fetchPendingRequests();
-  }
+  const [inventoryReqs, discrepancyReqs] = await Promise.all([
+    fetchAllRequests(),
+    fetchDiscrepancyRequests(),
+  ]);
+
+  restockRequests = [...discrepancyReqs, ...inventoryReqs];
   applyRestockFilters();
 }
 
@@ -668,6 +724,18 @@ function renderRestockRequests() {
       ? `<button class="review-request-btn w-full bg-blue-600 text-white py-2 rounded text-xs font-medium hover:bg-blue-700 transition-colors">Review Request</button>`
       : "";
 
+    const discrepancyDetails = req.requestType === "DISCREPANCY"
+      ? `
+        <div class="flex justify-between"><span class="text-gray-600">System Quantity</span><span class="font-semibold text-gray-900">${req.systemQuantity}</span></div>
+        <div class="flex justify-between"><span class="text-gray-600">Actual Quantity</span><span class="font-semibold text-blue-700">${req.actualQuantity}</span></div>
+        <div class="flex justify-between"><span class="text-gray-600">Variance</span><span class="font-semibold ${req.variance === 0 ? "text-green-700" : "text-amber-700"}">${req.variance >= 0 ? "+" : ""}${req.variance}</span></div>
+        <div class="text-gray-500 border-t pt-2 mt-1"><span class="font-medium text-gray-700">Reason:</span> ${escapeHtml(req.reason || "No reason provided")}</div>
+      `
+      : `
+        <div class="flex justify-between"><span class="text-gray-600">Current Stock</span><span class="font-semibold ${stockColor}">${req.currentQuantity} ${req.unit}</span></div>
+        <div class="flex justify-between"><span class="text-gray-600">Requested</span><span class="font-semibold text-blue-700">${req.requestQuantity} ${req.unit}</span></div>
+      `;
+
     const card = document.createElement("div");
     card.className = "border border-gray-200 rounded-lg p-4 bg-white shadow-md hover:shadow-lg transition-all duration-200 h-full flex flex-col transform hover:-translate-y-1";
     card.setAttribute("data-request-id", req.id);
@@ -681,8 +749,7 @@ function renderRestockRequests() {
         <div><span class="px-2 py-1 rounded text-xs font-medium ${colors.bg} ${colors.text} whitespace-nowrap border ${colors.border}">${getStatusDisplayText(req.status)}</span></div>
       </div>
       <div class="space-y-2 mb-4 text-xs flex-1">
-        <div class="flex justify-between"><span class="text-gray-600">Current Stock</span><span class="font-semibold ${stockColor}">${req.currentQuantity} ${req.unit}</span></div>
-        <div class="flex justify-between"><span class="text-gray-600">Requested</span><span class="font-semibold text-blue-700">${req.requestQuantity} ${req.unit}</span></div>
+        ${discrepancyDetails}
         <div class="text-gray-500 flex items-center gap-2">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
           <span>By: ${req.requestedBy}</span>
@@ -697,12 +764,94 @@ function renderRestockRequests() {
   });
 }
 
+function getPendingDiscrepancyForItem(itemId) {
+  return restockRequests.find((req) =>
+    req.requestType === "DISCREPANCY" &&
+    req.status === "pending" &&
+    String(req.productId || "") === String(itemId || "")
+  );
+}
+
+function showReviewDiscrepancyModal(request) {
+  const content = `
+    <h3 class="text-lg font-semibold mb-1">Review Discrepancy Request</h3>
+    <p class="text-sm text-gray-600 mb-4">DISCREPANCY</p>
+    <div class="space-y-3 text-sm">
+      <div class="flex justify-between py-2 border-b"><span class="text-gray-600">Item Name</span><span class="font-semibold">${request.itemName}</span></div>
+      <div class="flex justify-between py-2 border-b"><span class="text-gray-600">System Quantity</span><span class="font-semibold text-gray-900">${request.systemQuantity}</span></div>
+      <div class="flex justify-between py-2 border-b"><span class="text-gray-600">Actual Quantity</span><span class="font-semibold text-blue-700">${request.actualQuantity}</span></div>
+      <div class="flex justify-between py-2 border-b"><span class="text-gray-600">Variance</span><span class="font-semibold ${request.variance === 0 ? "text-green-700" : "text-amber-700"}">${request.variance >= 0 ? "+" : ""}${request.variance}</span></div>
+      <div class="py-2 border-b">
+        <p class="text-gray-600 mb-1">Reason</p>
+        <p class="font-medium text-gray-900">${escapeHtml(request.reason || "No reason provided")}</p>
+      </div>
+      <div class="flex justify-between py-2 border-b"><span class="text-gray-600">Submitted By</span><span class="font-semibold">${request.requestedBy}</span></div>
+      <div class="flex justify-between py-2 border-b"><span class="text-gray-600">Date Submitted</span><span class="font-semibold">${request.requestDate}</span></div>
+      <div class="py-2">
+        <label class="block text-xs text-gray-700 mb-1">Rejection Reason (Optional)</label>
+        <textarea id="discrepancyReviewReason" rows="3" class="w-full border border-gray-300 rounded px-3 py-2" placeholder="Provide reason when rejecting..."></textarea>
+      </div>
+    </div>
+    <div class="mt-5 flex gap-5 justify-between">
+      <button id="reviewCancelBtn" class="flex-1 border border-gray-300 py-2 px-4 rounded-lg bg-white">Cancel</button>
+      <button id="reviewDenyBtn" class="flex-1 bg-red-600 text-white py-2 px-4 rounded-lg">Reject</button>
+      <button id="reviewApproveBtn" class="flex-1 bg-green-600 text-white py-2 px-4 rounded-lg">Approve</button>
+    </div>`;
+
+  const reviewModal = createModal({ id: "reviewRestockModal", content, width: "500px" });
+  reviewModal.currentRequest = request;
+
+  const hide = () => { reviewModal.classList.add("hidden"); reviewModal.style.display = ""; setTimeout(() => reviewModal.remove(), 200); };
+  getElement(reviewModal, "#closeReviewRestockModal")?.addEventListener("click", hide);
+  getElement(reviewModal, "#reviewCancelBtn")?.addEventListener("click", hide);
+
+  getElement(reviewModal, "#reviewDenyBtn")?.addEventListener("click", async () => {
+    const rejectionReason = getElement(reviewModal, "#discrepancyReviewReason")?.value?.trim() || "";
+    try {
+      await apiFetch(API.reviewQuantityAdjustment(request.id), {
+        method: "PATCH",
+        body: JSON.stringify({ status: "Rejected", rejectionReason }),
+      });
+      showToast("Discrepancy request rejected", "success");
+      hide();
+      await refreshAll();
+    } catch (err) {
+      showToast(`Reject failed: ${err.message}`, "error");
+    }
+  });
+
+  getElement(reviewModal, "#reviewApproveBtn")?.addEventListener("click", async () => {
+    try {
+      await apiFetch(API.reviewQuantityAdjustment(request.id), {
+        method: "PATCH",
+        body: JSON.stringify({ status: "Approved" }),
+      });
+      showToast("Discrepancy approved and inventory updated", "success");
+      hide();
+      await refreshAll();
+    } catch (err) {
+      showToast(`Approve failed: ${err.message}`, "error");
+    }
+  });
+}
+
 /* ================= SHOW ITEM DETAILS ================= */
-function showItemDetails(item) {
+async function showItemDetails(item) {
   const modal = document.getElementById("itemDetailsModal");
   if (!modal) return;
-  modal.currentItem = item;
-  const colors = getStatusColors(item.status);
+
+  let detailItem = item;
+  try {
+    const result = await apiFetch(API.itemDetails(item.id));
+    if (result?.data) {
+      detailItem = mapBackendItemToUI(result.data);
+    }
+  } catch (error) {
+    console.error("Failed to fetch owner item details:", error);
+  }
+
+  modal.currentItem = detailItem;
+  const colors = getStatusColors(detailItem.status);
 
   const setText = (id, value) => {
     const el = getElement(modal, '#' + id);
@@ -710,31 +859,31 @@ function showItemDetails(item) {
   };
 
   // Header information
-  setText("detailsItemName", item.name);
-  setText("detailsGenericName", item.genericName || item.generic);
-  setText("detailsBrandName", item.brandName || item.brand || item.type);
-  setText("detailsCategory", formatCategory(item.category));
-  setText("detailsSellingPrice", `₱${(item.price || 0).toFixed(2)}`);
+  setText("detailsItemName", detailItem.name);
+  setText("detailsGenericName", detailItem.genericName || detailItem.generic);
+  setText("detailsBrandName", detailItem.brandName || detailItem.brand || detailItem.type);
+  setText("detailsCategory", formatCategory(detailItem.category));
+  setText("detailsSellingPrice", `₱${(detailItem.price || 0).toFixed(2)}`);
 
   // Medicine Information section
-  setText("detailsMedicineName", item.medicineName || item.name);
-  setText("detailsMedicineGeneric", item.genericName || item.generic);
-  setText("detailsMedicineBrand", item.brandName || item.brand || item.type);
-  setText("detailsDosageForm", item.dosageForm);
-  setText("detailsStrength", item.strength);
-  setText("detailsMedicineUnit", item.unit);
-  setText("detailsMedicineDescription", item.description);
+  setText("detailsMedicineName", detailItem.medicineName || detailItem.name);
+  setText("detailsMedicineGeneric", detailItem.genericName || detailItem.generic);
+  setText("detailsMedicineBrand", detailItem.brandName || detailItem.brand || detailItem.type);
+  setText("detailsDosageForm", detailItem.dosageForm);
+  setText("detailsStrength", detailItem.strength);
+  setText("detailsMedicineUnit", detailItem.unit);
+  setText("detailsMedicineDescription", detailItem.description);
 
   // Inventory Details — Stock Information
-  setText("detailsStock", `${item.currentQuantity} ${item.unit}`);
-  setText("detailsMinStock", `${item.minStock} ${item.unit}`);
-  setText("detailsBatchCount", String(item.batchCount || (item.batches || []).length || 0));
-  setText("detailsExpiry", item.expiryDate || "N/A");
-  setText("detailsSupplier", item.supplier);
+  setText("detailsStock", `${detailItem.currentQuantity} ${detailItem.unit}`);
+  setText("detailsMinStock", `${detailItem.minStock} ${detailItem.unit}`);
+  setText("detailsBatchCount", String(detailItem.batchCount || (detailItem.batches || []).length || 0));
+  setText("detailsExpiry", detailItem.expiryDate || "N/A");
+  setText("detailsSupplier", detailItem.supplier);
 
   const statusTextContainer = getElement(modal, '#detailsStatusText');
   if (statusTextContainer) {
-    statusTextContainer.innerHTML = `<span class="${getModalStatusTextClass(item.status)}">${getStatusDisplayText(item.status)}</span>`;
+    statusTextContainer.innerHTML = `<span class="${getModalStatusTextClass(detailItem.status)}">${getStatusDisplayText(detailItem.status)}</span>`;
   }
 
   // Discrepancy Details
@@ -744,19 +893,19 @@ function showItemDetails(item) {
   const discrepancyStatusEl = getElement(modal, '#detailsVarianceStatus');
 
   if (expectedRemainingEl) {
-    expectedRemainingEl.textContent = `${Number(item.expectedRemaining ?? item.currentQuantity ?? 0)} ${item.unit}`;
+    expectedRemainingEl.textContent = `${Number(detailItem.expectedRemaining ?? detailItem.currentQuantity ?? 0)} ${detailItem.unit}`;
   }
   if (physicalCountEl) {
-    physicalCountEl.textContent = `${Number(item.physicalCount ?? item.currentQuantity ?? 0)} ${item.unit}`;
+    physicalCountEl.textContent = `${Number(detailItem.physicalCount ?? detailItem.currentQuantity ?? 0)} ${detailItem.unit}`;
   }
   if (varianceEl) {
-    const variance = Number(item.variance ?? 0);
+    const variance = Number(detailItem.variance ?? 0);
     const varianceClass = variance === 0 ? "text-green-700" : "text-amber-700";
-    varianceEl.textContent = `${variance >= 0 ? "+" : ""}${variance} ${item.unit}`;
+    varianceEl.textContent = `${variance >= 0 ? "+" : ""}${variance} ${detailItem.unit}`;
     varianceEl.className = `font-semibold ${varianceClass}`;
   }
   if (discrepancyStatusEl) {
-    const discrepancyStatus = item.discrepancyStatus || (Number(item.variance || 0) === 0 ? "Balanced" : "With Variance");
+    const discrepancyStatus = detailItem.discrepancyStatus || (Number(detailItem.variance || 0) === 0 ? "Balanced" : "With Variance");
     const textClass = discrepancyStatus === "Balanced"
       ? "text-xs font-medium text-green-600"
       : "text-xs font-medium text-orange-600";
@@ -765,7 +914,7 @@ function showItemDetails(item) {
 
   const batchRows = getElement(modal, "#detailsBatchRows");
   if (batchRows) {
-    const rows = (item.batches || []).map((batch) => {
+    const rows = (detailItem.batches || []).map((batch) => {
       const expiryMeta = getExpiryMeta(batch.expiryDateISO);
       const expiryLabel = batch.expiryDateISO ? formatDateDisplay(batch.expiryDateISO, "N/A") : "N/A";
       const statusHtml = (() => {
@@ -787,7 +936,7 @@ function showItemDetails(item) {
       return `
         <tr>
           <td class="px-3 py-2 text-gray-900 font-semibold break-words whitespace-normal">${escapeHtml(batch.batchNumber || "—")}</td>
-          <td class="px-3 py-2 text-gray-900 font-medium">${Number(batch.quantity || 0)} ${escapeHtml(item.unit)}</td>
+          <td class="px-3 py-2 text-gray-900 font-medium">${Number(batch.quantity || 0)} ${escapeHtml(detailItem.unit)}</td>
           <td class="px-3 py-2 text-gray-900 font-medium">${escapeHtml(expiryLabel)}</td>
           <td class="px-3 py-2 text-gray-900">${statusHtml}</td>
         </tr>`;
@@ -801,7 +950,7 @@ function showItemDetails(item) {
   /* ---- Expiry calculation ---- */
   const expiryTextEl = getElement(modal, '#detailsExpiresIn');
   const expiryBadge = getElement(modal, '#detailsExpiryBadge');
-  const expiryMeta = getExpiryMeta(item.expiryDateISO || item.expiryDate);
+  const expiryMeta = getExpiryMeta(detailItem.expiryDateISO || detailItem.expiryDate);
   if (expiryTextEl && expiryBadge) {
     if (expiryMeta.date) {
       expiryTextEl.textContent = `Expires in ${expiryMeta.diffDays} days`;
@@ -830,20 +979,25 @@ function showItemDetails(item) {
     n.onclick = (e) => {
       e?.stopPropagation?.();
       hideDetails();
-      showEditDiscrepancyModal(item);
+      const pendingDiscrepancy = getPendingDiscrepancyForItem(detailItem.id);
+      if (pendingDiscrepancy) {
+        showReviewDiscrepancyModal(pendingDiscrepancy);
+      } else {
+        showEditDiscrepancyModal(detailItem);
+      }
     };
   }
   if (btnMove) {
     const n = btnMove.cloneNode(true);
     btnMove.parentNode.replaceChild(n, btnMove);
-    if (item.archived) {
+    if (detailItem.archived) {
       n.textContent = "Restore from Archive";
       n.className = "w-full bg-emerald-600 text-white py-2 rounded text-sm font-semibold hover:bg-emerald-700 transition-colors";
-      n.onclick = (e) => { e?.stopPropagation?.(); showRestoreConfirm(item); };
+      n.onclick = (e) => { e?.stopPropagation?.(); showRestoreConfirm(detailItem); };
     } else {
       n.textContent = "Move to Archive";
       n.className = "w-full bg-red-600 text-white py-2 rounded text-sm font-semibold hover:bg-red-700 transition-colors";
-      n.onclick = (e) => { e?.stopPropagation?.(); showArchiveConfirm(item); };
+      n.onclick = (e) => { e?.stopPropagation?.(); showArchiveConfirm(detailItem); };
     }
   }
   modal.classList.remove("hidden");
@@ -852,6 +1006,11 @@ function showItemDetails(item) {
 
 /* ================= REVIEW RESTOCK MODAL ================= */
 function showReviewRestockModal(request) {
+  if (request.requestType === "DISCREPANCY") {
+    showReviewDiscrepancyModal(request);
+    return;
+  }
+
   const defaultBatchNumber = request.batchNumber && request.batchNumber !== "—"
     ? request.batchNumber
     : generateBatchNumber(request);
@@ -1628,7 +1787,14 @@ export async function initAdminInventory() {
     } else if (editDiscrepancyBtn) {
       const itemId = editDiscrepancyBtn.dataset.itemId;
       const item = inventoryItems.find(i => i.id === itemId);
-      if (item) showEditDiscrepancyModal(item);
+      if (item) {
+        const pendingDiscrepancy = getPendingDiscrepancyForItem(item.id);
+        if (pendingDiscrepancy) {
+          showReviewDiscrepancyModal(pendingDiscrepancy);
+        } else {
+          showEditDiscrepancyModal(item);
+        }
+      }
     } else if (archiveBtn) {
       const itemId = archiveBtn.dataset.itemId;
       const item = inventoryItems.find(i => i.id === itemId);

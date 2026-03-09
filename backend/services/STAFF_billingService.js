@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 import Product from "../models/product.js";
+import InventoryBatch from "../models/InventoryBatch.js";
 import STAFF_ActivityLog from "../models/STAFF_activityLog.js";
 import STAFF_BillingTransaction from "../models/STAFF_billingTransaction.js";
 import { createStockLog } from "./Owner_StockLog.service.js";
@@ -301,6 +302,23 @@ export const STAFF_completeBillingTransaction = async ({ transactionId, staffId,
       product.quantity = product.quantity - item.quantity;
       await product.save({ session });
 
+      // Deduct from InventoryBatch records (FEFO: First Expiry, First Out)
+      let remainingToDeduct = item.quantity;
+      const batchQuery = InventoryBatch.find({
+        product: item.productId,
+        quantity: { $gt: 0 },
+      }).sort({ expiryDate: 1, createdAt: 1 });
+      if (session) batchQuery.session(session);
+      const batches = await batchQuery;
+
+      for (const batch of batches) {
+        if (remainingToDeduct <= 0) break;
+        const deductFromBatch = Math.min(batch.quantity, remainingToDeduct);
+        batch.quantity -= deductFromBatch;
+        remainingToDeduct -= deductFromBatch;
+        await batch.save({ session });
+      }
+
       await createStockLog({
         productId: product._id,
         movementType: "SALE",
@@ -416,6 +434,19 @@ export const STAFF_voidBillingTransaction = async ({ transactionId, staffId, rea
 
       product.quantity = product.quantity + item.quantity;
       await product.save({ session });
+
+      // Restore batch quantities — add back to the most recent batch for this product
+      const batchQuery = InventoryBatch.find({
+        product: item.productId,
+      }).sort({ expiryDate: 1, createdAt: 1 });
+      if (session) batchQuery.session(session);
+      const batches = await batchQuery;
+
+      if (batches.length > 0) {
+        // Add the restored quantity to the first (nearest expiry) batch
+        batches[0].quantity += item.quantity;
+        await batches[0].save({ session });
+      }
 
       await createStockLog({
         productId: product._id,

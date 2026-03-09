@@ -44,6 +44,36 @@ const inventoryRequestSchema = new mongoose.Schema(
       trim: true,
       default: "",
     },
+    supplier: {
+      type: String,
+      trim: true,
+      default: null,
+    },
+    genericName: {
+      type: String,
+      trim: true,
+      default: null,
+    },
+    brandName: {
+      type: String,
+      trim: true,
+      default: null,
+    },
+    dosageForm: {
+      type: String,
+      trim: true,
+      default: null,
+    },
+    strength: {
+      type: String,
+      trim: true,
+      default: null,
+    },
+    medicineName: {
+      type: String,
+      trim: true,
+      default: null,
+    },
     expiryDate: {
       type: Date,
       default: null,
@@ -120,6 +150,7 @@ inventoryRequestSchema.pre("validate", function (next) {
     this.unitPrice = 0;
     this.minStock = 10;
     this.description = "";
+    this.supplier = null;
   }
 
   return undefined;

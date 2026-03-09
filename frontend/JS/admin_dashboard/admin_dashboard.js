@@ -182,6 +182,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const staffNameEl       = document.getElementById("staffName");
   const staffUsernameEl   = document.getElementById("staffUsername");
   const staffAvatarEl     = document.getElementById("staffAvatar");
+  const settingsBtn       = document.getElementById("settingsBtn");
   const profileBtn        = document.getElementById("profileBtn");
   const logoutBtn         = document.getElementById("logoutBtn");
 
@@ -799,6 +800,27 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
+  /* ================= SETTINGS ================= */
+  async function loadSettings() {
+    clearInterval(refreshTimer);
+    ensureOwnerLayoutShell();
+
+    try {
+      const res = await fetch("../../HTML/admin_Settings/admin_Settings.html");
+      if (!res.ok) throw new Error("Settings HTML not found");
+
+      mainContent.innerHTML = await res.text();
+      await new Promise((r) => setTimeout(r, 150));
+
+      const module = await import("../admin_Settings/admin_Settings.js");
+      if (typeof module.initSettings !== "function") throw new Error("initSettings() missing");
+      module.initSettings();
+    } catch (error) {
+      console.error("Error loading Settings:", error);
+      mainContent.innerHTML = `<div class="text-red-500 p-4 font-medium">Failed to load Settings module: ${error.message}</div>`;
+    }
+  }
+
   /* ================= STOCK LOGS ================= */
   async function loadStockLogs() {
     setActive(navStockLogs);
@@ -868,6 +890,11 @@ document.addEventListener("DOMContentLoaded", () => {
     e.preventDefault();
     loadUserProfile();
   });
+
+  settingsBtn?.addEventListener("click", (e) => {
+    e.preventDefault();
+    loadSettings();
+  });
     
 
   navStockLogs.addEventListener("click", (e) => {
@@ -907,4 +934,5 @@ document.addEventListener("DOMContentLoaded", () => {
   window.loadUserManagement = loadUserManagement;
   window.loadStockLogs = loadStockLogs;
   window.loadDashboard = loadDashboard;
+  window.loadSettings = loadSettings;
 });

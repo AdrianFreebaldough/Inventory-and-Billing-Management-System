@@ -131,7 +131,7 @@ function mapBackendItemToUI(p) {
     brandName:       p.brandName || p.brand || p.name || p.itemName || "",
     medicineName:    p.medicineName || p.name || p.itemName || "",
     dosageForm:      p.dosageForm || p.dosage || "",
-    strength:        p.strength || p.dose || "",
+    strength:        p.strength || p.Strength || p.dose || p.dosageStrength || "",
     expectedRemaining: Number.isFinite(Number(p.expectedRemaining))
       ? Number(p.expectedRemaining)
       : Number(p.quantity ?? 0),
@@ -299,6 +299,15 @@ function formatDateDisplay(value, fallback = "N/A") {
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return fallback;
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+
+function normalizeCategoryKey(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/&/g, "and")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
 }
 
 function getExpiryMeta(expiryValue) {
@@ -584,7 +593,9 @@ function applyFilters() {
                         (item.type || "").toLowerCase().includes(search) ||
                         (item.id   || "").toLowerCase().includes(search);
     const matchStatus   = currentStatusFilter   === "all" || item.status   === currentStatusFilter;
-    const matchCategory = currentCategoryFilter === "all" || item.category === currentCategoryFilter;
+    const itemCategoryKey = normalizeCategoryKey(item.category);
+    const activeCategoryKey = normalizeCategoryKey(currentCategoryFilter);
+    const matchCategory = currentCategoryFilter === "all" || itemCategoryKey === activeCategoryKey;
     const matchStockFilter = !showLowStockOnly || item.status === "low-stock" || item.status === "out-of-stock";
     return matchSearch && matchStatus && matchCategory && matchStockFilter;
   });
@@ -606,7 +617,9 @@ function applyRestockFilters() {
                         (req.id   || "").toLowerCase().includes(search) ||
                         (req.type || "").toLowerCase().includes(search);
     const matchStatus   = currentRestockStatusFilter   === "all" || req.status   === currentRestockStatusFilter;
-    const matchCategory = currentRestockCategoryFilter === "all" || req.category === currentRestockCategoryFilter;
+    const requestCategoryKey = normalizeCategoryKey(req.category);
+    const activeCategoryKey = normalizeCategoryKey(currentRestockCategoryFilter);
+    const matchCategory = currentRestockCategoryFilter === "all" || requestCategoryKey === activeCategoryKey;
     return matchSearch && matchStatus && matchCategory;
   });
   updateFilterButtonStyles("#restockStatusFiltersContainer", currentRestockStatusFilter);
@@ -869,8 +882,8 @@ async function showItemDetails(item) {
   setText("detailsMedicineName", detailItem.medicineName || detailItem.name);
   setText("detailsMedicineGeneric", detailItem.genericName || detailItem.generic);
   setText("detailsMedicineBrand", detailItem.brandName || detailItem.brand || detailItem.type);
-  setText("detailsDosageForm", detailItem.dosageForm);
-  setText("detailsStrength", detailItem.strength);
+  setText("detailsDosageForm", detailItem.dosageForm || detailItem.dosage);
+  setText("detailsStrength", detailItem.strength || detailItem.Strength || detailItem.dose || detailItem.dosageStrength);
   setText("detailsMedicineUnit", detailItem.unit);
   setText("detailsMedicineDescription", detailItem.description);
 
@@ -1185,6 +1198,10 @@ function showDenyConfirmModal(request, adminNotes, onConfirm) {
 function showEditDiscrepancyModal(item) {
   const expectedRemaining = Number(item.expectedRemaining ?? item.currentQuantity ?? 0);
   const initialPhysicalCount = Number(item.physicalCount ?? expectedRemaining);
+  const currentGenericName = String(item.genericName || item.generic || "");
+  const currentDosageForm = String(item.dosageForm || item.dosage || "");
+  const currentStrength = String(item.strength || item.dose || "");
+  const currentCategory = String(item.category || "");
 
   const content = `
     <h3 class="text-lg font-semibold mb-1">Edit Discrepancy</h3>
@@ -1198,6 +1215,49 @@ function showEditDiscrepancyModal(item) {
       <div>
         <label class="block text-xs text-gray-700 mb-1">Physical Count</label>
         <input id="discrepancyPhysicalCountInput" type="number" min="0" value="${initialPhysicalCount}" class="w-full border border-gray-300 rounded px-3 py-2" />
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block text-xs text-gray-700 mb-1">Category</label>
+          <select id="discrepancyCategoryInput" class="w-full border border-gray-300 rounded px-3 py-2 bg-white">
+            <option value="">Select category</option>
+            <option value="Medicine" ${currentCategory === "Medicine" ? "selected" : ""}>Medicine</option>
+            <option value="Antibiotic" ${currentCategory === "Antibiotic" ? "selected" : ""}>Antibiotic</option>
+            <option value="Analgesic" ${currentCategory === "Analgesic" ? "selected" : ""}>Analgesic</option>
+            <option value="Antipyretic" ${currentCategory === "Antipyretic" ? "selected" : ""}>Antipyretic</option>
+            <option value="Antihistamine" ${currentCategory === "Antihistamine" ? "selected" : ""}>Antihistamine</option>
+            <option value="Antacid" ${currentCategory === "Antacid" ? "selected" : ""}>Antacid</option>
+            <option value="Vitamin" ${currentCategory === "Vitamin" ? "selected" : ""}>Vitamin</option>
+            <option value="Vaccine" ${currentCategory === "Vaccine" ? "selected" : ""}>Vaccine</option>
+            <option value="First Aid" ${currentCategory === "First Aid" ? "selected" : ""}>First Aid</option>
+            <option value="Personal Care" ${currentCategory === "Personal Care" ? "selected" : ""}>Personal Care</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs text-gray-700 mb-1">Generic Name</label>
+          <input id="discrepancyGenericNameInput" type="text" value="${escapeHtml(currentGenericName)}" placeholder="e.g., Acetaminophen" class="w-full border border-gray-300 rounded px-3 py-2" />
+        </div>
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block text-xs text-gray-700 mb-1">Dosage Form</label>
+          <select id="discrepancyDosageFormInput" class="w-full border border-gray-300 rounded px-3 py-2 bg-white">
+            <option value="">Select dosage form</option>
+            <option value="Tablet" ${currentDosageForm === "Tablet" ? "selected" : ""}>Tablet</option>
+            <option value="Capsule" ${currentDosageForm === "Capsule" ? "selected" : ""}>Capsule</option>
+            <option value="Syrup" ${currentDosageForm === "Syrup" ? "selected" : ""}>Syrup</option>
+            <option value="Injection" ${currentDosageForm === "Injection" ? "selected" : ""}>Injection</option>
+            <option value="Ointment" ${currentDosageForm === "Ointment" ? "selected" : ""}>Ointment</option>
+            <option value="Cream" ${currentDosageForm === "Cream" ? "selected" : ""}>Cream</option>
+            <option value="Drops" ${currentDosageForm === "Drops" ? "selected" : ""}>Drops</option>
+            <option value="Inhaler" ${currentDosageForm === "Inhaler" ? "selected" : ""}>Inhaler</option>
+            <option value="Powder" ${currentDosageForm === "Powder" ? "selected" : ""}>Powder</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs text-gray-700 mb-1">Strength</label>
+          <input id="discrepancyStrengthInput" type="text" value="${escapeHtml(currentStrength)}" placeholder="e.g., 500 mg" class="w-full border border-gray-300 rounded px-3 py-2" />
+        </div>
       </div>
       <div class="grid grid-cols-2 gap-3">
         <div class="border border-gray-200 rounded-lg p-3 bg-gray-50">
@@ -1251,6 +1311,11 @@ function showEditDiscrepancyModal(item) {
 
   getElement(modal, "#editDiscrepancySaveBtn")?.addEventListener("click", async () => {
     const physicalCount = Number(physicalCountInput?.value);
+    const category = String(getElement(modal, "#discrepancyCategoryInput")?.value || "").trim();
+    const genericName = String(getElement(modal, "#discrepancyGenericNameInput")?.value || "").trim();
+    const dosageForm = String(getElement(modal, "#discrepancyDosageFormInput")?.value || "").trim();
+    const strength = String(getElement(modal, "#discrepancyStrengthInput")?.value || "").trim();
+
     if (!Number.isFinite(physicalCount) || physicalCount < 0) {
       showToast("Physical count must be a non-negative number", "error");
       return;
@@ -1259,7 +1324,13 @@ function showEditDiscrepancyModal(item) {
     try {
       await apiFetch(API.updateDiscrepancy(item.id), {
         method: "PATCH",
-        body: JSON.stringify({ physicalCount }),
+        body: JSON.stringify({
+          physicalCount,
+          category,
+          genericName,
+          dosageForm,
+          strength,
+        }),
       });
 
       showToast("Discrepancy updated successfully", "success");
@@ -1347,6 +1418,7 @@ function showAddItemModal() {
             <label class="block text-xs text-gray-700 mb-1 font-medium">Category <span class="text-red-600">*</span></label>
             <select id="addCategory" class="w-full border border-gray-300 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
               <option value="">Select category</option>
+              <option value="Medicine">Medicine</option>
               <option value="Antibiotic">Antibiotic</option>
               <option value="Analgesic">Analgesic</option>
               <option value="Antipyretic">Antipyretic</option>

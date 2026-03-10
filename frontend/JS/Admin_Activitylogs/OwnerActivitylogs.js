@@ -25,6 +25,8 @@ const movementBadgeClass = {
 	SALE: "bg-rose-50 text-rose-700 border border-rose-200",
 	RESTOCK: "bg-emerald-50 text-emerald-700 border border-emerald-200",
 	ADJUST: "bg-amber-100 text-amber-900 border-2 border-amber-400",
+	ADJUSTMENT: "bg-orange-50 text-orange-700 border border-orange-200",
+	ITEM_CREATED: "bg-blue-50 text-blue-700 border border-blue-200",
 };
 
 const qtyClass = (qtyChange) =>
@@ -1133,6 +1135,8 @@ export function initOwnerActivitylogs() {
 			row.className = "border-b border-slate-100 hover:bg-slate-50";
 
 			const isAdjust = log.movementType === "ADJUST";
+			const isAdjustment = log.movementType === "ADJUSTMENT";
+			const isItemCreated = log.movementType === "ITEM_CREATED";
 			const qtyText = `${log.qtyChange > 0 ? "+" : ""}${log.qtyChange}`;
 
 			row.innerHTML = `
@@ -1140,14 +1144,23 @@ export function initOwnerActivitylogs() {
 				<td class="px-4 py-3 text-sm font-medium text-slate-900">${escapeHtml(log.productName)}</td>
 				<td class="px-4 py-3 text-sm">
 					<span
-						class="inline-flex cursor-default select-none items-center rounded-full px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide ${movementBadgeClass[log.movementType]}"
-						title="Manual stock adjustment performed by the owner to correct inventory discrepancies."
+						class="inline-flex cursor-default select-none items-center rounded-full px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide ${movementBadgeClass[log.movementType] || "bg-slate-100 text-slate-700 border border-slate-200"}"
+						title="${
+							isAdjust ? "Manual stock adjustment performed by the owner to correct inventory discrepancies."
+							: isAdjustment ? "Inventory adjustment from discrepancy correction."
+							: isItemCreated ? "New inventory item created."
+							: ""
+						}"
 					>
 						${escapeHtml(log.movementType)}${isAdjust ? " " : ""}
 					</span>
 					${
 						isAdjust
 							? '<span class="mt-1 inline-flex cursor-default select-none items-center rounded-full border border-slate-200 bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-600" title="Manual stock adjustment performed by the owner to correct inventory discrepancies.">Manual Correction</span>'
+							: isAdjustment
+							? '<span class="mt-1 inline-flex cursor-default select-none items-center rounded-full border border-orange-200 bg-orange-50 px-2 py-0.5 text-[10px] font-medium text-orange-600" title="Inventory adjustment from discrepancy correction.">Discrepancy</span>'
+							: isItemCreated
+							? '<span class="mt-1 inline-flex cursor-default select-none items-center rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-[10px] font-medium text-blue-600" title="New inventory item created.">New Item</span>'
 							: ""
 					}
 				</td>

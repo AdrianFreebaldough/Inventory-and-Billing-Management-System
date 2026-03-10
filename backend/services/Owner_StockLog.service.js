@@ -4,7 +4,7 @@ import Product from "../models/product.js";
 import User from "../models/user.js";
 import Owner_StockLog from "../models/Owner_StockLog.model.js";
 
-const Owner_ALLOWED_MOVEMENT_TYPES = new Set(["SALE", "RESTOCK", "ADJUST", "VOID_REVERSAL"]);
+const Owner_ALLOWED_MOVEMENT_TYPES = new Set(["SALE", "RESTOCK", "ADJUST", "VOID_REVERSAL", "ADJUSTMENT", "ITEM_CREATED"]);
 const Owner_ALLOWED_SOURCES = new Set(["POS", "MANUAL", "SYSTEM"]);
 
 const Owner_escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -81,6 +81,10 @@ export const createStockLog = async ({
 
   if (movementType === "VOID_REVERSAL" && parsedChange <= 0) {
     throw new Error("VOID_REVERSAL movement requires a positive quantityChange");
+  }
+
+  if (movementType === "ITEM_CREATED" && parsedChange <= 0) {
+    throw new Error("ITEM_CREATED movement requires a positive quantityChange");
   }
 
   const productQuery = Product.findById(productId).select("_id name quantity");

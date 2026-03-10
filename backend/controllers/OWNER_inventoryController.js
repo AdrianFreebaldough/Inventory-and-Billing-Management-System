@@ -100,15 +100,11 @@ const OWNER_enrichMissingFieldsFromApprovedRequests = async (products) => {
   if (!Array.isArray(products) || products.length === 0) return products;
 
   const productsNeedingFallback = products.filter((product) =>
-    !OWNER_pickFirstNonEmpty(
-      product.genericName,
-      product.generic,
-      product.dosageForm,
-      product.dosage,
-      product.strength,
-      product.supplier,
-      product.supplierName
-    )
+    !OWNER_pickFirstNonEmpty(product.genericName, product.generic) ||
+    !OWNER_pickFirstNonEmpty(product.dosageForm, product.dosage) ||
+    !OWNER_pickFirstNonEmpty(product.strength) ||
+    !OWNER_pickFirstNonEmpty(product.medicineName, product.name) ||
+    !OWNER_pickFirstNonEmpty(product.supplier, product.supplierName)
   );
 
   if (!productsNeedingFallback.length) return products;
@@ -140,7 +136,7 @@ const OWNER_enrichMissingFieldsFromApprovedRequests = async (products) => {
       genericName: OWNER_pickFirstNonEmpty(product.genericName, product.generic, fallback.genericName),
       brandName: OWNER_pickFirstNonEmpty(product.brandName, product.brand, fallback.brandName),
       dosageForm: OWNER_pickFirstNonEmpty(product.dosageForm, product.dosage, fallback.dosageForm),
-      strength: OWNER_pickFirstNonEmpty(product.strength, fallback.strength),
+      strength: OWNER_pickFirstNonEmpty(product.strength, product.Strength, product.dose, product.dosageStrength, fallback.strength),
       medicineName: OWNER_pickFirstNonEmpty(product.medicineName, fallback.medicineName, product.name),
       supplier: OWNER_pickFirstNonEmpty(product.supplier, product.supplierName, fallback.supplier),
     };
@@ -173,7 +169,7 @@ const OWNER_enrichProductWithExpiration = (product) => {
     genericName: OWNER_pickFirstNonEmpty(product.genericName, product.generic),
     brandName: OWNER_pickFirstNonEmpty(product.brandName, product.brand),
     dosageForm: OWNER_pickFirstNonEmpty(product.dosageForm, product.dosage),
-    strength: OWNER_pickFirstNonEmpty(product.strength),
+    strength: OWNER_pickFirstNonEmpty(product.strength, product.Strength, product.dose, product.dosageStrength),
     medicineName: OWNER_pickFirstNonEmpty(product.medicineName, product.name),
     expirationStatus: getExpirationStatus(referenceExpiryDate),
     daysUntilExpiry: getDaysUntilExpiry(referenceExpiryDate),
@@ -350,13 +346,14 @@ export const OWNER_addProduct = async (req, res) => {
     if (parsedQuantity > 0) {
       await createStockLog({
         productId: product._id,
-        movementType: "RESTOCK",
+        movementType: "ITEM_CREATED",
         quantityChange: parsedQuantity,
         performedBy: {
           userId: req.user.id,
           role: req.user.role,
         },
-        source: "SYSTEM",
+        source: "MANUAL",
+        notes: `New item created: ${product.name}`,
       });
     }
 
@@ -964,12 +961,7 @@ export const OWNER_getAllInventoryRequests = async (req, res) => {
 
 export const OWNER_updateDiscrepancy = async (req, res) => {
   const { productId } = req.params;
-  const { physicalCount } = req.body || {};
-
-  const parsedPhysicalCount = Number(physicalCount);
-  if (!Number.isFinite(parsedPhysicalCount) || parsedPhysicalCount < 0) {
-    return res.status(400).json({ message: "physicalCount must be a valid non-negative number" });
-  }
+  const { physicalCount, category, genericName, dosageForm, strength } = req.body || {};
 
   try {
     const product = await Product.findOne({
@@ -981,7 +973,21 @@ export const OWNER_updateDiscrepancy = async (req, res) => {
       return res.status(404).json({ message: "Active product not found" });
     }
 
+    const fallbackPhysicalCount = Number.isFinite(Number(product.physicalCount))
+      ? Number(product.physicalCount)
+      : Number(product.quantity ?? 0);
+
+    const parsedPhysicalCount =
+      physicalCount === undefined || physicalCount === null || String(physicalCount).trim() === ""
+        ? fallbackPhysicalCount
+        : Number(physicalCount);
+
+    if (!Number.isFinite(parsedPhysicalCount) || parsedPhysicalCount < 0) {
+      return res.status(400).json({ message: "physicalCount must be a valid non-negative number" });
+    }
+
     const previous = {
+      quantity: Number(product.quantity ?? 0),
       expectedRemaining: Number.isFinite(Number(product.expectedRemaining))
         ? Number(product.expectedRemaining)
         : Number(product.quantity ?? 0),
@@ -994,10 +1000,37 @@ export const OWNER_updateDiscrepancy = async (req, res) => {
       status: product.discrepancyStatus || "Balanced",
     };
 
-    product.expectedRemaining = Number(product.quantity ?? 0);
+    const quantityDelta = parsedPhysicalCount - previous.quantity;
+
+    // Discrepancy reconciliation: system quantity must match the counted quantity.
+    product.quantity = parsedPhysicalCount;
+    product.expectedRemaining = parsedPhysicalCount;
     product.physicalCount = parsedPhysicalCount;
-    product.variance = parsedPhysicalCount - product.expectedRemaining;
-    product.discrepancyStatus = product.variance === 0 ? "Balanced" : "With Variance";
+    product.variance = 0;
+    product.discrepancyStatus = "Balanced";
+
+    // Allow owners to complete legacy medicine fields for old records while reviewing discrepancy data.
+    if (typeof category === "string") {
+      const normalizedCategory = category.trim();
+      if (normalizedCategory) {
+        product.category = normalizedCategory;
+      }
+    }
+
+    if (typeof genericName === "string") {
+      const normalizedGeneric = genericName.trim();
+      product.genericName = normalizedGeneric || null;
+    }
+
+    if (typeof dosageForm === "string") {
+      const normalizedDosageForm = dosageForm.trim();
+      product.dosageForm = normalizedDosageForm || null;
+    }
+
+    if (typeof strength === "string") {
+      const normalizedStrength = strength.trim();
+      product.strength = normalizedStrength || null;
+    }
 
     await product.save();
 
@@ -1017,6 +1050,11 @@ export const OWNER_updateDiscrepancy = async (req, res) => {
         itemName: product.name,
         previousValue: previous,
         updatedValue: {
+          quantity: product.quantity,
+          category: product.category,
+          genericName: product.genericName,
+          dosageForm: product.dosageForm,
+          strength: product.strength,
           expectedRemaining: product.expectedRemaining,
           physicalCount: product.physicalCount,
           variance: product.variance,
@@ -1026,6 +1064,21 @@ export const OWNER_updateDiscrepancy = async (req, res) => {
       },
     });
 
+    // Log discrepancy adjustment in Stock Logs if quantity changed
+    if (quantityDelta !== 0) {
+      await createStockLog({
+        productId: product._id,
+        movementType: "ADJUSTMENT",
+        quantityChange: quantityDelta,
+        performedBy: {
+          userId: req.user.id,
+          role: req.user.role,
+        },
+        source: "MANUAL",
+        notes: `Discrepancy adjustment: previous qty ${previous.quantity}, new qty ${product.quantity}, difference ${quantityDelta}`,
+      });
+    }
+
     return res.status(200).json({
       message: "Discrepancy updated successfully",
       data: {
@@ -1033,6 +1086,11 @@ export const OWNER_updateDiscrepancy = async (req, res) => {
         itemName: product.name,
         previousValue: previous,
         updatedValue: {
+          quantity: product.quantity,
+          category: product.category,
+          genericName: product.genericName,
+          dosageForm: product.dosageForm,
+          strength: product.strength,
           expectedRemaining: product.expectedRemaining,
           physicalCount: product.physicalCount,
           variance: product.variance,

@@ -23,6 +23,30 @@ const STAFF_toBoolean = (value) => {
   return value === true || value === "true" || value === 1 || value === "1";
 };
 
+const STAFF_buildCategoryFilterRegex = (value) => {
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/&/g, "and")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+
+  if (!normalized) return null;
+
+  const aliases = {
+    medicine: "medicine",
+    "first aid": "first aid",
+    vitamins: "vitamin",
+    vitamin: "vitamin",
+    "personal care": "personal care",
+  };
+
+  const canonical = aliases[normalized] || normalized;
+  const escapedCanonical = canonical.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const pattern = `^${escapedCanonical.replace(/\s+/g, "[-_\\s]*")}s?$`;
+  return new RegExp(pattern, "i");
+};
+
 const STAFF_pickFirstNonEmpty = (...values) => {
   for (const value of values) {
     if (value === null || value === undefined) continue;
@@ -110,15 +134,11 @@ const STAFF_enrichMissingFieldsFromApprovedRequests = async (items) => {
   if (!Array.isArray(items) || items.length === 0) return items;
 
   const itemsNeedingFallback = items.filter((item) =>
-    !STAFF_pickFirstNonEmpty(
-      item.genericName,
-      item.generic,
-      item.dosageForm,
-      item.dosage,
-      item.strength,
-      item.supplier,
-      item.supplierName
-    )
+    !STAFF_pickFirstNonEmpty(item.genericName, item.generic) ||
+    !STAFF_pickFirstNonEmpty(item.dosageForm, item.dosage) ||
+    !STAFF_pickFirstNonEmpty(item.strength) ||
+    !STAFF_pickFirstNonEmpty(item.medicineName, item.name) ||
+    !STAFF_pickFirstNonEmpty(item.supplier, item.supplierName)
   );
 
   if (!itemsNeedingFallback.length) return items;
@@ -150,7 +170,7 @@ const STAFF_enrichMissingFieldsFromApprovedRequests = async (items) => {
       genericName: STAFF_pickFirstNonEmpty(item.genericName, item.generic, fallback.genericName),
       brandName: STAFF_pickFirstNonEmpty(item.brandName, item.brand, fallback.brandName),
       dosageForm: STAFF_pickFirstNonEmpty(item.dosageForm, item.dosage, fallback.dosageForm),
-      strength: STAFF_pickFirstNonEmpty(item.strength, fallback.strength),
+      strength: STAFF_pickFirstNonEmpty(item.strength, item.Strength, item.dose, item.dosageStrength, fallback.strength),
       medicineName: STAFF_pickFirstNonEmpty(item.medicineName, fallback.medicineName, item.name),
       supplier: STAFF_pickFirstNonEmpty(item.supplier, item.supplierName, fallback.supplier),
     };
@@ -193,7 +213,7 @@ const STAFF_buildItemPayload = (item) => {
     genericName: STAFF_pickFirstNonEmpty(item.genericName, item.generic),
     brandName: STAFF_pickFirstNonEmpty(item.brandName, item.brand),
     dosageForm: STAFF_pickFirstNonEmpty(item.dosageForm, item.dosage),
-    strength: STAFF_pickFirstNonEmpty(item.strength),
+    strength: STAFF_pickFirstNonEmpty(item.strength, item.Strength, item.dose, item.dosageStrength),
     medicineName: STAFF_pickFirstNonEmpty(item.medicineName, item.name),
     expirationStatus,
     daysUntilExpiry,
@@ -234,8 +254,9 @@ export const STAFF_getInventory = async (req, res) => {
       filter.isArchived = { $ne: true };
     }
 
-    if (category) {
-      filter.category = String(category).trim();
+    const categoryRegex = STAFF_buildCategoryFilterRegex(category);
+    if (categoryRegex) {
+      filter.category = categoryRegex;
     }
 
     if (lowStockOnly) {
@@ -273,8 +294,8 @@ export const STAFF_getInventory = async (req, res) => {
         requestedBy: req.user.id,
       };
 
-      if (category) {
-        pendingFilter.category = String(category).trim();
+      if (categoryRegex) {
+        pendingFilter.category = categoryRegex;
       }
 
       const pendingRequests = await InventoryRequest.find(pendingFilter)

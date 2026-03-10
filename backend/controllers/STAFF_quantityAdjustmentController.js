@@ -4,6 +4,7 @@ import Notification from "../models/Notification.js";
 import STAFF_ActivityLog from "../models/STAFF_activityLog.js";
 import User from "../models/user.js";
 import { createStockLog } from "../services/Owner_StockLog.service.js";
+import mongoose from "mongoose";
 
 // Staff: Create quantity adjustment request
 export const STAFF_createQuantityAdjustment = async (req, res) => {
@@ -114,6 +115,8 @@ export const OWNER_getQuantityAdjustments = async (req, res) => {
 
 // Owner: Review adjustment request
 export const OWNER_reviewQuantityAdjustment = async (req, res) => {
+  const session = await mongoose.startSession();
+
   try {
     const { id } = req.params;
     const { status, rejectionReason } = req.body;
@@ -122,7 +125,7 @@ export const OWNER_reviewQuantityAdjustment = async (req, res) => {
       return res.status(400).json({ message: "Invalid status" });
     }
 
-    const adjustment = await STAFF_QuantityAdjustment.findById(id);
+    const adjustment = await STAFF_QuantityAdjustment.findById(id).session(session);
     if (!adjustment) {
       return res.status(404).json({ message: "Adjustment request not found" });
     }
@@ -131,45 +134,61 @@ export const OWNER_reviewQuantityAdjustment = async (req, res) => {
       return res.status(400).json({ message: "Only pending requests can be reviewed" });
     }
 
-    adjustment.status = status;
-    adjustment.reviewedBy = req.user.id;
-    adjustment.reviewedAt = new Date();
+    await session.withTransaction(async () => {
+      adjustment.status = status;
+      adjustment.reviewedBy = req.user.id;
+      adjustment.reviewedAt = new Date();
 
-    if (status === "Approved") {
-      // Update product quantity
-      const product = await Product.findById(adjustment.productId);
-      if (product) {
-        const oldQuantity = product.quantity;
-        product.quantity = adjustment.actualQuantity;
-        await product.save();
+      if (status === "Approved") {
+        const product = await Product.findById(adjustment.productId).session(session);
+        if (!product || product.isArchived) {
+          throw new Error("Product not found");
+        }
 
-        // Create stock log
-        await createStockLog({
-          productId: product._id,
-          movementType: "ADJUST",
-          quantityChange: adjustment.difference,
-          performedBy: {
-            userId: req.user.id,
-            role: "owner",
-          },
-          source: "QUANTITY_ADJUSTMENT",
-          notes: `Adjustment approved: ${adjustment.reason}. Old qty: ${oldQuantity}, New qty: ${adjustment.actualQuantity}`,
-        });
+        const previousQuantity = Number(product.quantity ?? 0);
+        const countedQuantity = Number(adjustment.actualQuantity ?? previousQuantity);
+        const difference = countedQuantity - previousQuantity;
+
+        product.quantity = countedQuantity;
+        product.expectedRemaining = countedQuantity;
+        product.physicalCount = countedQuantity;
+        product.variance = 0;
+        product.discrepancyStatus = "Balanced";
+        await product.save({ session });
+
+        if (difference !== 0) {
+          await createStockLog({
+            productId: product._id,
+            movementType: "ADJUSTMENT",
+            quantityChange: difference,
+            performedBy: {
+              userId: req.user.id,
+              role: "owner",
+            },
+            source: "MANUAL",
+            notes: `Discrepancy approved. Previous Qty: ${previousQuantity}, New Qty: ${countedQuantity}, Difference: ${difference}`,
+            session,
+          });
+        }
+      } else {
+        adjustment.rejectionReason = rejectionReason || null;
       }
-    } else {
-      adjustment.rejectionReason = rejectionReason || null;
-    }
 
-    await adjustment.save();
+      await adjustment.save({ session });
 
-    // Create notification for staff
-    await Notification.create({
-      userId: adjustment.staffId,
-      role: "staff",
-      message: `Your quantity adjustment request for ${adjustment.productName} has been ${status.toLowerCase()}`,
-      type: "inventory_adjustment_request",
-      redirectUrl: "/inventory-adjustments",
-      relatedId: adjustment._id,
+      await Notification.create(
+        [
+          {
+            userId: adjustment.staffId,
+            role: "staff",
+            message: `Your quantity adjustment request for ${adjustment.productName} has been ${status.toLowerCase()}`,
+            type: "inventory_adjustment_request",
+            redirectUrl: "/inventory-adjustments",
+            relatedId: adjustment._id,
+          },
+        ],
+        { session }
+      );
     });
 
     return res.status(200).json({
@@ -178,5 +197,7 @@ export const OWNER_reviewQuantityAdjustment = async (req, res) => {
     });
   } catch (error) {
     return res.status(500).json({ message: error.message || "Internal server error" });
+  } finally {
+    await session.endSession();
   }
 };

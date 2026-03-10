@@ -40,26 +40,63 @@
             </div>
         </div>
 
-        <!-- Price Adjustment -->
+        <!-- Pricing Strategy -->
         <div class="space-y-5">
-            <h3 class="text-xl font-medium text-gray-900">Price Adjustment</h3>
-            <div class="grid grid-cols-2 gap-8">
-                <div class="space-y-1.5">
-                    <label class="flex items-center gap-1 text-base text-gray-600">
-                        Bulk Price Adjustment (%)
-                        <img src="../../assets/information_icon.png" alt="info" class="w-3.5 h-3.5 opacity-60"/>
+            <div class="space-y-1">
+                <h3 class="text-xl font-medium text-gray-900">Pricing Strategy</h3>
+                <p class="text-sm text-gray-500">Configure how product prices are calculated and monitored.</p>
+            </div>
+
+            <div class="rounded-xl border border-gray-200 bg-white p-6 shadow-sm space-y-6">
+                <div class="space-y-3">
+                    <p class="text-sm font-medium text-gray-700">Price Mode</p>
+
+                    <label for="priceModeCostMarkup" id="priceModeCostMarkupCard" class="flex items-start gap-3 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 cursor-pointer transition-colors">
+                        <input type="radio" id="priceModeCostMarkup" name="priceMode" value="cost_markup" checked disabled class="mt-1 h-4 w-4 border-gray-300 text-blue-600 focus:ring-blue-500 cursor-not-allowed" />
+                        <span>
+                            <span class="block text-sm font-medium text-gray-900">Cost + Markup Pricing</span>
+                            <span class="block text-xs text-gray-500 mt-0.5">Selling price is calculated automatically using supplier cost and markup.</span>
+                        </span>
                     </label>
-                    <input type="number" id="bulkAdjustment" value="0" disabled
-                        class="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg bg-gray-50 text-gray-600 cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"/>
+
+                    <div id="markupRateContainer" class="pl-7 space-y-1.5">
+                        <label class="flex items-center gap-1 text-sm text-gray-600">
+                            Default Markup Rate (%)
+                            <img src="../../assets/information_icon.png" alt="info" class="w-3.5 h-3.5 opacity-60"/>
+                        </label>
+                        <input type="number" id="markupRate" value="0" disabled
+                            class="w-full max-w-sm px-3 py-2 text-sm border border-gray-200 rounded-lg bg-gray-50 text-gray-600 cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"/>
+                        <p class="text-xs text-gray-500">Default profit percentage applied when calculating selling prices.</p>
+                    </div>
+
+                    <label for="priceModeManual" id="priceModeManualCard" class="flex items-start gap-3 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 cursor-pointer transition-colors">
+                        <input type="radio" id="priceModeManual" name="priceMode" value="manual" disabled class="mt-1 h-4 w-4 border-gray-300 text-blue-600 focus:ring-blue-500 cursor-not-allowed" />
+                        <span>
+                            <span class="block text-sm font-medium text-gray-900">Manual Pricing</span>
+                            <span class="block text-xs text-gray-500 mt-0.5">Selling price is manually set for each item.</span>
+                        </span>
+                    </label>
                 </div>
-                
+
+                <div class="space-y-2">
+                    <div class="flex items-center justify-between gap-4">
+                        <div>
+                            <p class="text-sm font-medium text-gray-700">Auto Price Recalculation</p>
+                            <p class="text-xs text-gray-500">If enabled, the system recalculates the selling price using the markup when supplier cost changes.</p>
+                        </div>
+                        <label for="autoPriceRecalculation" class="relative inline-flex items-center cursor-not-allowed">
+                            <input type="checkbox" id="autoPriceRecalculation" class="peer sr-only" disabled>
+                            <span class="h-6 w-11 rounded-full bg-gray-300 transition peer-checked:bg-blue-600"></span>
+                            <span class="absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform peer-checked:translate-x-5"></span>
+                        </label>
+                    </div>
+                </div>
+
                 <div class="space-y-1.5">
-                    <label class="flex items-center gap-1 text-base text-gray-600">
-                        Default Markup Rate (%)
-                        <img src="../../assets/information_icon.png" alt="info" class="w-3.5 h-3.5 opacity-60"/>
-                    </label>
-                    <input type="number" id="markupRate" value="0" disabled
-                        class="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg bg-gray-50 text-gray-600 cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"/>
+                    <label class="text-sm text-gray-700 font-medium" for="minimumProfitMargin">Minimum Profit Margin (%)</label>
+                    <input type="number" id="minimumProfitMargin" value="10" placeholder="10%" disabled
+                        class="w-full max-w-sm px-3 py-2 text-sm border border-gray-200 rounded-lg bg-gray-50 text-gray-600 cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"/>
+                    <p class="text-xs text-gray-500">If a product's margin falls below this threshold, the system will show a warning.</p>
                 </div>
             </div>
         </div>

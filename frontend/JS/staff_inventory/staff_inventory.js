@@ -118,6 +118,15 @@ function formatCategory(category) {
     return category.split(/[-_\s]+/).map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(' ');
 }
 
+function normalizeCategoryKey(value) {
+    return String(value || '')
+        .trim()
+        .toLowerCase()
+        .replace(/&/g, 'and')
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '');
+}
+
 function formatDateDisplay(value, fallback = "N/A") {
     if (!value) return fallback;
     const d = new Date(value);
@@ -221,7 +230,7 @@ async function fetchInventoryItems() {
         if (showArchivedItems) query.includeArchived = "true";
         if (!showArchivedItems) query.includePending = "true";
         if (showLowStockOnly) query.lowStockOnly = "true";
-        if (currentCategoryFilter !== "all") query.category = currentCategoryFilter;
+        if (currentCategoryFilter !== "all") query.category = normalizeCategoryKey(currentCategoryFilter);
 
         const qs = Object.entries(query).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join("&");
         const url = qs ? `${API.ITEMS}?${qs}` : API.ITEMS;
@@ -277,7 +286,7 @@ function mapBackendItemToUI(item) {
         genericName: item.genericName || item.generic || "",
         brandName: item.brandName || item.brand || item.itemName || "",
         dosageForm: item.dosageForm || item.dosage || "",
-        strength: item.strength || item.dose || "",
+        strength: item.strength || item.Strength || item.dose || item.dosageStrength || "",
         medicineName: item.medicineName || item.itemName || item.name || "",
         archived: !!item.isArchived,
         isPendingRequest: !!item.isPendingRequest,
@@ -553,7 +562,9 @@ function applyFilters() {
             (item.type || "").toLowerCase().includes(search)
         );
 
-        const matchesCategory = currentCategoryFilter === "all" || item.category === currentCategoryFilter;
+        const itemCategoryKey = normalizeCategoryKey(item.category);
+        const activeCategoryKey = normalizeCategoryKey(currentCategoryFilter);
+        const matchesCategory = currentCategoryFilter === "all" || itemCategoryKey === activeCategoryKey;
         const matchesStatus = currentStatusFilter === "all" || item.status === currentStatusFilter;
         const matchesStockFilter = !showLowStockOnly || item.status === "low-stock" || item.status === "out-of-stock";
 
@@ -685,8 +696,8 @@ async function showItemDetails(item) {
     setText("detailsMedicineName", detailItem.medicineName || detailItem.name);
     setText("detailsMedicineGeneric", detailItem.genericName || detailItem.generic);
     setText("detailsMedicineBrand", detailItem.brandName || detailItem.brand);
-    setText("detailsDosageForm", detailItem.dosageForm);
-    setText("detailsStrength", detailItem.strength);
+    setText("detailsDosageForm", detailItem.dosageForm || detailItem.dosage);
+    setText("detailsStrength", detailItem.strength || detailItem.Strength || detailItem.dose || detailItem.dosageStrength);
     setText("detailsMedicineUnit", detailItem.unit);
     setText("detailsMedicineDescription", detailItem.description);
 

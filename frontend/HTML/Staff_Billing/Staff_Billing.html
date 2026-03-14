@@ -20,6 +20,11 @@
 			appearance: textfield;
 			-moz-appearance: textfield;
 		}
+
+		.billing-item-link {
+			cursor: pointer;
+			color: #1a73e8;
+		}
 	</style>
 </head>
 <body class="bg-slate-100 text-[13px] text-slate-900">
@@ -63,6 +68,7 @@
 							<thead class="sticky top-0 bg-slate-100 text-left text-[11px] uppercase tracking-wide text-slate-500">
 								<tr>
 									<th class="px-3 py-2 font-semibold">Item Description</th>
+									<th class="px-3 py-2 font-semibold">Strength</th>
 									<th class="px-3 py-2 font-semibold">Price</th>
 									<th class="px-3 py-2 font-semibold">Stock</th>
 									<th class="px-3 py-2 text-center font-semibold">Qty</th>
@@ -273,6 +279,44 @@
 			<footer class="flex justify-end gap-2 border-t border-slate-300 bg-slate-50 px-4 py-3">
 				<button id="voidCancelBtn" type="button" class="min-w-20 border border-slate-400 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100">CANCEL</button>
 				<button id="voidConfirmBtn" type="button" class="min-w-20 border border-rose-700 bg-rose-700 px-3 py-2 text-xs font-semibold text-white hover:bg-rose-600">CONFIRM</button>
+			</footer>
+		</div>
+	</section>
+
+	<section id="itemDetailsModal" class="fixed inset-0 z-50 hidden items-center justify-center p-4">
+		<div class="w-full max-w-2xl border border-slate-300 bg-white shadow-lg">
+			<header class="border-b border-slate-300 bg-black px-4 py-3 text-xs font-semibold uppercase tracking-wider text-white">
+				Item Details
+			</header>
+			<div class="space-y-4 p-4 text-xs text-slate-700">
+				<div>
+					<h2 id="modalItemName" class="text-lg font-semibold text-slate-900">Item Name</h2>
+				</div>
+
+				<div class="border border-slate-200 bg-slate-50 p-3">
+					<h3 class="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-600">Item Information</h3>
+					<div class="grid gap-2 sm:grid-cols-2">
+						<p>Generic Name: <span id="modalGenericName" class="font-semibold text-slate-900">N/A</span></p>
+						<p>Brand Name: <span id="modalBrandName" class="font-semibold text-slate-900">N/A</span></p>
+						<p>Strength: <span id="modalStrength" class="font-semibold text-slate-900">N/A</span></p>
+						<p>Dosage Form: <span id="modalDosageForm" class="font-semibold text-slate-900">N/A</span></p>
+						<p>Unit: <span id="modalUnit" class="font-semibold text-slate-900">N/A</span></p>
+						<p>Category: <span id="modalCategory" class="font-semibold text-slate-900">N/A</span></p>
+						<p class="sm:col-span-2">Description: <span id="modalDescription" class="font-semibold text-slate-900">N/A</span></p>
+					</div>
+				</div>
+
+				<div class="border border-slate-200 bg-slate-50 p-3">
+					<h3 class="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-600">Expiration Information</h3>
+					<div class="grid gap-2 sm:grid-cols-2">
+						<p>Nearest Expiration: <span id="modalExpiry" class="font-semibold text-slate-900">N/A</span></p>
+						<p>Warning: <span id="modalWarning" class="font-semibold text-slate-900">N/A</span></p>
+						<p class="sm:col-span-2">Supplier: <span id="modalSupplier" class="font-semibold text-slate-900">N/A</span></p>
+					</div>
+				</div>
+			</div>
+			<footer class="flex justify-end gap-2 border-t border-slate-300 bg-slate-50 px-4 py-3">
+				<button id="itemDetailsCloseBtn" type="button" class="min-w-24 border border-slate-400 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100">CLOSE</button>
 			</footer>
 		</div>
 	</section>

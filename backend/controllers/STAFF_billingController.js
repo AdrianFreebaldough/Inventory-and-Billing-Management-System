@@ -8,6 +8,7 @@ import {
   STAFF_voidBillingTransaction,
 } from "../services/STAFF_billingService.js";
 import Product from "../models/product.js";
+import InventoryRequest from "../models/InventoryRequest.js";
 
 const STAFF_handleBillingError = (res, error) => {
   if (error instanceof STAFF_BillingError) {
@@ -178,16 +179,54 @@ export const STAFF_getBillingProducts = async (req, res) => {
 
     const products = await Product.find(filter)
       .sort({ name: 1 })
-      .select("_id name category quantity unitPrice")
+      .select("_id name category quantity unitPrice strength expiryDate supplier genericName brandName dosageForm unit description medicineName")
       .lean();
 
-    const data = products.map((product) => ({
-      id: product._id,
-      name: product.name,
-      category: product.category,
-      stock: product.quantity,
-      price: product.unitPrice ?? 0,
-    }));
+    // Enrich products missing medicine-detail fields from their approved ADD_ITEM requests
+    const productsNeedingFallback = products.filter(
+      (p) => !p.brandName || !p.genericName || !p.dosageForm || !p.strength
+    );
+
+    const fallbackMap = new Map();
+    if (productsNeedingFallback.length > 0) {
+      const productIds = productsNeedingFallback.map((p) => p._id);
+      const requests = await InventoryRequest.find({
+        requestType: "ADD_ITEM",
+        status: "approved",
+        product: { $in: productIds },
+      })
+        .sort({ reviewedAt: -1, createdAt: -1 })
+        .select("product genericName brandName dosageForm strength medicineName")
+        .lean();
+
+      for (const inventoryReq of requests) {
+        const key = String(inventoryReq.product);
+        if (!fallbackMap.has(key)) {
+          fallbackMap.set(key, inventoryReq);
+        }
+      }
+    }
+
+    const data = products.map((product) => {
+      const fallback = fallbackMap.get(String(product._id));
+      return {
+        id: product._id,
+        name: product.name,
+        category: product.category,
+        genericName: product.genericName || fallback?.genericName || null,
+        brandName: product.brandName || fallback?.brandName || null,
+        medicineName: product.medicineName || fallback?.medicineName || null,
+        strength: product.strength || fallback?.strength || null,
+        dosageForm: product.dosageForm || fallback?.dosageForm || null,
+        unit: product.unit || null,
+        branchName: null,
+        description: product.description || null,
+        expiryDate: product.expiryDate || null,
+        supplier: product.supplier || null,
+        stock: product.quantity,
+        price: product.unitPrice ?? 0,
+      };
+    });
 
     return res.status(200).json({
       count: data.length,

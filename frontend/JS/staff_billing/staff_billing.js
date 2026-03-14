@@ -88,6 +88,7 @@ const successModal = document.getElementById("successModal");
 const heldModal = document.getElementById("heldModal");
 const historyViewModal = document.getElementById("historyViewModal");
 const voidConfirmModal = document.getElementById("voidConfirmModal");
+const itemDetailsModal = document.getElementById("itemDetailsModal");
 
 const summaryClinic = document.getElementById("summaryClinic");
 const summaryTxnId = document.getElementById("summaryTxnId");
@@ -132,6 +133,19 @@ const historyViewVat = document.getElementById("historyViewVat");
 const historyViewTotal = document.getElementById("historyViewTotal");
 const voidCancelBtn = document.getElementById("voidCancelBtn");
 const voidConfirmBtn = document.getElementById("voidConfirmBtn");
+const itemDetailsCloseBtn = document.getElementById("itemDetailsCloseBtn");
+
+const modalItemName = document.getElementById("modalItemName");
+const modalGenericName = document.getElementById("modalGenericName");
+const modalBrandName = document.getElementById("modalBrandName");
+const modalCategory = document.getElementById("modalCategory");
+const modalStrength = document.getElementById("modalStrength");
+const modalDosageForm = document.getElementById("modalDosageForm");
+const modalUnit = document.getElementById("modalUnit");
+const modalDescription = document.getElementById("modalDescription");
+const modalExpiry = document.getElementById("modalExpiry");
+const modalWarning = document.getElementById("modalWarning");
+const modalSupplier = document.getElementById("modalSupplier");
 
 const toastContainer = document.getElementById("toastContainer");
 const loadingOverlay = document.getElementById("loadingOverlay");
@@ -247,7 +261,7 @@ function formatDateTime(isoString) {
 /* ===== Modals ===== */
 
 function closeAllModals() {
-	[summaryModal, cashModal, successModal, heldModal, historyViewModal, voidConfirmModal].forEach((modal) => {
+	[summaryModal, cashModal, successModal, heldModal, historyViewModal, voidConfirmModal, itemDetailsModal].forEach((modal) => {
 		modal.classList.add("hidden");
 		modal.classList.remove("flex");
 	});
@@ -263,6 +277,46 @@ function openModal(modal) {
 	modal.classList.add("flex");
 	document.body.classList.add("overflow-hidden");
 	state.currentModal = modal.id;
+}
+
+function formatDisplayDate(value) {
+	if (!value) return "N/A";
+	const parsed = new Date(value);
+	if (Number.isNaN(parsed.getTime())) return "N/A";
+	return parsed.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+
+function getExpiryWarningLabel(value) {
+	if (!value) return "None";
+	const parsed = new Date(value);
+	if (Number.isNaN(parsed.getTime())) return "None";
+
+	const now = new Date();
+	const dayMs = 24 * 60 * 60 * 1000;
+	const daysLeft = Math.ceil((parsed.getTime() - now.getTime()) / dayMs);
+
+	if (daysLeft < 0) return "Expired";
+	if (daysLeft <= 30) return "Expiring Soon";
+	return "None";
+}
+
+function openItemDetailsModal(itemId) {
+	const item = state.products.find((entry) => String(entry.id) === String(itemId));
+	if (!item) return;
+
+	if (modalItemName) modalItemName.textContent = item.name || "N/A";
+	if (modalGenericName) modalGenericName.textContent = String(item.genericName || item.generic_name || item.generic || "").trim() || "N/A";
+	if (modalBrandName) modalBrandName.textContent = String(item.brandName || item.brand_name || item.brand || item.medicineName || item.name || "").trim() || "N/A";
+	if (modalCategory) modalCategory.textContent = item.category || "N/A";
+	if (modalStrength) modalStrength.textContent = String(item.strength || item.Strength || item.dose || item.dosageStrength || "").trim() || "N/A";
+	if (modalDosageForm) modalDosageForm.textContent = String(item.dosageForm || item.dosage_form || item.dosage || "").trim() || "N/A";
+	if (modalUnit) modalUnit.textContent = String(item.unit || "").trim() || "N/A";
+	if (modalDescription) modalDescription.textContent = String(item.description || "").trim() || "N/A";
+	if (modalExpiry) modalExpiry.textContent = formatDisplayDate(item.expiryDate || item.nearestExpiry || item.nearest_expiry);
+	if (modalWarning) modalWarning.textContent = getExpiryWarningLabel(item.expiryDate || item.nearestExpiry || item.nearest_expiry);
+	if (modalSupplier) modalSupplier.textContent = String(item.supplier || "").trim() || "N/A";
+
+	openModal(itemDetailsModal);
 }
 
 /* ===== Data Computation ===== */
@@ -348,7 +402,7 @@ function renderItemRows() {
 	if (!filtered.length) {
 		itemsTableBody.innerHTML = `
 			<tr>
-				<td colspan="4" class="px-3 py-6 text-center text-sm text-slate-500">No items found.</td>
+				<td colspan="5" class="px-3 py-6 text-center text-sm text-slate-500">No items found.</td>
 			</tr>
 		`;
 		return;
@@ -363,7 +417,10 @@ function renderItemRows() {
 			const isPlusDisabled = isOutOfStock || currentQty >= item.stock;
 			return `
 				<tr class="text-sm text-slate-800">
-					<td class="px-3 py-3 font-medium">${item.name}</td>
+					<td class="px-3 py-3 font-medium">
+						<button type="button" class="billing-item-link bg-transparent border-0 p-0 text-left font-medium hover:underline" data-action="view-item" data-id="${item.id}">${item.name}</button>
+					</td>
+					<td class="px-3 py-3 text-slate-600">${String(item.strength || item.Strength || item.dose || item.dosageStrength || "").trim() || "N/A"}</td>
 					<td class="px-3 py-3">${formatPeso(item.price)}</td>
 					<td class="px-3 py-3 text-slate-600">${item.stock} units</td>
 					<td class="px-3 py-3">
@@ -973,6 +1030,10 @@ function attachEvents() {
 		const action = target.dataset.action;
 		const idValue = target.dataset.id;
 		if (!action || !idValue) return;
+		if (action === "view-item") {
+			openItemDetailsModal(idValue);
+			return;
+		}
 		const item = state.products.find((entry) => entry.id === idValue);
 		if (!item || item.stock <= 0) return;
 		const currentQty = state.quantities[idValue] || 0;
@@ -1074,6 +1135,7 @@ function attachEvents() {
 	});
 
 	historyViewCloseBtn.addEventListener("click", closeAllModals);
+	itemDetailsCloseBtn.addEventListener("click", closeAllModals);
 
 	voidCancelBtn.addEventListener("click", () => {
 		state.pendingVoidTransactionId = null;
@@ -1133,7 +1195,7 @@ function attachEvents() {
 	});
 
 	modalOverlay.addEventListener("click", () => {
-		const closableModals = ["summaryModal", "heldModal", "historyViewModal", "voidConfirmModal"];
+		const closableModals = ["summaryModal", "heldModal", "historyViewModal", "voidConfirmModal", "itemDetailsModal"];
 		if (closableModals.includes(state.currentModal)) {
 			closeAllModals();
 		}

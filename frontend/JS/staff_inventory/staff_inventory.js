@@ -622,7 +622,7 @@ function renderInventory() {
                     <span class="text-gray-600">Current Quantity</span>
                     <span class="font-semibold ${quantityColorClass}">${item.currentQuantity} ${item.unit}</span>
                 </div>
-                <div class="text-gray-500">Min: ${item.minStock} ${item.unit}</div>
+                <div class="text-gray-500">Strength: ${(String(item.strength || "").trim()) || "N/A"}</div>
                 <div class="text-gray-500 flex items-center gap-2">
                     <img src="../../assets/calendar_icon.png" alt="Calendar" class="w-4 h-4">
                     <span>Next Expiry: ${item.expiryDate}</span>

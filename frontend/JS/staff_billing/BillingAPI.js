@@ -104,6 +104,15 @@ export const fetchReceipt = async (transactionId) => {
  * @typedef {Object} BillingProduct
  * @property {string} id - MongoDB ObjectId
  * @property {string} name - Product name
+ * @property {string|null} genericName - Generic medicine name
+ * @property {string|null} brandName - Brand name
+ * @property {string|null} strength - Dosage strength (e.g., 500mg)
+ * @property {string|null} dosageForm - Dosage form (e.g., tablet)
+ * @property {string|null} unit - Dispensing unit
+ * @property {string|null} branchName - Branch name
+ * @property {string|null} description - Item description
+ * @property {string|null} expiryDate - Product expiration date
+ * @property {string|null} supplier - Supplier name
  * @property {string} category - Product category
  * @property {number} stock - Available quantity
  * @property {number} price - Unit price

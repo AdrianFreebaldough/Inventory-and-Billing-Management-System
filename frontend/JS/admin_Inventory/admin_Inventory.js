@@ -21,6 +21,11 @@ const API = {
   updateDiscrepancy: (id) => `/api/owner/inventory/${id}/discrepancy`,
   quantityAdjustments: "/api/owner/quantity-adjustments",
   reviewQuantityAdjustment: (id) => `/api/owner/quantity-adjustments/${id}/review`,
+  disposalLogs: "/api/owner/disposal",
+  disposalLogDetails: (id) => `/api/owner/disposal/${id}`,
+  directDisposal: "/api/owner/disposal/direct",
+  approveDisposal: (id) => `/api/owner/disposal/${id}/approve`,
+  rejectDisposal: (id) => `/api/owner/disposal/${id}/reject`,
 };
 
 /* ================= LOCAL UI STATE ================= */
@@ -36,6 +41,8 @@ let showArchivedItems = false;
 let showLowStockOnly = false;
 let currentInventoryPage = 1;
 const INVENTORY_ITEMS_PER_PAGE = 8;
+const REQUESTS_AUTO_REFRESH_MS = 30000;
+let requestsAutoRefreshTimer = null;
 
 /* ================= STATUS MAPS  (DB → UI) ================= */
 const DB_STATUS_TO_UI = {
@@ -60,6 +67,9 @@ const DB_ADJUSTMENT_STATUS_TO_UI = {
 const FILTER_CONFIG = {
   all:           { activeBg:'bg-blue-600',   activeText:'text-white', activeBorder:'border-blue-600',   hoverBg:'hover:bg-blue-50',   hoverBorder:'hover:border-blue-500',   hoverText:'hover:text-blue-700' },
   'in-stock':    { activeBg:'bg-green-600',  activeText:'text-white', activeBorder:'border-green-600',  hoverBg:'hover:bg-green-50',  hoverBorder:'hover:border-green-500',  hoverText:'hover:text-green-700' },
+  safe:          { activeBg:'bg-emerald-600',activeText:'text-white', activeBorder:'border-emerald-600',hoverBg:'hover:bg-emerald-50',hoverBorder:'hover:border-emerald-500',hoverText:'hover:text-emerald-700' },
+  'near-expiry': { activeBg:'bg-amber-500',  activeText:'text-white', activeBorder:'border-amber-500',  hoverBg:'hover:bg-amber-50',  hoverBorder:'hover:border-amber-500',  hoverText:'hover:text-amber-700' },
+  'at-risk':     { activeBg:'bg-red-600',    activeText:'text-white', activeBorder:'border-red-600',    hoverBg:'hover:bg-red-50',    hoverBorder:'hover:border-red-500',    hoverText:'hover:text-red-700' },
   pending:       { activeBg:'bg-yellow-500', activeText:'text-white', activeBorder:'border-yellow-500', hoverBg:'hover:bg-yellow-50', hoverBorder:'hover:border-yellow-500', hoverText:'hover:text-yellow-700' },
   'low-stock':   { activeBg:'bg-orange-500', activeText:'text-white', activeBorder:'border-orange-500', hoverBg:'hover:bg-orange-50', hoverBorder:'hover:border-orange-500', hoverText:'hover:text-orange-700' },
   'out-of-stock':{ activeBg:'bg-red-700',    activeText:'text-white', activeBorder:'border-red-700',    hoverBg:'hover:bg-red-50',    hoverBorder:'hover:border-red-600',    hoverText:'hover:text-red-700' },
@@ -89,6 +99,12 @@ const STATUS_SORT_PRIORITY = {
   'in-stock': 3,
 };
 
+const REQUEST_STATUS_SORT_PRIORITY = {
+  pending: 1,
+  approved: 2,
+  denied: 3,
+};
+
 const Z_INDEX = { MODAL_BASE: 10000, MODAL_OVERLAY: 9999, TOAST: 20000 };
 const EXPIRY_WARNING_DAYS = 7;
 
@@ -99,10 +115,19 @@ function mapBackendItemToUI(p) {
         id: batch._id,
         batchNumber: batch.batchNumber || "—",
         quantity: Number(batch.quantity ?? 0),
+        currentQuantity: Number(batch.currentQuantity ?? batch.quantity ?? 0),
+        originalQuantity: Number(batch.originalQuantity ?? batch.quantity ?? 0),
         supplier: batch.supplier || "—",
         createdAt: batch.createdAt || null,
         expiryDateISO: batch.expiryDate ? new Date(batch.expiryDate).toISOString().split("T")[0] : "",
         expiryDate: batch.expiryDate ? formatDateDisplay(batch.expiryDate, "N/A") : "N/A",
+        expiryRisk: mapExpiryRiskToUi(batch.expiryRisk || null),
+        status: batch.status || null,
+        statusKey: batch.statusKey || "active",
+        canDispose: batch.canDispose !== false,
+        isExpired: !!batch.isExpired,
+        isImmediateReview: !!batch.isImmediateReview,
+        isPendingDisposal: !!batch.isPendingDisposal,
       }))
     : [];
 
@@ -124,6 +149,7 @@ function mapBackendItemToUI(p) {
     batchNumber:     p.nearestBatchNumber || p.batchNumber || "—",
     batchCount,
     batches,
+    expiryRisk:      mapExpiryRiskToUi(p.expiryRisk || p.expiryRiskKey || null),
     archived:        !!p.isArchived,
     price:           p.unitPrice ?? 0,
     description:     p.description || "",
@@ -145,8 +171,66 @@ function mapBackendItemToUI(p) {
   };
 }
 
+function mapExpiryRiskToUi(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (normalized === "green" || normalized === "safe") return "safe";
+  if (normalized === "yellow" || normalized === "near-expiry" || normalized === "near expiry") return "near-expiry";
+  if (normalized === "red" || normalized === "at-risk" || normalized === "at risk") return "at-risk";
+  if (normalized === "expired") return "expired";
+  return "no-expiry";
+}
+
+function getExpiryRiskPill(expiryRisk) {
+  const normalized = mapExpiryRiskToUi(expiryRisk);
+  if (normalized === "safe") {
+    return { label: "Safe", textClass: "text-emerald-700", dotColor: "#16a34a" };
+  }
+  if (normalized === "near-expiry") {
+    return { label: "Near-Expiry", textClass: "text-amber-700", dotColor: "#f59e0b" };
+  }
+  if (normalized === "at-risk") {
+    return { label: "Immediate Review", textClass: "text-red-700", dotColor: "#ef4444" };
+  }
+  if (normalized === "expired") {
+    return { label: "Expired", textClass: "text-red-800", dotColor: "#991b1b" };
+  }
+  return { label: "No Expiry", textClass: "text-gray-600", dotColor: "#9ca3af" };
+}
+
+function getBatchStatusPill(batch) {
+  const normalizedStatus = String(batch?.statusKey || "").trim().toLowerCase();
+  if (normalizedStatus === "pending-disposal") {
+    return { label: "Pending Disposal", textClass: "text-orange-700", dotColor: "#f97316" };
+  }
+  if (normalizedStatus === "disposed") {
+    return { label: "Disposed", textClass: "text-slate-700", dotColor: "#64748b" };
+  }
+  if (normalizedStatus === "empty") {
+    return { label: "Empty", textClass: "text-slate-500", dotColor: "#94a3b8" };
+  }
+  if (normalizedStatus === "expired") {
+    return { label: "Expired", textClass: "text-red-800", dotColor: "#991b1b" };
+  }
+  if (normalizedStatus === "immediate-review") {
+    return { label: "Immediate Review", textClass: "text-red-700", dotColor: "#ef4444" };
+  }
+  return { label: "Active", textClass: "text-emerald-700", dotColor: "#16a34a" };
+}
+
 function mapBackendRequestToUI(r) {
   const isRestock = r.requestType === "RESTOCK";
+  const submittedAt = r.date_requested || r.createdAt || null;
+  const requestDate = submittedAt
+    ? new Date(submittedAt).toLocaleString("en-US", {
+        month: "2-digit",
+        day: "2-digit",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: true,
+      })
+    : "-";
+
   const product = r.product || {};
   return {
     id:              r._id,
@@ -159,17 +243,19 @@ function mapBackendRequestToUI(r) {
     unit:            r.unit || "pcs",
     requestQuantity: isRestock ? (r.requestedQuantity ?? 0) : (r.initialQuantity ?? 0),
     requestedBy:     r.requestedBy?.email || "Staff",
-    requestDate:     r.createdAt ? new Date(r.createdAt).toLocaleDateString("en-US") : "—",
+    requestDate,
     status:          DB_REQUEST_STATUS_TO_UI[r.status] || r.status,
     supplier:        "",
     productId:       isRestock ? (product._id || null) : null,
     notes:           r.rejectionReason || "",
+    submittedAt,
   };
 }
 
 function mapBackendDiscrepancyToUI(r) {
-  const requestDate = r.createdAt
-    ? new Date(r.createdAt).toLocaleString("en-US", {
+  const submittedAt = r.date_requested || r.createdAt || null;
+  const requestDate = submittedAt
+    ? new Date(submittedAt).toLocaleString("en-US", {
         month: "2-digit",
         day: "2-digit",
         year: "numeric",
@@ -200,14 +286,61 @@ function mapBackendDiscrepancyToUI(r) {
     actualQuantity: Number(r.actualQuantity ?? 0),
     variance: Number(r.difference ?? 0),
     reason: r.reason || "",
-    submittedAt: r.createdAt || null,
+    submittedAt,
+  };
+}
+
+function mapBackendDisposalToUI(r) {
+  const submittedAt = r.date_requested || r.dateRequested || r.createdAt || null;
+  const requestDate = submittedAt
+    ? new Date(submittedAt).toLocaleString("en-US", {
+        month: "2-digit",
+        day: "2-digit",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: true,
+      })
+    : "-";
+
+  const normalizedStatus = String(r.status || "").trim().toLowerCase();
+  const uiStatus = normalizedStatus === "pending"
+    ? "pending"
+    : normalizedStatus === "rejected"
+      ? "denied"
+      : "approved";
+
+  return {
+    id: String(r.id || r._id || ""),
+    requestType: "DISPOSAL",
+    itemName: r.itemName || "Unknown",
+    type: r.genericName || r.itemName || "Disposal Request",
+    category: "",
+    currentQuantity: 0,
+    minStock: 0,
+    unit: "pcs",
+    requestQuantity: Number(r.quantity_requested ?? r.quantityDisposed ?? 0),
+    requestedBy: r.requestedBy?.name || r.requestedBy?.email || "Staff",
+    requestDate,
+    status: uiStatus,
+    supplier: "",
+    productId: String(r.itemId || ""),
+    notes: r.remarks || r.reason || "",
+    submittedAt,
+    reason: r.reason || "",
+    batchNumber: r.batchNumber || "-",
+    referenceId: r.referenceId || "",
+    isDisposal: true,
   };
 }
 
 /* ================= API FETCH HELPERS ================= */
 async function fetchInventoryItems() {
   try {
-    const res = await apiFetch(API.activeInventory);
+    const categoryQuery = currentCategoryFilter !== "all"
+      ? `?category=${encodeURIComponent(normalizeCategoryKey(currentCategoryFilter))}`
+      : "";
+    const res = await apiFetch(`${API.activeInventory}${categoryQuery}`);
     return (res?.data || []).map(mapBackendItemToUI);
   } catch (err) {
     showToast(`Failed to load inventory: ${err.message}`, "error");
@@ -255,6 +388,16 @@ async function fetchDiscrepancyRequests() {
   }
 }
 
+async function fetchDisposalRequests() {
+  try {
+    const res = await apiFetch(API.disposalLogs);
+    return (res?.data || []).map(mapBackendDisposalToUI);
+  } catch (err) {
+    showToast(`Failed to load disposal requests: ${err.message}`, "error");
+    return [];
+  }
+}
+
 async function refreshInventory() {
   if (showArchivedItems) {
     inventoryItems = await fetchArchivedItems();
@@ -265,12 +408,13 @@ async function refreshInventory() {
 }
 
 async function refreshRequests() {
-  const [inventoryReqs, discrepancyReqs] = await Promise.all([
+  const [inventoryReqs, discrepancyReqs, disposalReqs] = await Promise.all([
     fetchAllRequests(),
     fetchDiscrepancyRequests(),
+    fetchDisposalRequests(),
   ]);
 
-  restockRequests = [...discrepancyReqs, ...inventoryReqs];
+  restockRequests = [...inventoryReqs, ...discrepancyReqs, ...disposalReqs];
   applyRestockFilters();
 }
 
@@ -282,6 +426,17 @@ async function refreshAll() {
 function normalizeStatus(status) {
   if (!status) return "in-stock";
   return String(status).toLowerCase().replace(/\s+/g, "-");
+}
+function getRequestTimestamp(request) {
+  const raw = request?.submittedAt || request?.date_requested || request?.createdAt || null;
+  const parsed = raw ? new Date(raw).getTime() : 0;
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+function getRequestStatusSortPriority(status) {
+  const normalized = normalizeStatus(status);
+  return Object.prototype.hasOwnProperty.call(REQUEST_STATUS_SORT_PRIORITY, normalized)
+    ? REQUEST_STATUS_SORT_PRIORITY[normalized]
+    : Number.MAX_SAFE_INTEGER;
 }
 function getFilterConfig(status)     { return FILTER_CONFIG[normalizeStatus(status)]  || FILTER_CONFIG["all"]; }
 function getStatusColors(status)     { return STATUS_COLORS[normalizeStatus(status)]  || STATUS_COLORS["in-stock"]; }
@@ -302,12 +457,25 @@ function formatDateDisplay(value, fallback = "N/A") {
 }
 
 function normalizeCategoryKey(value) {
-  return String(value || "")
+  const normalized = String(value || "")
     .trim()
     .toLowerCase()
     .replace(/&/g, "and")
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
+
+  const aliases = {
+    medicine: "medicine",
+    medicines: "medicine",
+    vitamin: "vitamin",
+    vitamins: "vitamin",
+    "first-aid": "first-aid",
+    "first-aid-and-medical-supplies": "first-aid",
+    "first-aid-medical-supplies": "first-aid",
+    "personal-care": "personal-care",
+  };
+
+  return aliases[normalized] || normalized;
 }
 
 function getExpiryMeta(expiryValue) {
@@ -586,13 +754,18 @@ function updateFilterButtonStyles(containerSelector, activeStatus) {
 /* ================= FILTERS & RENDERS ================= */
 function applyFilters() {
   const search = (document.getElementById("searchInventory")?.value || "").toLowerCase();
+  const riskFilters = new Set(["safe", "near-expiry", "at-risk"]);
   filteredItems = inventoryItems.filter(item => {
     if (showArchivedItems) { if (!item.archived) return false; }
     else                   { if (item.archived)  return false; }
     const matchSearch = (item.name || "").toLowerCase().includes(search) ||
                         (item.type || "").toLowerCase().includes(search) ||
                         (item.id   || "").toLowerCase().includes(search);
-    const matchStatus   = currentStatusFilter   === "all" || item.status   === currentStatusFilter;
+    const matchStatus = (() => {
+      if (currentStatusFilter === "all") return true;
+      if (riskFilters.has(currentStatusFilter)) return item.expiryRisk === currentStatusFilter;
+      return item.status === currentStatusFilter;
+    })();
     const itemCategoryKey = normalizeCategoryKey(item.category);
     const activeCategoryKey = normalizeCategoryKey(currentCategoryFilter);
     const matchCategory = currentCategoryFilter === "all" || itemCategoryKey === activeCategoryKey;
@@ -622,6 +795,15 @@ function applyRestockFilters() {
     const matchCategory = currentRestockCategoryFilter === "all" || requestCategoryKey === activeCategoryKey;
     return matchSearch && matchStatus && matchCategory;
   });
+
+  filteredRestockRequests.sort((a, b) => {
+    if (currentRestockStatusFilter === "all") {
+      const priorityDiff = getRequestStatusSortPriority(a.status) - getRequestStatusSortPriority(b.status);
+      if (priorityDiff !== 0) return priorityDiff;
+    }
+    return getRequestTimestamp(b) - getRequestTimestamp(a);
+  });
+
   updateFilterButtonStyles("#restockStatusFiltersContainer", currentRestockStatusFilter);
   renderRestockRequests();
 }
@@ -644,6 +826,7 @@ function renderInventory() {
 
   pagedItems.forEach(item => {
       const hasBatchWarning = hasExpiringSoonBatch(item.batches || []);
+    const riskPill = getExpiryRiskPill(item.expiryRisk);
 
     const colors = getStatusColors(item.status);
     const statusText = getStatusDisplayText(item.status);
@@ -670,6 +853,10 @@ function renderInventory() {
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
           <span>Next Expiry: ${item.expiryDate}</span>
           ${hasBatchWarning ? '<span class="w-3 h-3 rounded-full bg-red-600 inline-block ml-1" title="Contains batch expiring soon"></span>' : ''}
+        </div>
+        <div class="inline-flex items-center gap-1 ${riskPill.textClass}">
+          <span class="w-2.5 h-2.5 rounded-full inline-block" style="background:${riskPill.dotColor};"></span>
+          <span>${riskPill.label}</span>
         </div>
         <div class="text-gray-500">Batches: ${item.batchCount || 0}</div>
         <div class="flex justify-between items-center pt-2 border-t border-gray-100 mt-2">
@@ -744,6 +931,12 @@ function renderRestockRequests() {
         <div class="flex justify-between"><span class="text-gray-600">Variance</span><span class="font-semibold ${req.variance === 0 ? "text-green-700" : "text-amber-700"}">${req.variance >= 0 ? "+" : ""}${req.variance}</span></div>
         <div class="text-gray-500 border-t pt-2 mt-1"><span class="font-medium text-gray-700">Reason:</span> ${escapeHtml(req.reason || "No reason provided")}</div>
       `
+      : req.requestType === "DISPOSAL"
+        ? `
+          <div class="flex justify-between"><span class="text-gray-600">Batch Number</span><span class="font-semibold text-gray-900">${escapeHtml(req.batchNumber || "-")}</span></div>
+          <div class="flex justify-between"><span class="text-gray-600">Quantity Requested</span><span class="font-semibold text-red-700">${req.requestQuantity} ${req.unit}</span></div>
+          <div class="text-gray-500 border-t pt-2 mt-1"><span class="font-medium text-gray-700">Reason:</span> ${escapeHtml(req.reason || "No reason provided")}</div>
+        `
       : `
         <div class="flex justify-between"><span class="text-gray-600">Current Stock</span><span class="font-semibold ${stockColor}">${req.currentQuantity} ${req.unit}</span></div>
         <div class="flex justify-between"><span class="text-gray-600">Requested</span><span class="font-semibold text-blue-700">${req.requestQuantity} ${req.unit}</span></div>
@@ -783,6 +976,136 @@ function getPendingDiscrepancyForItem(itemId) {
     req.status === "pending" &&
     String(req.productId || "") === String(itemId || "")
   );
+}
+
+function showOwnerDirectDisposalModal(item, batch) {
+  const reasonOptions = [
+    "Expired",
+    "Damaged",
+    "Contaminated",
+    "Manufacturer Recall",
+    "Incorrect Storage",
+    "Other",
+  ].map((reason) => `<option value="${escapeHtml(reason)}">${escapeHtml(reason)}</option>`).join("");
+
+  const methodOptions = [
+    "",
+    "Incineration",
+    "Return to Supplier",
+    "Chemical Neutralization",
+    "Waste Contractor Pickup",
+    "Other",
+  ].map((method) => `<option value="${escapeHtml(method)}">${escapeHtml(method || "Select disposal method (optional)")}</option>`).join("");
+
+  const content = `
+    <h3 class="text-lg font-semibold mb-1">Confirm Disposal</h3>
+    <p class="text-sm text-gray-600 mb-4">Directly dispose this batch. Owner password confirmation is required.</p>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+      <label>
+        <span class="block text-xs font-medium text-gray-500 mb-1">Item Name</span>
+        <input type="text" value="${escapeHtml(item.name || "")}" class="w-full border border-gray-300 rounded px-3 py-2 bg-gray-50" readonly />
+      </label>
+      <label>
+        <span class="block text-xs font-medium text-gray-500 mb-1">Generic Name</span>
+        <input type="text" value="${escapeHtml(item.genericName || "")}" class="w-full border border-gray-300 rounded px-3 py-2 bg-gray-50" readonly />
+      </label>
+      <label>
+        <span class="block text-xs font-medium text-gray-500 mb-1">Batch Number</span>
+        <input type="text" value="${escapeHtml(batch.batchNumber || "")}" class="w-full border border-gray-300 rounded px-3 py-2 bg-gray-50" readonly />
+      </label>
+      <label>
+        <span class="block text-xs font-medium text-gray-500 mb-1">Expiration Date</span>
+        <input type="text" value="${escapeHtml(batch.expiryDate || "N/A")}" class="w-full border border-gray-300 rounded px-3 py-2 bg-gray-50" readonly />
+      </label>
+      <label>
+        <span class="block text-xs font-medium text-gray-500 mb-1">Available Quantity</span>
+        <input type="text" value="${Number(batch.currentQuantity ?? batch.quantity ?? 0)} ${escapeHtml(item.unit || "pcs")}" class="w-full border border-gray-300 rounded px-3 py-2 bg-gray-50" readonly />
+      </label>
+      <label>
+        <span class="block text-xs font-medium text-gray-500 mb-1">Dispose Quantity</span>
+        <input id="disposeQuantityInput" type="number" min="1" max="${Number(batch.currentQuantity ?? batch.quantity ?? 0)}" value="1" class="w-full border border-gray-300 rounded px-3 py-2" />
+      </label>
+      <label class="md:col-span-2">
+        <span class="block text-xs font-medium text-gray-500 mb-1">Reason for Disposal</span>
+        <select id="disposeReasonInput" class="w-full border border-gray-300 rounded px-3 py-2">${reasonOptions}</select>
+      </label>
+      <label class="md:col-span-2">
+        <span class="block text-xs font-medium text-gray-500 mb-1">Disposal Method</span>
+        <select id="disposeMethodInput" class="w-full border border-gray-300 rounded px-3 py-2">${methodOptions}</select>
+      </label>
+      <label class="md:col-span-2">
+        <span class="block text-xs font-medium text-gray-500 mb-1">Remarks (Optional)</span>
+        <textarea id="disposeRemarksInput" rows="2" class="w-full border border-gray-300 rounded px-3 py-2" placeholder="Add remarks for the digital audit trail..."></textarea>
+      </label>
+      <label class="md:col-span-2">
+        <span class="block text-xs font-semibold uppercase tracking-wide text-gray-700 mb-1">Confirm Owner Password</span>
+        <input id="disposeOwnerPassword" type="password" class="w-full border border-gray-300 rounded px-3 py-2" placeholder="Enter owner password to confirm disposal" />
+      </label>
+    </div>
+    <div class="mt-5 grid grid-cols-2 gap-3">
+      <button id="cancelOwnerDisposalBtn" class="w-full border border-gray-300 py-2 rounded-lg bg-white text-sm font-semibold text-gray-700 hover:bg-gray-50">Cancel</button>
+      <button id="confirmOwnerDisposalBtn" class="w-full bg-red-600 text-white py-2 rounded-lg text-sm font-semibold hover:bg-red-700">Confirm Disposal</button>
+    </div>`;
+
+  const modal = createModal({ id: "ownerDirectDisposalModal", content, width: "640px" });
+  const hide = () => {
+    modal.classList.add("hidden");
+    modal.style.display = "none";
+    setTimeout(() => modal.remove(), 200);
+  };
+
+  getElement(modal, "#closeOwnerDirectDisposalModal")?.addEventListener("click", hide);
+  getElement(modal, "#cancelOwnerDisposalBtn")?.addEventListener("click", hide);
+
+  getElement(modal, "#confirmOwnerDisposalBtn")?.addEventListener("click", async () => {
+    const disposeQuantity = Number(getElement(modal, "#disposeQuantityInput")?.value || 0);
+    const reason = getElement(modal, "#disposeReasonInput")?.value || "Expired";
+    const disposalMethod = getElement(modal, "#disposeMethodInput")?.value || null;
+    const remarks = getElement(modal, "#disposeRemarksInput")?.value || "";
+    const ownerPassword = getElement(modal, "#disposeOwnerPassword")?.value || "";
+
+    if (!Number.isInteger(disposeQuantity) || disposeQuantity <= 0) {
+      showToast("Dispose quantity must be a positive whole number", "error");
+      return;
+    }
+
+    if (disposeQuantity > Number(batch.currentQuantity ?? batch.quantity ?? 0)) {
+      showToast("Dispose quantity must not exceed the available batch quantity", "error");
+      return;
+    }
+
+    if (!ownerPassword.trim()) {
+      showToast("Owner password is required to confirm disposal", "error");
+      return;
+    }
+
+    try {
+      const response = await apiFetch(API.directDisposal, {
+        method: "POST",
+        body: JSON.stringify({
+          productId: item.id,
+          batchId: batch.id,
+          quantityDisposed: disposeQuantity,
+          reason,
+          remarks,
+          disposalMethod: disposalMethod || null,
+          ownerPassword,
+        }),
+      });
+      const referenceId = response?.reference_id || response?.data?.referenceId;
+      showToast(referenceId ? `Disposal completed successfully (${referenceId})` : "Disposal completed successfully", "success");
+      hide();
+      try {
+        await refreshAll();
+        const refreshedItem = inventoryItems.find((entry) => entry.id === item.id) || item;
+        await showItemDetails(refreshedItem);
+      } catch (refreshError) {
+        console.warn("Direct disposal completed but inventory refresh failed", refreshError);
+      }
+    } catch (err) {
+      showToast(err.message || "Failed to process disposal", "error");
+    }
+  });
 }
 
 function showReviewDiscrepancyModal(request) {
@@ -840,6 +1163,69 @@ function showReviewDiscrepancyModal(request) {
         body: JSON.stringify({ status: "Approved" }),
       });
       showToast("Discrepancy approved and inventory updated", "success");
+      hide();
+      await refreshAll();
+    } catch (err) {
+      showToast(`Approve failed: ${err.message}`, "error");
+    }
+  });
+}
+
+function showReviewDisposalModal(request) {
+  const content = `
+    <h3 class="text-lg font-semibold mb-1">Approve Disposal Request</h3>
+    <p class="text-sm text-gray-600 mb-4">DISPOSAL</p>
+    <div class="space-y-3 text-sm">
+      <div class="flex justify-between py-2 border-b"><span class="text-gray-600">Item Name</span><span class="font-semibold">${escapeHtml(request.itemName || "Unknown")}</span></div>
+      <div class="flex justify-between py-2 border-b"><span class="text-gray-600">Batch Number</span><span class="font-semibold text-gray-900">${escapeHtml(request.batchNumber || "-")}</span></div>
+      <div class="flex justify-between py-2 border-b"><span class="text-gray-600">Requested Quantity</span><span class="font-semibold text-red-700">${Number(request.requestQuantity || 0)} ${escapeHtml(request.unit || "pcs")}</span></div>
+      <div class="py-2 border-b">
+        <p class="text-gray-600 mb-1">Reason</p>
+        <p class="font-medium text-gray-900">${escapeHtml(request.reason || "No reason provided")}</p>
+      </div>
+      <div class="flex justify-between py-2 border-b"><span class="text-gray-600">Requested By</span><span class="font-semibold">${escapeHtml(request.requestedBy || "Staff")}</span></div>
+      <div class="flex justify-between py-2 border-b"><span class="text-gray-600">Date Requested</span><span class="font-semibold">${escapeHtml(request.requestDate || "-")}</span></div>
+      <div class="py-2">
+        <label class="block text-xs text-gray-700 mb-1">Enter Owner Password</label>
+        <input id="disposalApprovalPassword" type="password" class="w-full border border-gray-300 rounded px-3 py-2" placeholder="Owner password" />
+      </div>
+    </div>
+    <div class="mt-5 flex gap-5 justify-between">
+      <button id="reviewCancelBtn" class="flex-1 border border-gray-300 py-2 px-4 rounded-lg bg-white">Cancel</button>
+      <button id="reviewDenyBtn" class="flex-1 bg-red-600 text-white py-2 px-4 rounded-lg">Reject</button>
+      <button id="reviewApproveBtn" class="flex-1 bg-green-600 text-white py-2 px-4 rounded-lg">Approve</button>
+    </div>`;
+
+  const reviewModal = createModal({ id: "reviewRestockModal", content, width: "500px" });
+
+  const hide = () => { reviewModal.classList.add("hidden"); reviewModal.style.display = ""; setTimeout(() => reviewModal.remove(), 200); };
+  getElement(reviewModal, "#closeReviewRestockModal")?.addEventListener("click", hide);
+  getElement(reviewModal, "#reviewCancelBtn")?.addEventListener("click", hide);
+
+  getElement(reviewModal, "#reviewDenyBtn")?.addEventListener("click", async () => {
+    try {
+      await apiFetch(API.rejectDisposal(request.id), { method: "PATCH" });
+      showToast("Disposal request rejected", "success");
+      hide();
+      await refreshRequests();
+    } catch (err) {
+      showToast(`Reject failed: ${err.message}`, "error");
+    }
+  });
+
+  getElement(reviewModal, "#reviewApproveBtn")?.addEventListener("click", async () => {
+    const adminPassword = (getElement(reviewModal, "#disposalApprovalPassword")?.value || "").trim();
+    if (!adminPassword) {
+      showToast("Owner password is required", "error");
+      return;
+    }
+
+    try {
+      await apiFetch(API.approveDisposal(request.id), {
+        method: "PATCH",
+        body: JSON.stringify({ adminPassword }),
+      });
+      showToast("Disposal request approved", "success");
       hide();
       await refreshAll();
     } catch (err) {
@@ -928,36 +1314,37 @@ async function showItemDetails(item) {
   const batchRows = getElement(modal, "#detailsBatchRows");
   if (batchRows) {
     const rows = (detailItem.batches || []).map((batch) => {
-      const expiryMeta = getExpiryMeta(batch.expiryDateISO);
       const expiryLabel = batch.expiryDateISO ? formatDateDisplay(batch.expiryDateISO, "N/A") : "N/A";
-      const statusHtml = (() => {
-        if (!batch.expiryDateISO) {
-          return '<span class="text-xs font-medium text-gray-600">Unknown</span>';
-        }
-
-        if (expiryMeta.diffDays < 0) {
-          return '<span class="text-xs font-medium text-red-700">Expired</span>';
-        }
-
-        if (expiryMeta.diffDays <= EXPIRY_WARNING_DAYS) {
-          return '<span class="inline-flex items-center gap-1 text-xs font-medium text-red-600"><span class="w-2 h-2 rounded-full bg-red-600 inline-block"></span>Expiring Soon</span>';
-        }
-
-        return '<span class="text-xs font-medium text-green-600">Normal</span>';
-      })();
+      const batchStatusPill = getBatchStatusPill(batch);
+      const statusHtml = `<span class="inline-flex items-center gap-1 text-xs font-medium ${batchStatusPill.textClass}"><span class="w-2 h-2 rounded-full inline-block" style="background:${batchStatusPill.dotColor};"></span>${batchStatusPill.label}</span>`;
+      const actionHtml = batch.canDispose
+        ? `<button class="dispose-batch-btn inline-flex items-center rounded-md border border-red-200 bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-700 hover:bg-red-100 transition-colors" data-batch-id="${escapeHtml(batch.id || batch.batchId || "")}">${batch.isExpired ? "Dispose Expired Batch" : "Dispose"}</button>`
+        : `<span class="text-xs text-slate-500">No action</span>`;
 
       return `
         <tr>
           <td class="px-3 py-2 text-gray-900 font-semibold break-words whitespace-normal">${escapeHtml(batch.batchNumber || "—")}</td>
-          <td class="px-3 py-2 text-gray-900 font-medium">${Number(batch.quantity || 0)} ${escapeHtml(detailItem.unit)}</td>
+          <td class="px-3 py-2 text-gray-900 font-medium">${Number(batch.originalQuantity ?? batch.quantity ?? 0)} ${escapeHtml(detailItem.unit)}</td>
+          <td class="px-3 py-2 text-gray-900 font-medium">${Number(batch.currentQuantity ?? batch.quantity ?? 0)} ${escapeHtml(detailItem.unit)}</td>
           <td class="px-3 py-2 text-gray-900 font-medium">${escapeHtml(expiryLabel)}</td>
           <td class="px-3 py-2 text-gray-900">${statusHtml}</td>
+          <td class="px-3 py-2 text-gray-900">${actionHtml}</td>
         </tr>`;
     });
 
     batchRows.innerHTML = rows.length
       ? rows.join("")
-      : '<tr><td colspan="4" class="px-3 py-3 text-gray-600">No batch records available.</td></tr>';
+      : '<tr><td colspan="6" class="px-3 py-3 text-gray-600">No batch records available.</td></tr>';
+
+    batchRows.querySelectorAll(".dispose-batch-btn").forEach((button) => {
+      button.addEventListener("click", (event) => {
+        event.stopPropagation();
+        const selectedBatch = (detailItem.batches || []).find((entry) => String(entry.id || entry.batchId || "") === String(button.dataset.batchId || ""));
+        if (selectedBatch) {
+          showOwnerDirectDisposalModal(detailItem, selectedBatch);
+        }
+      });
+    });
   }
 
   /* ---- Expiry calculation ---- */
@@ -1021,6 +1408,11 @@ async function showItemDetails(item) {
 function showReviewRestockModal(request) {
   if (request.requestType === "DISCREPANCY") {
     showReviewDiscrepancyModal(request);
+    return;
+  }
+
+  if (request.requestType === "DISPOSAL") {
+    showReviewDisposalModal(request);
     return;
   }
 
@@ -1661,7 +2053,7 @@ function showRestoreConfirm(item) {
 
 /* ================= CLOSE ALL MODALS ================= */
 function closeAllModals() {
-  ["itemDetailsModal","reviewRestockModal","addItemModal","archiveConfirmModal","restoreConfirmModal","approveConfirmModal","denyConfirmModal","editDiscrepancyModal"]
+  ["itemDetailsModal","reviewRestockModal","addItemModal","archiveConfirmModal","restoreConfirmModal","approveConfirmModal","denyConfirmModal","editDiscrepancyModal","ownerDirectDisposalModal"]
     .forEach(id => { const m = document.getElementById(id); if (m) m.classList.add("hidden"); });
 }
 
@@ -1675,6 +2067,11 @@ export async function initAdminInventory() {
   }
 
   console.log("=== INIT ADMIN INVENTORY STARTED ===");
+
+  if (requestsAutoRefreshTimer) {
+    clearInterval(requestsAutoRefreshTimer);
+    requestsAutoRefreshTimer = null;
+  }
 
   const tabInventory    = document.getElementById("tabInventory");
   const tabRestock      = document.getElementById("tabRestock");
@@ -1885,5 +2282,10 @@ export async function initAdminInventory() {
   updateFilterButtonStyles("#restockStatusFiltersContainer", currentRestockStatusFilter);
 
   await refreshAll();
+
+  requestsAutoRefreshTimer = setInterval(() => {
+    refreshRequests();
+  }, REQUESTS_AUTO_REFRESH_MS);
+
   console.log("Admin Inventory initialized successfully");
 }

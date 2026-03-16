@@ -101,6 +101,10 @@ const inventoryRequestSchema = new mongoose.Schema(
       ref: "User",
       required: true,
     },
+    date_requested: {
+      type: Date,
+      default: Date.now,
+    },
     status: {
       type: String,
       enum: ["pending", "approved", "rejected"],
@@ -128,6 +132,7 @@ const inventoryRequestSchema = new mongoose.Schema(
 inventoryRequestSchema.index({ requestedBy: 1, createdAt: -1 });
 inventoryRequestSchema.index({ status: 1, createdAt: -1 });
 inventoryRequestSchema.index({ requestType: 1, status: 1, createdAt: -1 });
+inventoryRequestSchema.index({ status: 1, date_requested: -1, createdAt: -1 });
 
 inventoryRequestSchema.pre("validate", function (next) {
   if (this.requestType === "ADD_ITEM") {

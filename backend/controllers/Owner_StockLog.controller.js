@@ -153,7 +153,7 @@ export const Owner_getMonthlyReport = async (req, res) => {
           const bid = batch._id.toString();
           const checkKey = `${pid}_${bid}`;
           const savedCheck = checksMap.get(checkKey);
-          const systemStock = batch.quantity || 0;
+          const systemStock = Number(batch.currentQuantity ?? batch.quantity ?? 0);
           const physicalCount = savedCheck ? savedCheck.physicalCount : null;
           const variance =
             physicalCount !== null ? physicalCount - systemStock : 0;

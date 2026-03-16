@@ -1,5 +1,35 @@
 import mongoose from "mongoose";
 
+const STAFF_batchAllocationSchema = new mongoose.Schema(
+  {
+    batchId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "InventoryBatch",
+      required: true,
+    },
+    batchNumber: {
+      type: String,
+      default: null,
+      trim: true,
+    },
+    quantity: {
+      type: Number,
+      required: true,
+      min: 1,
+    },
+    expiryDate: {
+      type: Date,
+      default: null,
+    },
+    expiryRisk: {
+      type: String,
+      default: null,
+      trim: true,
+    },
+  },
+  { _id: false }
+);
+
 const STAFF_billingItemSchema = new mongoose.Schema(
   {
     productId: {
@@ -26,6 +56,10 @@ const STAFF_billingItemSchema = new mongoose.Schema(
       type: Number,
       required: true,
       min: 0,
+    },
+    batchAllocations: {
+      type: [STAFF_batchAllocationSchema],
+      default: [],
     },
   },
   { _id: false }

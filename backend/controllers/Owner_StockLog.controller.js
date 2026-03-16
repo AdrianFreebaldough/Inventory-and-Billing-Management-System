@@ -49,14 +49,48 @@ export const Owner_getStockLogSummary = async (req, res) => {
 // Generate Monthly Physical Inventory Report (batch-level)
 export const Owner_getMonthlyReport = async (req, res) => {
   try {
-    const { month } = req.query;
-    console.log("[MonthlyReport] Requested month:", month);
+    const getCurrentMonth = () => {
+      const now = new Date();
+      return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+    };
 
-    if (!month || !/^\d{4}-\d{2}$/.test(month)) {
+    const requestedMonth = typeof req.query.month === "string" ? req.query.month.trim() : "";
+    const month = requestedMonth || getCurrentMonth();
+
+    if (!/^\d{4}-\d{2}$/.test(month)) {
       return res.status(400).json({
         message: "Invalid month format. Use YYYY-MM format (e.g., 2026-03)",
       });
     }
+
+    const startDate = typeof req.query.startDate === "string" ? req.query.startDate.trim() : "";
+    const endDate = typeof req.query.endDate === "string" ? req.query.endDate.trim() : "";
+    const hasDateRange = Boolean(startDate && endDate);
+
+    if ((startDate && !endDate) || (!startDate && endDate)) {
+      return res.status(400).json({
+        message: "Please provide both startDate and endDate.",
+      });
+    }
+
+    let startDateBoundary = null;
+    let endDateBoundary = null;
+    if (hasDateRange) {
+      startDateBoundary = new Date(`${startDate}T00:00:00`);
+      endDateBoundary = new Date(`${endDate}T23:59:59.999`);
+
+      if (
+        Number.isNaN(startDateBoundary.getTime()) ||
+        Number.isNaN(endDateBoundary.getTime()) ||
+        startDateBoundary > endDateBoundary
+      ) {
+        return res.status(400).json({
+          message: "Invalid date range. Ensure endDate is on or after startDate.",
+        });
+      }
+    }
+
+    console.log("[MonthlyReport] Request:", { month, startDate, endDate, hasDateRange });
 
     // Fetch all active products
     const products = await Product.find({ isArchived: { $ne: true } }).lean();
@@ -105,7 +139,7 @@ export const Owner_getMonthlyReport = async (req, res) => {
           itemId: pid,
           batchId: null,
           itemName: product.name,
-          genericName: product.description || "",
+          genericName: product.genericName || "",
           batchNumber: "",
           systemStock,
           expiryDate: product.expiryDate || null,
@@ -128,7 +162,7 @@ export const Owner_getMonthlyReport = async (req, res) => {
             itemId: pid,
             batchId: bid,
             itemName: product.name,
-            genericName: product.description || "",
+            genericName: product.genericName || "",
             batchNumber: batch.batchNumber || "",
             systemStock,
             expiryDate: batch.expiryDate || null,
@@ -150,32 +184,66 @@ export const Owner_getMonthlyReport = async (req, res) => {
     // Keep only rows with stock
     const activeItems = reportData.filter((item) => item.systemStock > 0);
 
+    // Apply filter priority:
+    // 1) startDate + endDate on Date Added
+    // 2) selected month (Date Added)
+    // 3) default current month if month not provided
+    const [selectedYear, selectedMonth] = month.split("-").map(Number);
+    const filteredItems = activeItems.filter((item) => {
+      if (hasDateRange) {
+        if (!item?.dateAdded) return false;
+        const dateAdded = new Date(item.dateAdded);
+        if (Number.isNaN(dateAdded.getTime())) return false;
+        return dateAdded >= startDateBoundary && dateAdded <= endDateBoundary;
+      }
+
+      if (!item?.dateAdded) return false;
+      const dateAdded = new Date(item.dateAdded);
+      if (Number.isNaN(dateAdded.getTime())) return false;
+      return (
+        dateAdded.getFullYear() === selectedYear &&
+        dateAdded.getMonth() + 1 === selectedMonth
+      );
+    });
+
     const summary = {
-      totalItems: activeItems.length,
-      totalSystemStock: activeItems.reduce(
+      totalItems: filteredItems.length,
+      totalSystemStock: filteredItems.reduce(
         (sum, item) => sum + item.systemStock,
         0
       ),
-      itemsWithVariance: activeItems.filter((item) => item.variance !== 0)
+      itemsWithVariance: filteredItems.filter((item) => item.variance !== 0)
         .length,
-      totalVariance: activeItems.reduce((sum, item) => sum + item.variance, 0),
+      totalVariance: filteredItems.reduce((sum, item) => sum + item.variance, 0),
     };
 
     console.log(
       "[MonthlyReport] Report generated — rows:",
-      activeItems.length,
+      filteredItems.length,
       "system stock:",
       summary.totalSystemStock
     );
 
     return res.status(200).json({
       message: "Monthly report generated successfully",
-      data: activeItems,
+      data: filteredItems,
       summary,
       month: {
         year: Number(month.split("-")[0]),
         month: Number(month.split("-")[1]),
       },
+      appliedFilter: hasDateRange
+        ? {
+            type: "dateRange",
+            dateField: "dateAdded",
+            startDate,
+            endDate,
+          }
+        : {
+            type: "month",
+            dateField: "dateAdded",
+            month,
+          },
     });
   } catch (error) {
     console.error("Error generating monthly report:", error);

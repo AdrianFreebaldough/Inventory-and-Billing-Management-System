@@ -101,6 +101,8 @@ export function initOwnerActivitylogs() {
 	const resultCountEl = document.getElementById("resultCount");
 
 	// Logs Report Tab Elements
+	const reportStartDateFilter = document.getElementById("reportStartDate");
+	const reportEndDateFilter = document.getElementById("reportEndDate");
 	const reportMonthFilter = document.getElementById("reportMonthFilter");
 	const generateReportBtn = document.getElementById("generateReport");
 
@@ -165,6 +167,11 @@ export function initOwnerActivitylogs() {
 	tabLogsReport?.addEventListener("click", () => switchTab(tabLogsReport));
 
 	// Populate Month Options (last 12 months)
+	const getCurrentMonthValue = () => {
+		const now = new Date();
+		return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+	};
+
 	const populateMonthOptions = () => {
 		if (!reportMonthFilter) return;
 
@@ -178,12 +185,17 @@ export function initOwnerActivitylogs() {
 			months.push({ label: monthName, value: monthValue });
 		}
 
-		reportMonthFilter.innerHTML = months
+		reportMonthFilter.innerHTML = [
+			"<option value=\"\">Select Month</option>",
+			...months
 			.map(
 				(m) =>
 					`<option value="${m.value}">${m.label}</option>`
 			)
+		]
 			.join("");
+
+		reportMonthFilter.value = getCurrentMonthValue();
 	};
 
 	// ── Chart state helpers ──
@@ -251,7 +263,7 @@ export function initOwnerActivitylogs() {
 		};
 	};
 
-	const renderReportTable = (reportData) => {
+	const renderReportTable = (reportData, emptyMessage = "No inventory data found for the selected month.") => {
 		// Always re-query DOM to avoid stale references after HTML re-injection
 		let section = document.getElementById("reportTableSection");
 		let tbody = document.getElementById("reportTableBody");
@@ -309,7 +321,7 @@ export function initOwnerActivitylogs() {
 			tbody.innerHTML = `
 				<tr>
 					<td colspan="9" class="px-4 py-8 text-center text-sm text-slate-500">
-						No inventory data found for the selected month.
+						${escapeHtml(emptyMessage)}
 					</td>
 				</tr>
 			`;
@@ -454,18 +466,50 @@ export function initOwnerActivitylogs() {
 	};
 
 	// Generate Logs Report
-	const generateLogsReport = async () => {
+	const generateLogsReport = async ({ suppressAlerts = false } = {}) => {
 		if (!reportMonthFilter) return;
 
-		const selectedMonth = reportMonthFilter.value;
-		console.log("[LogsReport] Generate clicked — month:", selectedMonth);
+		const selectedMonth = reportMonthFilter.value || getCurrentMonthValue();
+		const startDate = reportStartDateFilter?.value || "";
+		const endDate = reportEndDateFilter?.value || "";
+		const hasDateRange = Boolean(startDate && endDate);
 
-		if (!selectedMonth) {
-			alert("Please select a month before generating the report.");
+		console.log("[LogsReport] Generate clicked", {
+			selectedMonth,
+			startDate,
+			endDate,
+			hasDateRange,
+		});
+
+		if ((startDate && !endDate) || (!startDate && endDate)) {
+			if (!suppressAlerts) {
+				alert("Please provide both Start Date and End Date.");
+			}
 			return;
 		}
 
-		const selectedMonthText = reportMonthFilter.options[reportMonthFilter.selectedIndex].text;
+		if (hasDateRange) {
+			const start = new Date(`${startDate}T00:00:00`);
+			const end = new Date(`${endDate}T00:00:00`);
+			if (isNaN(start.getTime()) || isNaN(end.getTime()) || start > end) {
+				if (!suppressAlerts) {
+					alert("End Date must be on or after Start Date.");
+				}
+				return;
+			}
+		}
+
+		if (!selectedMonth) {
+			if (!suppressAlerts) {
+				alert("Please select a month before generating the report.");
+			}
+			return;
+		}
+
+		const selectedMonthText =
+			reportMonthFilter.querySelector(`option[value="${selectedMonth}"]`)?.textContent ||
+			reportMonthFilter.options[reportMonthFilter.selectedIndex]?.text ||
+			"Current Month";
 		const generateBtnText = document.getElementById("generateBtnText");
 
 		// Reset previous state
@@ -486,14 +530,23 @@ export function initOwnerActivitylogs() {
 		// ── STEP 1: Fetch data from API ──
 		let reportData, summary;
 		try {
-			const query = buildQueryString({ month: selectedMonth });
+			const query = buildQueryString({
+				month: selectedMonth,
+				startDate,
+				endDate,
+			});
 			console.log("[LogsReport] Fetching:", `${STOCK_LOGS_ENDPOINT}/monthly-report${query}`);
 			const response = await apiFetch(`${STOCK_LOGS_ENDPOINT}/monthly-report${query}`);
 			console.log("[LogsReport] API response keys:", Object.keys(response || {}));
 			console.log("[LogsReport] response.data isArray:", Array.isArray(response?.data), "length:", response?.data?.length);
 
 			({ reportData, summary } = parseMonthlyReportResponse(response));
-			console.log("[LogsReport] Parsed", reportData.length, "items — summary:", summary);
+			summary = {
+				totalItems: reportData.length,
+				totalSystemStock: reportData.reduce((sum, item) => sum + (Number(item.systemStock) || 0), 0),
+				itemsWithVariance: reportData.filter((item) => (Number(item.variance) || 0) !== 0).length,
+			};
+			console.log("[LogsReport] Parsed and month-filtered", reportData.length, "items — summary:", summary);
 		} catch (fetchError) {
 			console.error("[LogsReport] API fetch failed:", fetchError);
 			showChartState("chartErrorState");
@@ -508,14 +561,27 @@ export function initOwnerActivitylogs() {
 
 		// ── STEP 2: Store shared data (used by both dashboard table and print) ──
 		currentReportData = reportData;
+		const effectiveFilterLabel = hasDateRange
+			? `${new Date(`${startDate}T00:00:00`).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "2-digit" })} to ${new Date(`${endDate}T00:00:00`).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "2-digit" })} (Date Added)`
+			: `${selectedMonthText} (Date Added)`;
 		generatedReport = {
 			month: selectedMonth,
 			monthLabel: selectedMonthText,
+			filterLabel: effectiveFilterLabel,
+			filter: {
+				startDate,
+				endDate,
+				month: selectedMonth,
+			},
 			data: currentReportData,
 			summary,
 			generatedAt: new Date().toISOString(),
 		};
 		console.log("[LogsReport] Shared data stored:", { month: generatedReport.month, items: currentReportData.length });
+
+		const emptyMonthMessage = hasDateRange
+			? "No records found for the selected date range."
+			: `No records found for ${selectedMonthText}.`;
 
 		// Fail-safe: make the table section visible immediately with simple rows.
 		// The full renderer below will replace this with interactive variance inputs.
@@ -527,7 +593,7 @@ export function initOwnerActivitylogs() {
 					fallbackBody.innerHTML = `
 						<tr>
 							<td colspan="9" class="px-4 py-8 text-center text-sm text-slate-500">
-								No inventory data found for the selected month.
+								${escapeHtml(emptyMonthMessage)}
 							</td>
 						</tr>
 					`;
@@ -560,7 +626,7 @@ export function initOwnerActivitylogs() {
 		// ── STEP 3: Update summary UI ──
 		const _chartTitle = document.getElementById("chartTitle");
 		const _chartSubtitle = document.getElementById("chartSubtitle");
-		if (_chartTitle) _chartTitle.textContent = `Inventory Overview — ${selectedMonthText}`;
+		if (_chartTitle) _chartTitle.textContent = `Inventory Overview — ${effectiveFilterLabel}`;
 		if (_chartSubtitle) {
 			const itemCount = summary.totalItems || currentReportData.length;
 			const stockCount = summary.totalSystemStock || 0;
@@ -571,7 +637,7 @@ export function initOwnerActivitylogs() {
 		// ── STEP 4: Render TABLE FIRST (guaranteed to show even if charts fail) ──
 		console.log("[LogsReport] Starting table render with", currentReportData.length, "items");
 		try {
-			renderReportTable(currentReportData);
+			renderReportTable(currentReportData, emptyMonthMessage);
 			console.log("[LogsReport] Table render completed successfully");
 		} catch (tableError) {
 			console.error("[LogsReport] Table rendering failed:", tableError);
@@ -607,7 +673,7 @@ export function initOwnerActivitylogs() {
 
 				if (!tableEl || tableEl.classList.contains("hidden") || !tBody || tBody.children.length === 0) {
 					console.warn("[LogsReport] ⚠ Table not visible after reflow — forcing re-render");
-					renderReportTable(currentReportData);
+					renderReportTable(currentReportData, emptyMonthMessage);
 				} else {
 					console.log("[LogsReport] ✓ Table verified after reflow — rows:", tBody.children.length);
 				}
@@ -844,7 +910,7 @@ export function initOwnerActivitylogs() {
 	const printMonthlyReport = () => {
 		if (!reportMonthFilter) return;
 
-		const selectedMonthText = reportMonthFilter.options[reportMonthFilter.selectedIndex]?.text || "Unknown Month";
+		const selectedMonthText = generatedReport?.filterLabel || reportMonthFilter.options[reportMonthFilter.selectedIndex]?.text || "Unknown Month";
 
 		if (!generatedReport || currentReportData.length === 0) {
 			alert("Please generate a report first before printing.");
@@ -1111,6 +1177,53 @@ export function initOwnerActivitylogs() {
 
 	// Generate Report Button
 	generateReportBtn?.addEventListener("click", generateLogsReport);
+
+	let isSyncingReportFilters = false;
+
+	const triggerReportRefresh = () => {
+		if (logsReportContent?.classList.contains("hidden")) return;
+		generateLogsReport({ suppressAlerts: true });
+	};
+
+	const handleMonthFilterChange = () => {
+		if (isSyncingReportFilters || !reportMonthFilter) return;
+
+		const selectedMonth = reportMonthFilter.value;
+		if (selectedMonth) {
+			isSyncingReportFilters = true;
+			if (reportStartDateFilter) reportStartDateFilter.value = "";
+			if (reportEndDateFilter) reportEndDateFilter.value = "";
+			isSyncingReportFilters = false;
+		}
+
+		triggerReportRefresh();
+	};
+
+	const handleDateRangeChange = () => {
+		if (isSyncingReportFilters) return;
+
+		const startDate = reportStartDateFilter?.value || "";
+		const endDate = reportEndDateFilter?.value || "";
+		const hasDateRange = Boolean(startDate && endDate);
+
+		if (hasDateRange && reportMonthFilter?.value) {
+			isSyncingReportFilters = true;
+			reportMonthFilter.value = "";
+			isSyncingReportFilters = false;
+		}
+
+		if (!startDate && !endDate && reportMonthFilter && !reportMonthFilter.value) {
+			isSyncingReportFilters = true;
+			reportMonthFilter.value = getCurrentMonthValue();
+			isSyncingReportFilters = false;
+		}
+
+		triggerReportRefresh();
+	};
+
+	reportMonthFilter?.addEventListener("change", handleMonthFilterChange);
+	reportStartDateFilter?.addEventListener("change", handleDateRangeChange);
+	reportEndDateFilter?.addEventListener("change", handleDateRangeChange);
 
 	// Save Physical Count Button
 	document.getElementById("saveVarianceBtn")?.addEventListener("click", saveVariance);

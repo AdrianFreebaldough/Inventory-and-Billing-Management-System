@@ -5,6 +5,7 @@ import {
   checkExpirationNotifications, 
   checkStockNotifications 
 } from './expirationService.js';
+import { runDailyExpiryRiskJob } from './expiryRiskDailyJob.js';
 
 class NotificationCronService {
   constructor() {
@@ -37,7 +38,18 @@ class NotificationCronService {
       }
     }, 6 * 60 * 60 * 1000);
 
-    this.intervals.push(expirationInterval, stockInterval);
+    // FEFO expiry risk check every 24 hours
+    const fefoRiskInterval = setInterval(async () => {
+      console.log('🔔 Running daily FEFO expiry risk check...');
+      try {
+        const summary = await runDailyExpiryRiskJob();
+        console.log('✅ FEFO expiry risk check completed', summary);
+      } catch (error) {
+        console.error('❌ FEFO expiry risk check failed:', error);
+      }
+    }, 24 * 60 * 60 * 1000);
+
+    this.intervals.push(expirationInterval, stockInterval, fefoRiskInterval);
     
     // Run initial checks on startup
     this.runNow().catch(err => console.error('Initial notification check failed:', err));
@@ -45,6 +57,7 @@ class NotificationCronService {
     console.log('✅ Notification cron service started');
     console.log('   - Expiration check: Every 24 hours');
     console.log('   - Stock check: Every 6 hours');
+    console.log('   - FEFO risk check: Every 24 hours');
   }
 
   // Stop all scheduled intervals
@@ -65,6 +78,9 @@ class NotificationCronService {
       
       await checkStockNotifications();
       console.log('✅ Stock check completed');
+
+      const summary = await runDailyExpiryRiskJob();
+      console.log('✅ FEFO risk check completed', summary);
     } catch (error) {
       console.error('❌ Notification check failed:', error);
     }

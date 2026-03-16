@@ -16,7 +16,7 @@ const State = {
     abortController: null
 };
 const DOM = {};
-const ReportCache = { sales: null, inventory: null, billing: null };
+const ReportCache = { sales: null, inventory: null, billing: null, disposal: null };
 
 // Track current module for cleanup
 let currentModule = null;
@@ -77,7 +77,8 @@ function setupPreload() {
     
     const preloadMap = {
         'tab-inventory': () => import('../../admin_Reports/admin_Reports_Inventory/admin_Reports_Inventory.js'),
-        'tab-billing': () => import('../admin_Reports_Billing/admin_Reports_Billing.js')
+        'tab-billing': () => import('../admin_Reports_Billing/admin_Reports_Billing.js'),
+        'tab-disposal': () => import('../admin_Reports_Disposal/admin_Reports_Disposal.js')
     };
     
     DOM.nav.addEventListener('mouseover', (e) => {
@@ -98,7 +99,8 @@ function handleNavClick(e) {
     const tabMap = { 
         'tab-sales': 'sales', 
         'tab-inventory': 'inventory', 
-        'tab-billing': 'billing' 
+        'tab-billing': 'billing',
+        'tab-disposal': 'disposal' 
     };
     const tab = tabMap[btn.id];
     
@@ -120,7 +122,8 @@ function handleNavClick(e) {
     const loaders = { 
         sales: loadSales, 
         inventory: loadInventory, 
-        billing: loadBilling 
+        billing: loadBilling,
+        disposal: loadDisposal 
     };
     
     debouncedLoad(loaders[tab]);
@@ -184,7 +187,7 @@ toggleBtn.addEventListener('click', () => {
         // Switch to PDF - Blue
         exportBtn.className = 'bg-blue-600 text-white pl-6 pr-4 py-2 rounded-l-xl text-sm font-medium flex items-center gap-2 hover:bg-blue-700 transition-all shadow-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2';
         toggleBtn.className = 'bg-blue-600 text-white px-3 py-2 rounded-r-xl text-sm font-medium flex items-center hover:bg-blue-700 transition-all shadow-md border-l border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2';
-        toggleBtn.title = 'Switch to Excel';
+        toggleBtn.title = 'Switch to CSV';
         
         exportBtn.innerHTML = `
             <img src="../../assets/download_icon.png" class="w-4 h-4" aria-hidden="true">
@@ -198,15 +201,19 @@ toggleBtn.addEventListener('click', () => {
         
         exportBtn.innerHTML = `
             <img src="../../assets/download_icon.png" class="w-4 h-4" aria-hidden="true">
-            <span>Excel</span>
+            <span>CSV</span>
         `;
     }
 });
 
 // Main button click exports current format
 exportBtn.addEventListener('click', () => {
-    const format = isPdf ? 'PDF' : 'Excel';
-    console.log('Exporting as:', format);
+    const format = isPdf ? 'pdf' : 'csv';
+    if (currentModule && typeof currentModule.exportReport === 'function') {
+        currentModule.exportReport(format);
+        return;
+    }
+    console.log('Export requested for tab without export handler:', State.currentTab, format);
 });
 
 async function loadSales() {
@@ -589,4 +596,56 @@ function updateChartsAndStats() {
         Charts.revenue.update();
     }
     updateStats(State.currentPeriod);
+}
+
+async function loadDisposal() {
+    if (!DOM.content) return;
+
+    State.abortController = new AbortController();
+    const signal = State.abortController.signal;
+
+    try {
+        showLoading();
+
+        if (signal.aborted) return;
+
+        if (!ReportCache.disposal) {
+            const res = await fetch('../../HTML/admin_Reports/admin_Reports_Disposal/admin_Reports_Disposal.html', { signal });
+            if (!res.ok) throw new Error(`HTTP ${res.status}: Failed to fetch disposal HTML`);
+            const html = await res.text();
+            const temp = document.createElement('div');
+            temp.innerHTML = html;
+            ReportCache.disposal = temp.querySelector('#contentArea')?.innerHTML || temp.innerHTML;
+        }
+
+        if (signal.aborted) return;
+        DOM.content.innerHTML = ReportCache.disposal;
+
+        let module;
+        try {
+            module = await import('../admin_Reports_Disposal/admin_Reports_Disposal.js');
+        } catch (importErr) {
+            throw new Error(`Failed to load disposal module: ${importErr.message}`);
+        }
+
+        if (signal.aborted) return;
+
+        currentModule = module;
+
+        if (module.initReports) {
+            const timeoutPromise = new Promise((_, reject) =>
+                setTimeout(() => reject(new Error('Disposal initialization timeout')), 10000)
+            );
+            await Promise.race([module.initReports(), timeoutPromise]);
+        }
+    } catch (err) {
+        if (err.name === 'AbortError') return;
+        console.error('Disposal load error:', err);
+        showError('Disposal Reports', err);
+        currentModule = null;
+    } finally {
+        if (State.abortController?.signal === signal) {
+            State.abortController = null;
+        }
+    }
 }

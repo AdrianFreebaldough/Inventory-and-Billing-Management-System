@@ -27,6 +27,7 @@ const movementBadgeClass = {
 	ADJUST: "bg-amber-100 text-amber-900 border-2 border-amber-400",
 	ADJUSTMENT: "bg-orange-50 text-orange-700 border border-orange-200",
 	ITEM_CREATED: "bg-blue-50 text-blue-700 border border-blue-200",
+	DISPOSAL: "bg-slate-900 text-white border border-slate-900",
 };
 
 const qtyClass = (qtyChange) =>
@@ -37,7 +38,7 @@ const qtyClass = (qtyChange) =>
 const renderStatusRow = (tableBody, message) => {
 	tableBody.innerHTML = `
 		<tr>
-			<td colspan="8" class="px-4 py-8 text-center text-sm text-slate-500">${escapeHtml(message)}</td>
+			<td colspan="9" class="px-4 py-8 text-center text-sm text-slate-500">${escapeHtml(message)}</td>
 		</tr>
 	`;
 };
@@ -46,6 +47,7 @@ const toStockLogRecord = (log) => ({
 	dateTime: log.createdAt,
 	productName: log?.product?.name || "Unknown Product",
 	movementType: log.movementType,
+	batchNumber: log.batchNumber || "—",
 	qtyChange: Number(log.quantityChange) || 0,
 	beforeQty: Number(log.beforeQuantity) || 0,
 	afterQty: Number(log.afterQuantity) || 0,
@@ -87,6 +89,7 @@ export function initOwnerActivitylogs() {
 	const totalSaleEl = document.getElementById("summaryTotalSale");
 	const totalRestockEl = document.getElementById("summaryTotalRestock");
 	const totalAdjustEl = document.getElementById("summaryTotalAdjust");
+	const totalDisposalEl = document.getElementById("summaryTotalDisposal");
 	const systemLabelEl = document.getElementById("systemGeneratedLabel");
 
 	const startDateInput = document.getElementById("filterStartDate");
@@ -1232,6 +1235,7 @@ export function initOwnerActivitylogs() {
 		if (totalSaleEl) totalSaleEl.textContent = String(summary?.totalSale || 0);
 		if (totalRestockEl) totalRestockEl.textContent = String(summary?.totalRestock || 0);
 		if (totalAdjustEl) totalAdjustEl.textContent = String(summary?.totalAdjust || 0);
+		if (totalDisposalEl) totalDisposalEl.textContent = String(summary?.totalDisposal || 0);
 	};
 
 	const renderTable = (logs) => {
@@ -1250,6 +1254,7 @@ export function initOwnerActivitylogs() {
 			const isAdjust = log.movementType === "ADJUST";
 			const isAdjustment = log.movementType === "ADJUSTMENT";
 			const isItemCreated = log.movementType === "ITEM_CREATED";
+			const isDisposal = log.movementType === "DISPOSAL";
 			const qtyText = `${log.qtyChange > 0 ? "+" : ""}${log.qtyChange}`;
 
 			row.innerHTML = `
@@ -1262,6 +1267,7 @@ export function initOwnerActivitylogs() {
 							isAdjust ? "Manual stock adjustment performed by the owner to correct inventory discrepancies."
 							: isAdjustment ? "Inventory adjustment from discrepancy correction."
 							: isItemCreated ? "New inventory item created."
+							: isDisposal ? "Disposed stock removed from a specific batch after owner approval."
 							: ""
 						}"
 					>
@@ -1274,9 +1280,12 @@ export function initOwnerActivitylogs() {
 							? '<span class="mt-1 inline-flex cursor-default select-none items-center rounded-full border border-orange-200 bg-orange-50 px-2 py-0.5 text-[10px] font-medium text-orange-600" title="Inventory adjustment from discrepancy correction.">Discrepancy</span>'
 							: isItemCreated
 							? '<span class="mt-1 inline-flex cursor-default select-none items-center rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-[10px] font-medium text-blue-600" title="New inventory item created.">New Item</span>'
+							: isDisposal
+							? '<span class="mt-1 inline-flex cursor-default select-none items-center rounded-full border border-slate-300 bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-700" title="Disposed stock removed from a specific batch after owner approval.">Disposal</span>'
 							: ""
 					}
 				</td>
+				<td class="px-4 py-3 text-sm text-slate-700">${escapeHtml(log.batchNumber || "—")}</td>
 				<td class="px-4 py-3 text-sm ${qtyClass(log.qtyChange)}">${qtyText}</td>
 				<td class="px-4 py-3 text-sm text-slate-700">${escapeHtml(log.beforeQty)}</td>
 				<td class="px-4 py-3 text-sm text-slate-700">${escapeHtml(log.afterQty)}</td>

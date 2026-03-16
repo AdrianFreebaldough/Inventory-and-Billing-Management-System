@@ -22,6 +22,47 @@
 
 ## API Endpoints
 
+---
+
+### FEFO Allocation and Expiry Risk
+
+#### Billing Checkout FEFO Behavior
+- Endpoint: `POST /api/staff/billing/:id/complete`
+- Stock allocation now follows strict FEFO order from `InventoryBatch`:
+  - Excludes expired batches (`expiryDate < today`)
+  - Sorts by `expiryDate ASC`, then `createdAt ASC`
+  - Splits deductions across multiple batches when needed
+- Response now includes `data.batchUsage[]` with per-item batch allocations.
+
+#### Inventory API Additions
+- Owner inventory (`GET /api/owner/inventory`) and staff inventory (`GET /api/staff/inventory/items`) now include:
+  - `nearestExpiryDate`
+  - `totalQuantity`
+  - `expiryRisk` (`Green`, `Yellow`, `Red`, `Expired`, `NoExpiry`)
+  - `expiryRiskKey` (`safe`, `near-expiry`, `at-risk`, `expired`, `no-expiry`)
+- New optional query filter:
+  - `?expiryRisk=safe|near-expiry|at-risk|expired|no-expiry`
+
+#### Daily Expiry Risk Job
+- Service: `services/expiryRiskDailyJob.js`
+- Triggered by: `services/notificationCronService.js`
+- Runs every 24 hours and creates owner notifications for:
+  - `expiry_risk_red` (Immediate Review)
+  - `promotion_candidate` (Near-Expiry / promotion candidate)
+
+#### Schema/Index Notes
+- `InventoryBatch` already has FEFO-ready indexes:
+  - `{ expiryDate: 1 }`
+  - `{ product: 1, expiryDate: 1 }`
+- Billing transaction items now persist `batchAllocations[]` per sold item.
+
+#### Unit Tests
+- FEFO and expiry risk tests: `backend/tests/fefo.test.js`
+- Run:
+  ```bash
+  npm test
+  ```
+
 ### 📊 Expenses Module
 
 #### Staff: Create Expense

@@ -52,18 +52,21 @@
 
         <!-- STATUS FILTERS -->
         <div class="flex gap-2 flex-wrap" id="statusFiltersContainer">
-            <button class="status-filter" data-status="all">
-                All
-            </button>
-            <button class="status-filter" data-status="in-stock">
-                In Stock
-            </button>
-            <button class="status-filter" data-status="pending">
-                Pending
-            </button>
-            <button class="status-filter" data-status="out-of-stock">
-                Out of Stock
-            </button>
+            <button class="status-filter" data-status="all">All</button>
+            <button class="status-filter" data-status="in-stock">In Stock</button>
+            <button class="status-filter" data-status="safe">Safe</button>
+            <button class="status-filter" data-status="near-expiry">Near-Expiry</button>
+            <button class="status-filter" data-status="at-risk">At-Risk</button>
+            <button class="status-filter" data-status="pending">Pending</button>
+            <button class="status-filter" data-status="low-stock">Low Stock</button>
+            <button class="status-filter" data-status="out-of-stock">Out of Stock</button>
+        </div>
+
+        <div class="flex items-center gap-3 text-xs text-gray-600" id="expiryRiskLegend">
+          <span class="font-semibold text-gray-700">Expiry Risk Legend:</span>
+          <span class="inline-flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full" style="background:#16a34a;"></span>Safe</span>
+          <span class="inline-flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full" style="background:#f59e0b;"></span>Near-Expiry</span>
+          <span class="inline-flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full" style="background:#ef4444;"></span>Immediate Review</span>
         </div>
 
         <!-- LOW STOCK TOGGLE -->
@@ -161,19 +164,21 @@
 
             <div class="pt-2 border-t border-gray-100">
               <h5 class="text-xs font-semibold text-gray-800 mb-2 uppercase tracking-wide">Batch Inventory</h5>
-              <div class="border border-gray-200 rounded-lg overflow-hidden">
+              <div class="border border-gray-200 rounded-lg overflow-auto max-h-56">
                 <table class="min-w-full text-xs">
                   <thead class="bg-gray-50 text-gray-700">
                     <tr>
                       <th class="text-left px-3 py-2 font-semibold">Batch Number</th>
                       <th class="text-left px-3 py-2 font-semibold">Quantity</th>
+                      <th class="text-left px-3 py-2 font-semibold">Current Qty</th>
                       <th class="text-left px-3 py-2 font-semibold">Expiration Date</th>
                       <th class="text-left px-3 py-2 font-semibold">Status</th>
+                      <th class="text-left px-3 py-2 font-semibold">Action</th>
                     </tr>
                   </thead>
                   <tbody id="detailsBatchRows" class="divide-y divide-gray-100 bg-white">
                     <tr>
-                      <td colspan="4" class="px-3 py-3 text-gray-600">No batch records available.</td>
+                      <td colspan="6" class="px-3 py-3 text-gray-600">No batch records available.</td>
                     </tr>
                   </tbody>
                 </table>

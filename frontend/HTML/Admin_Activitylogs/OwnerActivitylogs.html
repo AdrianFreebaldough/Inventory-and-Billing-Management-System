@@ -17,7 +17,7 @@
 
   <!-- Movement Logs Tab Content -->
   <div id="movementLogsContent" class="tab-content">
-    <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
+    <div class="grid grid-cols-1 gap-4 md:grid-cols-4">
       <article class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <p class="text-sm text-slate-500">Total SALE</p>
         <p id="summaryTotalSale" class="mt-2 text-3xl font-bold text-rose-700">0</p>
@@ -29,6 +29,10 @@
       <article class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <p class="text-sm text-slate-500">Total ADJUST</p>
         <p id="summaryTotalAdjust" class="mt-2 text-3xl font-bold text-amber-700">0</p>
+      </article>
+      <article class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        <p class="text-sm text-slate-500">Total DISPOSAL</p>
+        <p id="summaryTotalDisposal" class="mt-2 text-3xl font-bold text-slate-900">0</p>
       </article>
     </div>
 
@@ -61,6 +65,7 @@
           <option value="ADJUST">ADJUST</option>
           <option value="ADJUSTMENT">ADJUSTMENT</option>
           <option value="ITEM_CREATED">ITEM_CREATED</option>
+          <option value="DISPOSAL">DISPOSAL</option>
         </select>
       </label>
 
@@ -95,6 +100,7 @@
             <th class="px-4 py-3">Date &amp; Time</th>
             <th class="px-4 py-3">Product Name</th>
             <th class="px-4 py-3">Movement Type</th>
+            <th class="px-4 py-3">Batch Number</th>
             <th class="px-4 py-3">Quantity Change (+ / −)</th>
             <th class="px-4 py-3">Before Quantity</th>
             <th class="px-4 py-3">After Quantity</th>

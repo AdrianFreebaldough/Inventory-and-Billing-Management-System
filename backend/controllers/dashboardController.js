@@ -15,6 +15,12 @@ const startOfToday = () => {
   return d;
 };
 
+const getRequestTimestamp = (request) => {
+  const raw = request?.date_requested || request?.createdAt || null;
+  const parsed = raw ? new Date(raw).getTime() : 0;
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
 /* ================================================================
    1.  GET /api/owner/dashboard/summary
        Dashboard summary metrics (single request)
@@ -129,12 +135,13 @@ export const getPendingInventoryRequests = async (_req, res) => {
     const requests = await InventoryRequest.find({ status: "pending" })
       .populate("product", "name category quantity")
       .populate("requestedBy", "name email role")
-      .sort({ createdAt: -1 })
-      .limit(5)
       .lean();
 
+    requests.sort((a, b) => getRequestTimestamp(b) - getRequestTimestamp(a));
+    const topFive = requests.slice(0, 5);
+
     /* Normalise shape for the UI */
-    const mapped = requests.map((r) => ({
+    const mapped = topFive.map((r) => ({
       _id:               r._id,
       requestType:       r.requestType,
       itemName:          r.requestType === "ADD_ITEM"
@@ -145,6 +152,7 @@ export const getPendingInventoryRequests = async (_req, res) => {
                            ? r.initialQuantity
                            : r.requestedQuantity,
       status:            r.status,
+      date_requested:    r.date_requested || r.createdAt,
       createdAt:         r.createdAt,
     }));
 
@@ -308,7 +316,7 @@ function mapActionTypeToCategory(actionType) {
   const lower = actionType.toLowerCase();
   if (lower.includes("bill") || lower.includes("payment") || lower.includes("transaction")) return "Payment";
   if (lower.includes("request") || lower.includes("approv") || lower.includes("reject")) return "Request";
-  if (lower.includes("inventory") || lower.includes("stock") || lower.includes("restock") || lower.includes("archive")) return "Inventory";
+  if (lower.includes("inventory") || lower.includes("stock") || lower.includes("restock") || lower.includes("archive") || lower.includes("disposal")) return "Inventory";
   if (lower.includes("user") || lower.includes("staff") || lower.includes("role")) return "User Management";
   return "General";
 }

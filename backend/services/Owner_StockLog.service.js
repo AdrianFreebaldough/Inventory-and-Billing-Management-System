@@ -4,7 +4,7 @@ import Product from "../models/product.js";
 import User from "../models/user.js";
 import Owner_StockLog from "../models/Owner_StockLog.model.js";
 
-const Owner_ALLOWED_MOVEMENT_TYPES = new Set(["SALE", "RESTOCK", "ADJUST", "VOID_REVERSAL", "ADJUSTMENT", "ITEM_CREATED"]);
+const Owner_ALLOWED_MOVEMENT_TYPES = new Set(["SALE", "RESTOCK", "ADJUST", "VOID_REVERSAL", "ADJUSTMENT", "ITEM_CREATED", "DISPOSAL"]);
 const Owner_ALLOWED_SOURCES = new Set(["POS", "MANUAL", "SYSTEM"]);
 
 const Owner_escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -52,6 +52,8 @@ export const createStockLog = async ({
   performedBy,
   source,
   notes = null,
+  batchNumber = null,
+  referenceId: providedReferenceId = null,
   session = null,
 }) => {
   if (!mongoose.Types.ObjectId.isValid(productId)) {
@@ -87,6 +89,10 @@ export const createStockLog = async ({
     throw new Error("ITEM_CREATED movement requires a positive quantityChange");
   }
 
+  if (movementType === "DISPOSAL" && parsedChange >= 0) {
+    throw new Error("DISPOSAL movement requires a negative quantityChange");
+  }
+
   const productQuery = Product.findById(productId).select("_id name quantity");
   if (session) {
     productQuery.session(session);
@@ -105,7 +111,7 @@ export const createStockLog = async ({
   }
 
   const performer = await Owner_resolvePerformer({ performedBy, session });
-  const referenceId = await Owner_generateReferenceId(session);
+  const referenceId = providedReferenceId || await Owner_generateReferenceId(session);
 
   const [stockLog] = await Owner_StockLog.create(
     [
@@ -117,6 +123,7 @@ export const createStockLog = async ({
         afterQuantity,
         performedBy: performer,
         referenceId,
+        batchNumber: batchNumber ? String(batchNumber).trim() : null,
         source,
         notes: notes || null,
       },
@@ -206,6 +213,7 @@ const Owner_buildSummaryFromAggregation = (groupedRows) => {
     totalSale: 0,
     totalRestock: 0,
     totalAdjust: 0,
+    totalDisposal: 0,
   };
 
   groupedRows.forEach((row) => {
@@ -219,6 +227,10 @@ const Owner_buildSummaryFromAggregation = (groupedRows) => {
 
     if (row._id === "ADJUST") {
       summary.totalAdjust = row.totalQuantity;
+    }
+
+    if (row._id === "DISPOSAL") {
+      summary.totalDisposal = row.totalQuantity;
     }
   });
 
@@ -256,6 +268,7 @@ const Owner_normalizeStockLog = (stockLog) => {
     quantityChange: stockLog.quantityChange,
     beforeQuantity: stockLog.beforeQuantity,
     afterQuantity: stockLog.afterQuantity,
+    batchNumber: stockLog.batchNumber || null,
     performedBy: {
       _id: stockLog?.performedBy?._id || null,
       name: performerName,
@@ -292,12 +305,14 @@ export const getStockLogs = async ({
     totalSale: 0,
     totalRestock: 0,
     totalAdjust: 0,
+    totalDisposal: 0,
   };
   rawData.forEach((log) => {
     const qty = Math.abs(Number(log.quantityChange) || 0);
     if (log.movementType === "SALE") summary.totalSale += qty;
     else if (log.movementType === "RESTOCK") summary.totalRestock += qty;
     else if (log.movementType === "ADJUST") summary.totalAdjust += qty;
+    else if (log.movementType === "DISPOSAL") summary.totalDisposal += qty;
   });
 
   // Collect valid ObjectIds for batch user lookup

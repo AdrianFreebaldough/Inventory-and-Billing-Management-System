@@ -30,6 +30,8 @@ const notificationSchema = new mongoose.Schema(
         "expense_reviewed",
         "expense_approved",
         "low_stock",
+        "expiry_risk_red",
+        "promotion_candidate",
       ],
       required: true,
     },

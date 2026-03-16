@@ -6,6 +6,12 @@ import User from "../models/user.js";
 import { createStockLog } from "../services/Owner_StockLog.service.js";
 import mongoose from "mongoose";
 
+const OWNER_getAdjustmentTimestamp = (adjustment) => {
+  const raw = adjustment?.date_requested || adjustment?.createdAt || null;
+  const parsed = raw ? new Date(raw).getTime() : 0;
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
 // Staff: Create quantity adjustment request
 export const STAFF_createQuantityAdjustment = async (req, res) => {
   try {
@@ -29,6 +35,7 @@ export const STAFF_createQuantityAdjustment = async (req, res) => {
       reason,
       staffId: req.user.id,
       staffName: req.user.name || "Staff",
+      date_requested: new Date(),
       status: "Pending",
     });
 
@@ -98,11 +105,12 @@ export const OWNER_getQuantityAdjustments = async (req, res) => {
     }
 
     const adjustments = await STAFF_QuantityAdjustment.find(filter)
-      .sort({ createdAt: -1 })
       .populate("productId", "category")
       .populate("staffId", "name email")
       .populate("reviewedBy", "name email")
       .lean();
+
+    adjustments.sort((a, b) => OWNER_getAdjustmentTimestamp(b) - OWNER_getAdjustmentTimestamp(a));
 
     return res.status(200).json({
       count: adjustments.length,

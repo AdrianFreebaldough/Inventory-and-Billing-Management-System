@@ -155,6 +155,7 @@ function movementBadge(type) {
     RESTOCK:        { label: "Restock",  bg: "bg-emerald-50", text: "text-emerald-600" },
     ADJUST:         { label: "Adjust",   bg: "bg-amber-50",   text: "text-amber-600" },
     VOID_REVERSAL:  { label: "Void Rev", bg: "bg-blue-50",    text: "text-blue-600" },
+    DISPOSAL:       { label: "Disposal", bg: "bg-slate-100",  text: "text-slate-700" },
   };
   const m = map[type] || { label: type, bg: "bg-slate-50", text: "text-slate-600" };
   return `<span class="text-xs font-medium px-2 py-0.5 rounded-full ${m.bg} ${m.text}">${m.label}</span>`;
@@ -178,6 +179,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const navReports        = document.getElementById("navReports");
   const navExpenses       = document.getElementById("navExpenses");
   const navStockLogs      = document.getElementById("navStockLogs");
+  const navDisposalBin    = document.getElementById("navDisposalBin");
 
   const staffNameEl       = document.getElementById("staffName");
   const staffUsernameEl   = document.getElementById("staffUsername");
@@ -842,6 +844,26 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
+  async function loadDisposalBin() {
+    setActive(navDisposalBin);
+    ensureOwnerLayoutShell();
+
+    try {
+      const res = await fetch("../../HTML/OWNER_disposalBin/OWNER_disposalBin.html");
+      if (!res.ok) throw new Error("Disposal Bin HTML not found");
+
+      mainContent.innerHTML = await res.text();
+      await new Promise((r) => setTimeout(r, 150));
+
+      const module = await import("../OWNER_disposalBin/OWNER_disposalBin.js");
+      if (typeof module.initOwnerDisposalBin !== "function") throw new Error("initOwnerDisposalBin() missing");
+      await module.initOwnerDisposalBin();
+    } catch (error) {
+      console.error(error);
+      mainContent.innerHTML = `<div class="text-red-500 p-4 font-medium">Failed to load Disposal Bin module: ${error.message}</div>`;
+    }
+  }
+
   function loadExpenses() {
     setActive(navExpenses);
     clearInterval(refreshTimer);
@@ -902,6 +924,11 @@ document.addEventListener("DOMContentLoaded", () => {
     loadStockLogs();
   });
 
+  navDisposalBin?.addEventListener("click", (e) => {
+    e.preventDefault();
+    loadDisposalBin();
+  });
+
   if (auth) {
     auth.bindLogoutButton(logoutBtn, {
       redirectTo: "../../HTML/loginPage/loginPage.html",
@@ -933,6 +960,7 @@ document.addEventListener("DOMContentLoaded", () => {
   window.loadReports = loadReports;
   window.loadUserManagement = loadUserManagement;
   window.loadStockLogs = loadStockLogs;
+  window.loadDisposalBin = loadDisposalBin;
   window.loadDashboard = loadDashboard;
   window.loadSettings = loadSettings;
 });

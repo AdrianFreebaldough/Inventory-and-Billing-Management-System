@@ -18,6 +18,8 @@ import STAFF_quantityAdjustmentRoutes from "./routes/STAFF_quantityAdjustmentRou
 import OWNER_quantityAdjustmentRoutes from "./routes/OWNER_quantityAdjustmentRoutes.js";
 import notificationRoutes from "./routes/notificationRoutes.js";
 import patientRoutes from "./routes/patientRoutes.js";
+import OWNER_disposalRoutes from "./routes/OWNER_disposalRoutes.js";
+import STAFF_disposalRoutes from "./routes/STAFF_disposalRoutes.js";
 
 const app = express(); // ✅ CREATE APP FIRST
 
@@ -46,6 +48,8 @@ app.use("/api/staff/stock-requests", STAFF_stockRequestRoutes);
 app.use("/api/owner/stock-requests", OWNER_stockRequestRoutes);
 app.use("/api/staff/quantity-adjustments", STAFF_quantityAdjustmentRoutes);
 app.use("/api/owner/quantity-adjustments", OWNER_quantityAdjustmentRoutes);
+app.use("/api/owner/disposal", OWNER_disposalRoutes);
+app.use("/api/staff/disposal", STAFF_disposalRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/patients", patientRoutes);
 

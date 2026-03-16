@@ -6,6 +6,8 @@ import OWNER_ArchivedProduct from "../models/OWNER_archivedProduct.js";
 import InventoryBatch from "../models/InventoryBatch.js";
 import { createStockLog } from "../services/Owner_StockLog.service.js";
 import { getExpirationStatus, getDaysUntilExpiry } from "../services/expirationService.js";
+import { classifyExpiryRisk, toUiExpiryRiskKey } from "../services/fefoService.js";
+import { getBatchLifecycleFlags, getBatchEffectiveStatus } from "../services/batchLifecycleService.js";
 
 const OWNER_parseNonNegativeNumber = (value) => {
   const parsed = Number(value);
@@ -30,6 +32,60 @@ const OWNER_pickFirstNonEmpty = (...values) => {
   return null;
 };
 
+const OWNER_normalizeCategory = (value) => {
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/&/g, "and")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+
+  if (!normalized) return "";
+
+  const canonicalMap = {
+    medicine: "Medicine",
+    medicines: "Medicine",
+    vitamin: "Vitamin",
+    vitamins: "Vitamin",
+    "first aid": "First Aid",
+    "first aid medical supplies": "First Aid",
+    "personal care": "Personal Care",
+  };
+
+  const canonical = canonicalMap[normalized] || normalized;
+  return canonical
+    .split(" ")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+};
+
+const OWNER_buildCategoryFilterRegex = (value) => {
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/&/g, "and")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+
+  if (!normalized) return null;
+
+  const aliases = {
+    medicine: "medicine",
+    medicines: "medicine",
+    vitamin: "vitamin",
+    vitamins: "vitamin",
+    "first aid": "first aid",
+    "first aid medical supplies": "first aid",
+    "personal care": "personal care",
+  };
+
+  const canonical = aliases[normalized] || normalized;
+  const escapedCanonical = canonical.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const pattern = `^${escapedCanonical.replace(/\s+/g, "[-_\\s]*")}s?$`;
+  return new RegExp(pattern, "i");
+};
+
 const OWNER_buildLegacyBatch = (product) => {
   if (!product || Number(product.quantity ?? 0) <= 0) {
     return null;
@@ -42,11 +98,42 @@ const OWNER_buildLegacyBatch = (product) => {
     product: product._id,
     batchNumber: fallbackBatchNumber,
     quantity: Number(product.quantity ?? 0),
+    currentQuantity: Number(product.quantity ?? 0),
+    initialQuantity: Number(product.quantity ?? 0),
     expiryDate: product.expiryDate || null,
     supplier: product.supplier || null,
     createdAt: product.createdAt || null,
     isLegacy: true,
   };
+};
+
+const OWNER_REQUEST_STATUS_PRIORITY = {
+  pending: 1,
+  approved: 2,
+  rejected: 3,
+};
+
+const OWNER_getRequestTimestamp = (request) => {
+  const raw = request?.date_requested || request?.createdAt || null;
+  const parsed = raw ? new Date(raw).getTime() : 0;
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
+const OWNER_sortRequestsLatestFirst = (requests = []) => {
+  requests.sort((a, b) => OWNER_getRequestTimestamp(b) - OWNER_getRequestTimestamp(a));
+  return requests;
+};
+
+const OWNER_sortRequestsByStatusThenLatest = (requests = []) => {
+  requests.sort((a, b) => {
+    const aPriority = OWNER_REQUEST_STATUS_PRIORITY[a?.status] || Number.MAX_SAFE_INTEGER;
+    const bPriority = OWNER_REQUEST_STATUS_PRIORITY[b?.status] || Number.MAX_SAFE_INTEGER;
+
+    if (aPriority !== bPriority) return aPriority - bPriority;
+    return OWNER_getRequestTimestamp(b) - OWNER_getRequestTimestamp(a);
+  });
+
+  return requests;
 };
 
 const OWNER_attachBatchDataToProducts = async (products) => {
@@ -73,25 +160,31 @@ const OWNER_attachBatchDataToProducts = async (products) => {
   return products.map((product) => {
     const key = String(product._id);
     const existingBatches = batchesByProduct.get(key) || [];
-    const availableBatches = existingBatches.filter((batch) => Number(batch.quantity) > 0);
+    const availableBatches = existingBatches.filter((batch) => Number(batch.currentQuantity ?? batch.quantity ?? 0) > 0);
     const fallbackLegacyBatch = availableBatches.length === 0 ? OWNER_buildLegacyBatch(product) : null;
     const finalBatches = fallbackLegacyBatch ? [fallbackLegacyBatch] : availableBatches;
-    const totalBatchQuantity = finalBatches.reduce((sum, batch) => sum + Number(batch.quantity || 0), 0);
+    const totalBatchQuantity = finalBatches.reduce((sum, batch) => sum + Number(batch.currentQuantity ?? batch.quantity ?? 0), 0);
     const productQuantity = Number(product.quantity ?? 0);
 
     const nearestBatch = finalBatches
       .filter((batch) => batch.expiryDate)
       .sort((a, b) => new Date(a.expiryDate) - new Date(b.expiryDate))[0] || null;
 
+    const batchesWithRisk = finalBatches.map((batch) => ({
+      ...batch,
+      expiryRisk: classifyExpiryRisk(batch.expiryDate),
+    }));
+
     return {
       ...product,
       productQuantity,
-      batches: finalBatches,
-      batchCount: finalBatches.length,
+      batches: batchesWithRisk,
+      batchCount: batchesWithRisk.length,
       totalBatchQuantity,
       nearestExpiryDate: nearestBatch?.expiryDate || product.expiryDate || null,
       nearestBatchNumber: nearestBatch?.batchNumber || product.batchNumber || null,
       nearestBatchSupplier: nearestBatch?.supplier || product.supplier || null,
+      expiryRisk: classifyExpiryRisk(nearestBatch?.expiryDate || product.expiryDate || null),
     };
   });
 };
@@ -162,8 +255,12 @@ const OWNER_enrichProductWithExpiration = (product) => {
   return {
     ...product,
     quantity: Number(product.productQuantity ?? product.quantity ?? 0),
+    totalQuantity: Number(product.productQuantity ?? product.quantity ?? 0),
     batchQuantity: Number(product.totalBatchQuantity ?? 0),
     expiryDate: referenceExpiryDate || null,
+    nearestExpiryDate: referenceExpiryDate || null,
+    expiryRisk: product.expiryRisk || classifyExpiryRisk(referenceExpiryDate || null),
+    expiryRiskKey: toUiExpiryRiskKey(product.expiryRisk || classifyExpiryRisk(referenceExpiryDate || null)),
     batchNumber: product.nearestBatchNumber || product.batchNumber || null,
     supplier: OWNER_pickFirstNonEmpty(product.nearestBatchSupplier, product.supplier, product.supplierName),
     genericName: OWNER_pickFirstNonEmpty(product.genericName, product.generic),
@@ -194,11 +291,41 @@ const OWNER_syncDiscrepancyFromQuantity = (productLike) => {
   productLike.discrepancyStatus = discrepancyStatus;
 };
 
+const OWNER_mapBatchForResponse = (batch, unit = "pcs") => {
+  const lifecycle = getBatchLifecycleFlags(batch);
+  const currentQuantity = Number(batch.currentQuantity ?? batch.quantity ?? 0);
+  const originalQuantity = Number.isFinite(Number(batch.initialQuantity))
+    ? Number(batch.initialQuantity)
+    : Number(batch.quantity ?? 0);
+
+  return {
+    _id: batch._id,
+    batchNumber: batch.batchNumber || null,
+    quantity: originalQuantity,
+    currentQuantity,
+    originalQuantity,
+    expiryDate: batch.expiryDate || null,
+    expiryRisk: classifyExpiryRisk(batch.expiryDate || null),
+    supplier: batch.supplier || null,
+    createdAt: batch.createdAt || null,
+    isLegacy: !!batch.isLegacy,
+    status: getBatchEffectiveStatus(batch),
+    statusKey: String(getBatchEffectiveStatus(batch)).toLowerCase().replace(/\s+/g, "-"),
+    unit,
+    ...lifecycle,
+  };
+};
+
 export const OWNER_getActiveInventory = async (req, res) => {
   try {
-    const { expirationFilter } = req.query;
+    const { category, expirationFilter, expiryRisk } = req.query;
     
     const filter = { isArchived: { $ne: true } };
+
+    const categoryRegex = OWNER_buildCategoryFilterRegex(category);
+    if (categoryRegex) {
+      filter.category = categoryRegex;
+    }
 
     // Expiration filters
     if (expirationFilter) {
@@ -222,10 +349,15 @@ export const OWNER_getActiveInventory = async (req, res) => {
     const enrichedWithRequestFields = await OWNER_enrichMissingFieldsFromApprovedRequests(productsWithBatches);
     const enrichedProducts = enrichedWithRequestFields.map(OWNER_enrichProductWithExpiration);
 
+    const normalizedRiskFilter = String(expiryRisk || "").trim().toLowerCase();
+    const filteredProducts = normalizedRiskFilter
+      ? enrichedProducts.filter((product) => product.expiryRiskKey === normalizedRiskFilter)
+      : enrichedProducts;
+
     return res.status(200).json({
       message: "Active inventory fetched successfully",
-      count: enrichedProducts.length,
-      data: enrichedProducts,
+      count: filteredProducts.length,
+      data: filteredProducts,
     });
   } catch (error) {
     return res.status(500).json({ message: error.message });
@@ -241,7 +373,31 @@ export const OWNER_getInventoryItemDetails = async (req, res) => {
       return res.status(404).json({ message: "Inventory item not found" });
     }
 
-    const [productWithBatches] = await OWNER_attachBatchDataToProducts([product]);
+    const allBatches = await InventoryBatch.find({ product: product._id })
+      .sort({ expiryDate: 1, createdAt: 1 })
+      .lean();
+
+    const positiveBatches = allBatches.filter((batch) => Number(batch.currentQuantity ?? batch.quantity ?? 0) > 0);
+    const fallbackLegacyBatch = positiveBatches.length === 0 ? OWNER_buildLegacyBatch(product) : null;
+    const responseBatches = fallbackLegacyBatch ? [fallbackLegacyBatch] : allBatches;
+
+    const nearestBatch = positiveBatches
+      .filter((batch) => batch.expiryDate)
+      .sort((a, b) => new Date(a.expiryDate) - new Date(b.expiryDate))[0] || null;
+
+    const productWithBatches = {
+      ...product,
+      productQuantity: Number(product.quantity ?? 0),
+      batches: responseBatches.map((batch) => OWNER_mapBatchForResponse(batch, product.unit || "pcs")),
+      batchCount: responseBatches.length,
+      availableBatchCount: positiveBatches.length,
+      totalBatchQuantity: positiveBatches.reduce((sum, batch) => sum + Number(batch.currentQuantity ?? batch.quantity ?? 0), 0),
+      nearestExpiryDate: nearestBatch?.expiryDate || product.expiryDate || null,
+      nearestBatchNumber: nearestBatch?.batchNumber || product.batchNumber || null,
+      nearestBatchSupplier: nearestBatch?.supplier || product.supplier || null,
+      expiryRisk: classifyExpiryRisk(nearestBatch?.expiryDate || product.expiryDate || null),
+    };
+
     const [enrichedProduct] = await OWNER_enrichMissingFieldsFromApprovedRequests([productWithBatches]);
 
     return res.status(200).json({
@@ -288,7 +444,7 @@ export const OWNER_addProduct = async (req, res) => {
 
     const product = await Product.create({
       name: String(name).trim(),
-      category: String(category).trim(),
+      category: OWNER_normalizeCategory(category),
       quantity: parsedQuantity,
       unitPrice: parsedUnitPrice,
       unit: unit ? String(unit).trim() : "pcs",
@@ -371,7 +527,6 @@ export const OWNER_getPendingInventoryRequests = async (req, res) => {
     const requests = await InventoryRequest.find({ status: "pending" })
       .populate("product", "name category quantity isArchived")
       .populate("requestedBy", "email role")
-      .sort({ createdAt: -1 })
       .lean();
 
     const filtered = requests.filter((request) => {
@@ -385,6 +540,8 @@ export const OWNER_getPendingInventoryRequests = async (req, res) => {
 
       return false;
     });
+
+    OWNER_sortRequestsLatestFirst(filtered);
 
     return res.status(200).json({
       message: "Pending requests fetched successfully",
@@ -433,7 +590,7 @@ export const OWNER_approveInventoryRequest = async (req, res) => {
           [
             {
               name: request.itemName,
-              category: request.category,
+              category: OWNER_normalizeCategory(request.category),
               quantity: finalQuantity,
               unitPrice: Number(request.unitPrice ?? 0),
               unit: request.unit || "pcs",
@@ -946,8 +1103,9 @@ export const OWNER_getAllInventoryRequests = async (req, res) => {
     const requests = await InventoryRequest.find()
       .populate("product", "name category quantity isArchived")
       .populate("requestedBy", "email role")
-      .sort({ createdAt: -1 })
       .lean();
+
+    OWNER_sortRequestsByStatusThenLatest(requests);
 
     return res.status(200).json({
       message: "All inventory requests fetched successfully",
@@ -1011,7 +1169,7 @@ export const OWNER_updateDiscrepancy = async (req, res) => {
 
     // Allow owners to complete legacy medicine fields for old records while reviewing discrepancy data.
     if (typeof category === "string") {
-      const normalizedCategory = category.trim();
+      const normalizedCategory = OWNER_normalizeCategory(category);
       if (normalizedCategory) {
         product.category = normalizedCategory;
       }

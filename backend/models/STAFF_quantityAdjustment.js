@@ -36,6 +36,10 @@ const STAFF_quantityAdjustmentSchema = new mongoose.Schema(
       ref: "User",
       required: true,
     },
+    date_requested: {
+      type: Date,
+      default: Date.now,
+    },
     staffName: {
       type: String,
       required: true,
@@ -67,6 +71,7 @@ const STAFF_quantityAdjustmentSchema = new mongoose.Schema(
 STAFF_quantityAdjustmentSchema.index({ staffId: 1, createdAt: -1 });
 STAFF_quantityAdjustmentSchema.index({ status: 1, createdAt: -1 });
 STAFF_quantityAdjustmentSchema.index({ productId: 1, status: 1 });
+STAFF_quantityAdjustmentSchema.index({ status: 1, date_requested: -1, createdAt: -1 });
 
 const STAFF_QuantityAdjustment = mongoose.model(
   "STAFF_QuantityAdjustment",

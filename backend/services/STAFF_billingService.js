@@ -4,6 +4,7 @@ import InventoryBatch from "../models/InventoryBatch.js";
 import STAFF_ActivityLog from "../models/STAFF_activityLog.js";
 import STAFF_BillingTransaction from "../models/STAFF_billingTransaction.js";
 import { createStockLog } from "./Owner_StockLog.service.js";
+import { buildFefoAllocationPlan, classifyExpiryRisk, sortBatchesForFefo, toUiExpiryRiskKey } from "./fefoService.js";
 
 class STAFF_BillingError extends Error {
   constructor(message, statusCode = 400) {
@@ -123,7 +124,7 @@ const STAFF_buildItemsSnapshot = async (itemsPayload, session = null) => {
     _id: { $in: productIds },
     isArchived: { $ne: true },
   })
-    .select("_id name quantity unitPrice")
+    .select("_id name quantity unitPrice expiryDate")
     .lean();
 
   if (session) {
@@ -137,18 +138,22 @@ const STAFF_buildItemsSnapshot = async (itemsPayload, session = null) => {
   }
 
   const productsById = new Map(products.map((product) => [String(product._id), product]));
+  const batchesByProductId = await STAFF_getLiveBatchStateByProductIds(productIds, session);
 
   const items = [];
   let totalAmount = 0;
 
   for (const [productId, quantity] of groupedItems.entries()) {
     const product = productsById.get(productId);
+    const productBatches = batchesByProductId.get(productId) || [];
 
     if (!product) {
       throw new STAFF_BillingError("One or more products were not found", 404);
     }
 
-    if (product.quantity < quantity) {
+    const sellableQuantity = STAFF_getEligibleSellableQuantity({ product, batches: productBatches });
+
+    if (sellableQuantity < quantity) {
       throw new STAFF_BillingError(`Insufficient stock for ${product.name}`, 400);
     }
 
@@ -193,6 +198,167 @@ const STAFF_getTransactionForStaff = async (transactionId, staffId, session = nu
   }
 
   return transaction;
+};
+
+const STAFF_syncProductQuantityFromBatches = async ({ productId, session = null }) => {
+  const batchQuery = InventoryBatch.find({ product: productId })
+    .select("currentQuantity quantity")
+    .lean();
+
+  if (session) {
+    batchQuery.session(session);
+  }
+
+  const batches = await batchQuery;
+  const liveTotal = batches.reduce((sum, batch) => sum + Number(batch.currentQuantity ?? batch.quantity ?? 0), 0);
+
+  const productQuery = Product.findById(productId);
+  if (session) {
+    productQuery.session(session);
+  }
+
+  const product = await productQuery;
+  if (!product) {
+    throw new STAFF_BillingError("Product not found while syncing stock", 404);
+  }
+
+  product.quantity = liveTotal;
+  if (Number.isFinite(Number(product.expectedRemaining))) {
+    product.expectedRemaining = liveTotal;
+  }
+
+  await product.save(session ? { session } : undefined);
+};
+
+const STAFF_getLiveBatchStateByProductIds = async (productIds, session = null) => {
+  const batchQuery = InventoryBatch.find({
+    product: { $in: productIds },
+    $or: [
+      { currentQuantity: { $gt: 0 } },
+      { currentQuantity: { $exists: false }, quantity: { $gt: 0 } },
+    ],
+  })
+    .select("product quantity currentQuantity initialQuantity expiryDate batchNumber createdAt _id status")
+    .sort({ expiryDate: 1, createdAt: 1, _id: 1 })
+    .lean();
+
+  if (session) {
+    batchQuery.session(session);
+  }
+
+  const batches = await batchQuery;
+  for (const batch of batches) {
+    const hasCurrentQuantity = Number.isFinite(Number(batch.currentQuantity));
+    if (hasCurrentQuantity) continue;
+
+    const normalizedCurrentQuantity = Number(batch.quantity ?? 0);
+    await InventoryBatch.updateOne(
+      {
+        _id: batch._id,
+        currentQuantity: { $exists: false },
+      },
+      {
+        $set: { currentQuantity: normalizedCurrentQuantity },
+      },
+      session ? { session } : undefined
+    );
+    batch.currentQuantity = normalizedCurrentQuantity;
+  }
+  const batchesByProductId = new Map();
+
+  for (const batch of batches) {
+    const key = String(batch.product);
+    if (!batchesByProductId.has(key)) {
+      batchesByProductId.set(key, []);
+    }
+    batchesByProductId.get(key).push(batch);
+  }
+
+  return batchesByProductId;
+};
+
+const STAFF_getEligibleSellableQuantity = ({ product, batches, referenceDate = new Date() }) => {
+  const productBatches = Array.isArray(batches) ? batches : [];
+  const orderedBatches = sortBatchesForFefo(productBatches, referenceDate);
+
+  if (productBatches.length > 0) {
+    return orderedBatches.reduce((sum, batch) => sum + Number(batch.currentQuantity ?? batch.quantity ?? 0), 0);
+  }
+
+  const riskKey = toUiExpiryRiskKey(classifyExpiryRisk(product?.expiryDate || null, referenceDate));
+  if (riskKey === "expired") {
+    return 0;
+  }
+
+  return Number(product?.quantity ?? 0);
+};
+
+const STAFF_allocateItemFromBatches = async ({ item, session, referenceDate }) => {
+  const batchQuery = InventoryBatch.find({
+    product: item.productId,
+    $or: [
+      { currentQuantity: { $gt: 0 } },
+      { currentQuantity: { $exists: false }, quantity: { $gt: 0 } },
+    ],
+  })
+    .sort({ expiryDate: 1, createdAt: 1, _id: 1 })
+    .select("_id batchNumber quantity currentQuantity initialQuantity expiryDate createdAt status");
+
+  if (session) {
+    batchQuery.session(session);
+  }
+
+  const batches = await batchQuery;
+
+  const plan = buildFefoAllocationPlan({
+    batches,
+    requestedQuantity: item.quantity,
+    referenceDate,
+  });
+
+  if (!plan.fulfilled) {
+    throw new STAFF_BillingError(`Insufficient non-expired stock for ${item.name}`, 400);
+  }
+
+  const appliedAllocations = [];
+
+  try {
+    for (const allocation of plan.allocations) {
+      const options = session ? { session } : undefined;
+      const result = await InventoryBatch.updateOne(
+        {
+          _id: allocation.batchId,
+          currentQuantity: { $gte: allocation.quantity },
+        },
+        {
+          $inc: { currentQuantity: -allocation.quantity },
+        },
+        options
+      );
+
+      if (!result.modifiedCount) {
+        throw new STAFF_BillingError(
+          `Concurrent stock update detected while allocating batch ${allocation.batchNumber || allocation.batchId}`,
+          409
+        );
+      }
+
+      appliedAllocations.push(allocation);
+    }
+  } catch (error) {
+    if (!session && appliedAllocations.length) {
+      for (const applied of appliedAllocations) {
+        await InventoryBatch.updateOne(
+          { _id: applied.batchId },
+          { $inc: { currentQuantity: applied.quantity } }
+        );
+      }
+    }
+
+    throw error;
+  }
+
+  return plan.allocations;
 };
 
 export const STAFF_createBillingTransaction = async ({ staffId, items, patientId, patientName, discountRate = 0 }) => {
@@ -274,6 +440,7 @@ export const STAFF_completeBillingTransaction = async ({ transactionId, staffId,
   return STAFF_executeWithOptionalTransaction(async (session) => {
     // Recheck status and stock in checkout step to block double-submit and race conditions.
     const transaction = await STAFF_getTransactionForStaff(transactionId, staffId, session);
+    const now = new Date();
 
     if (transaction.status !== "PENDING_PAYMENT") {
       throw new STAFF_BillingError("Transaction has already been completed", 409);
@@ -284,7 +451,7 @@ export const STAFF_completeBillingTransaction = async ({ transactionId, staffId,
     }
 
     for (const item of transaction.items) {
-      const productQuery = Product.findById(item.productId);
+      const productQuery = Product.findById(item.productId).select("_id name quantity isArchived expiryDate");
       if (session) {
         productQuery.session(session);
       }
@@ -295,32 +462,25 @@ export const STAFF_completeBillingTransaction = async ({ transactionId, staffId,
         throw new STAFF_BillingError(`Product not found for item ${item.name}`, 404);
       }
 
-      if (product.quantity < item.quantity) {
-        throw new STAFF_BillingError(`Insufficient stock for ${product.name}`, 400);
-      }
+      const liveBatchesByProductId = await STAFF_getLiveBatchStateByProductIds([item.productId], session);
+      const productBatches = liveBatchesByProductId.get(String(item.productId)) || [];
 
-      product.quantity = product.quantity - item.quantity;
-      await product.save({ session });
+      let batchAllocations;
+      batchAllocations = await STAFF_allocateItemFromBatches({
+        item,
+        session,
+        referenceDate: now,
+      });
 
-      // Deduct from InventoryBatch records (FEFO: First Expiry, First Out)
-      let remainingToDeduct = item.quantity;
-      const batchQuery = InventoryBatch.find({
-        product: item.productId,
-        quantity: { $gt: 0 },
-      }).sort({ expiryDate: 1, createdAt: 1 });
-      if (session) batchQuery.session(session);
-      const batches = await batchQuery;
+      item.batchAllocations = batchAllocations;
 
-      for (const batch of batches) {
-        if (remainingToDeduct <= 0) break;
-        const deductFromBatch = Math.min(batch.quantity, remainingToDeduct);
-        batch.quantity -= deductFromBatch;
-        remainingToDeduct -= deductFromBatch;
-        await batch.save({ session });
-      }
+      await STAFF_syncProductQuantityFromBatches({
+        productId: item.productId,
+        session,
+      });
 
       await createStockLog({
-        productId: product._id,
+        productId: item.productId,
         movementType: "SALE",
         quantityChange: -item.quantity,
         performedBy: {
@@ -350,6 +510,13 @@ export const STAFF_completeBillingTransaction = async ({ transactionId, staffId,
         unitPrice: item.unitPrice,
         quantity: item.quantity,
         lineTotal: item.lineTotal,
+        batchAllocations: (item.batchAllocations || []).map((allocation) => ({
+          batchId: allocation.batchId,
+          batchNumber: allocation.batchNumber,
+          quantity: allocation.quantity,
+          expiryDate: allocation.expiryDate,
+          expiryRisk: allocation.expiryRisk,
+        })),
       })),
       subtotal: transaction.subtotal,
       discountRate: transaction.discountRate,
@@ -432,9 +599,6 @@ export const STAFF_voidBillingTransaction = async ({ transactionId, staffId, rea
         throw new STAFF_BillingError(`Product not found for item ${item.name}`, 404);
       }
 
-      product.quantity = product.quantity + item.quantity;
-      await product.save({ session });
-
       // Restore batch quantities — add back to the most recent batch for this product
       const batchQuery = InventoryBatch.find({
         product: item.productId,
@@ -444,9 +608,15 @@ export const STAFF_voidBillingTransaction = async ({ transactionId, staffId, rea
 
       if (batches.length > 0) {
         // Add the restored quantity to the first (nearest expiry) batch
-        batches[0].quantity += item.quantity;
+        const restoredToCurrent = Number(batches[0].currentQuantity ?? batches[0].quantity ?? 0) + Number(item.quantity ?? 0);
+        batches[0].currentQuantity = restoredToCurrent;
         await batches[0].save({ session });
       }
+
+      await STAFF_syncProductQuantityFromBatches({
+        productId: item.productId,
+        session,
+      });
 
       await createStockLog({
         productId: product._id,

@@ -9,6 +9,33 @@ import {
 } from "../services/STAFF_billingService.js";
 import Product from "../models/product.js";
 import InventoryRequest from "../models/InventoryRequest.js";
+import InventoryBatch from "../models/InventoryBatch.js";
+import { classifyExpiryRisk, toUiExpiryRiskKey } from "../services/fefoService.js";
+import { BATCH_EFFECTIVE_STATUS, getBatchEffectiveStatus, isBatchEligibleForBilling } from "../services/batchLifecycleService.js";
+
+const STAFF_pickNearestBatch = (batches = []) => {
+  return (Array.isArray(batches) ? batches : [])
+    .filter((batch) => batch?.expiryDate)
+    .sort((a, b) => new Date(a.expiryDate) - new Date(b.expiryDate))[0] || null;
+};
+
+const STAFF_sumEligibleBatchQuantity = (batches = [], referenceDate = new Date()) => {
+  const today = new Date(referenceDate);
+  today.setHours(0, 0, 0, 0);
+
+  return (Array.isArray(batches) ? batches : []).reduce((sum, batch) => {
+    const quantity = Number(batch?.currentQuantity ?? batch?.quantity ?? 0);
+    if (!Number.isFinite(quantity) || quantity <= 0) return sum;
+    if (!isBatchEligibleForBilling(batch, referenceDate)) return sum;
+    if (!batch?.expiryDate) return sum + quantity;
+
+    const expiry = new Date(batch.expiryDate);
+    if (Number.isNaN(expiry.getTime())) return sum + quantity;
+    expiry.setHours(0, 0, 0, 0);
+
+    return expiry >= today ? sum + quantity : sum;
+  }, 0);
+};
 
 const STAFF_handleBillingError = (res, error) => {
   if (error instanceof STAFF_BillingError) {
@@ -87,6 +114,18 @@ export const STAFF_completeTransaction = async (req, res) => {
         change: transaction.change,
         completedAt: transaction.completedAt,
         receiptNumber: transaction.receiptSnapshot?.receiptNumber,
+        batchUsage: (transaction.items || []).map((item) => ({
+          productId: item.productId,
+          name: item.name,
+          quantity: item.quantity,
+          allocations: (item.batchAllocations || []).map((allocation) => ({
+            batchId: allocation.batchId,
+            batchNumber: allocation.batchNumber,
+            quantity: allocation.quantity,
+            expiryDate: allocation.expiryDate,
+            expiryRisk: allocation.expiryRisk,
+          })),
+        })),
       },
     });
   } catch (error) {
@@ -179,8 +218,29 @@ export const STAFF_getBillingProducts = async (req, res) => {
 
     const products = await Product.find(filter)
       .sort({ name: 1 })
-      .select("_id name category quantity unitPrice strength expiryDate supplier genericName brandName dosageForm unit description medicineName")
+      .select("_id name category quantity unitPrice strength expiryDate supplier genericName brandName dosageForm unit description medicineName status")
       .lean();
+
+    const productIds = products.map((product) => product._id);
+    const batches = await InventoryBatch.find({
+      product: { $in: productIds },
+      $or: [
+        { currentQuantity: { $gt: 0 } },
+        { currentQuantity: { $exists: false }, quantity: { $gt: 0 } },
+      ],
+    })
+      .select("product quantity currentQuantity initialQuantity expiryDate batchNumber createdAt status")
+      .sort({ expiryDate: 1, createdAt: 1, _id: 1 })
+      .lean();
+
+    const batchesByProduct = new Map();
+    for (const batch of batches) {
+      const key = String(batch.product);
+      if (!batchesByProduct.has(key)) {
+        batchesByProduct.set(key, []);
+      }
+      batchesByProduct.get(key).push(batch);
+    }
 
     // Enrich products missing medicine-detail fields from their approved ADD_ITEM requests
     const productsNeedingFallback = products.filter(
@@ -209,6 +269,33 @@ export const STAFF_getBillingProducts = async (req, res) => {
 
     const data = products.map((product) => {
       const fallback = fallbackMap.get(String(product._id));
+      const productBatches = batchesByProduct.get(String(product._id)) || [];
+      const effectiveStatuses = productBatches.map((batch) => getBatchEffectiveStatus(batch));
+      const nearestBatch = STAFF_pickNearestBatch(productBatches);
+      const nearestExpiryDate = nearestBatch?.expiryDate || product.expiryDate || null;
+      const expiryRisk = classifyExpiryRisk(nearestExpiryDate);
+      const expiryRiskKey = toUiExpiryRiskKey(expiryRisk);
+      const eligibleStock = productBatches.length
+        ? STAFF_sumEligibleBatchQuantity(productBatches)
+        : (expiryRiskKey === "expired" ? 0 : Number(product.quantity ?? 0));
+
+      let inventoryStatus = product.status;
+      if (effectiveStatuses.includes(BATCH_EFFECTIVE_STATUS.DISPOSED)) {
+        inventoryStatus = "Disposed";
+      } else if (effectiveStatuses.includes(BATCH_EFFECTIVE_STATUS.PENDING_DISPOSAL)) {
+        inventoryStatus = "Pending Disposal";
+      } else if (effectiveStatuses.includes(BATCH_EFFECTIVE_STATUS.EXPIRED) || expiryRiskKey === "expired") {
+        inventoryStatus = "Expired";
+      } else if (effectiveStatuses.includes(BATCH_EFFECTIVE_STATUS.IMMEDIATE_REVIEW) || expiryRiskKey === "at-risk") {
+        inventoryStatus = "Immediate Review";
+      }
+
+      const billingDisabled =
+        inventoryStatus === "Disposed" ||
+        inventoryStatus === "Expired" ||
+        inventoryStatus === "Pending Disposal" ||
+        eligibleStock <= 0;
+
       return {
         id: product._id,
         name: product.name,
@@ -221,9 +308,15 @@ export const STAFF_getBillingProducts = async (req, res) => {
         unit: product.unit || null,
         branchName: null,
         description: product.description || null,
-        expiryDate: product.expiryDate || null,
+        expiryDate: nearestExpiryDate,
+        nearestExpiryDate,
+        expiryRisk,
+        expiryRiskKey,
+        inventoryStatus,
+        isImmediateReview: inventoryStatus === "Immediate Review",
+        billingDisabled,
         supplier: product.supplier || null,
-        stock: product.quantity,
+        stock: eligibleStock,
         price: product.unitPrice ?? 0,
       };
     });

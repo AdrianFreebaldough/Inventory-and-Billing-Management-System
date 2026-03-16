@@ -27,8 +27,15 @@ const PRODUCT_CATEGORIES = [
 	"Diagnostic Kits",
 	"General Supplies",
 ];
+const PRODUCT_REFRESH_INTERVAL_MS = 60000;
+const UNSALEABLE_INVENTORY_STATUSES = new Set([
+	"expired",
+	"pending disposal",
+	"disposed",
+]);
 
 let patientLookupDebounceTimer = null;
+let productRefreshTimer = null;
 
 /* ===== State ===== */
 
@@ -211,6 +218,47 @@ function showToast(message, type = "info") {
 	}, 3000);
 }
 
+function formatTransactionCode(transactionId) {
+	if (!transactionId) return "N/A";
+	const year = new Date().getFullYear();
+	const suffix = String(transactionId).slice(-5).toUpperCase();
+	return `TX-${year}-${suffix}`;
+}
+
+function showSuccessToast({ transactionCode, totalAmount }) {
+	const toast = document.createElement("div");
+	toast.className = "rounded border border-emerald-600 bg-emerald-600 p-3 text-white shadow-lg";
+	toast.innerHTML = `
+		<div class="text-sm font-semibold">Transaction Successful</div>
+		<div class="text-xs opacity-95">Transaction ID: ${transactionCode}</div>
+		<div class="text-xs opacity-95">Total Amount: ${formatPeso(totalAmount)}</div>
+		<div class="mt-2 flex gap-2">
+			<button type="button" data-toast-action="print" class="rounded border border-white/70 px-2 py-1 text-[11px] font-semibold hover:bg-white/10">Print Receipt</button>
+			<button type="button" data-toast-action="new" class="rounded border border-white/70 px-2 py-1 text-[11px] font-semibold hover:bg-white/10">New Transaction</button>
+		</div>
+	`;
+
+	toast.addEventListener("click", (event) => {
+		const target = event.target;
+		if (!(target instanceof HTMLButtonElement)) return;
+		const action = target.dataset.toastAction;
+		if (action === "print") {
+			window.print();
+		}
+		if (action === "new") {
+			closeAllModals();
+			refreshUi();
+		}
+	});
+
+	toastContainer.appendChild(toast);
+
+	setTimeout(() => {
+		toast.classList.add("opacity-0", "transition-opacity");
+		setTimeout(() => toast.remove(), 300);
+	}, 6000);
+}
+
 function showLoading(text = "Processing...") {
 	state.isLoading = true;
 	loadingText.textContent = text;
@@ -286,6 +334,70 @@ function formatDisplayDate(value) {
 	return parsed.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
+function mapExpiryRiskToUi(value) {
+	const normalized = String(value || "").trim().toLowerCase();
+	if (normalized === "green" || normalized === "safe") return "safe";
+	if (normalized === "yellow" || normalized === "near-expiry" || normalized === "near expiry") return "near-expiry";
+	if (normalized === "red" || normalized === "at-risk" || normalized === "at risk") return "at-risk";
+	if (normalized === "expired") return "expired";
+	return "no-expiry";
+}
+
+function getExpiryRiskPill(expiryRisk) {
+	const normalized = mapExpiryRiskToUi(expiryRisk);
+	if (normalized === "safe") {
+		return { label: "Safe", textClass: "text-emerald-700", dotColor: "#16a34a" };
+	}
+	if (normalized === "near-expiry") {
+		return { label: "Near-Expiry", textClass: "text-amber-700", dotColor: "#f59e0b" };
+	}
+	if (normalized === "at-risk") {
+		return { label: "At-Risk", textClass: "text-red-700", dotColor: "#ef4444" };
+	}
+	if (normalized === "expired") {
+		return { label: "Expired", textClass: "text-red-800", dotColor: "#991b1b" };
+	}
+	return { label: "No Expiry", textClass: "text-gray-600", dotColor: "#9ca3af" };
+}
+
+function isItemImmediateReview(item) {
+	if (item?.isImmediateReview === true) return true;
+	return String(item?.inventoryStatus || "").trim().toLowerCase() === "immediate review";
+}
+
+function isItemExpired(item) {
+	if (!item) return false;
+	if (String(item?.inventoryStatus || "").trim().toLowerCase() === "expired") return true;
+	return mapExpiryRiskToUi(item?.expiryRisk || item?.expiryRiskKey || null) === "expired";
+}
+
+function isItemUnsaleableByStatus(item) {
+	const status = String(item?.inventoryStatus || "").trim().toLowerCase();
+	return UNSALEABLE_INVENTORY_STATUSES.has(status);
+}
+
+function isItemUnsaleable(item) {
+	if (!item) return true;
+	if (item.stock <= 0) return true;
+	if (item?.billingDisabled === true && !isItemImmediateReview(item)) return true;
+	if (isItemUnsaleableByStatus(item)) return true;
+	if (isItemExpired(item)) return true;
+	return false;
+}
+
+function getUnsaleableMessage(item) {
+	if (!item) return "This item cannot be sold.";
+	if (isItemExpired(item)) return "Cannot add expired item to the cart.";
+	if (String(item?.inventoryStatus || "").trim().toLowerCase() === "pending disposal") {
+		return "Cannot sell items pending disposal.";
+	}
+	if (String(item?.inventoryStatus || "").trim().toLowerCase() === "disposed") {
+		return "Cannot sell disposed items.";
+	}
+	if (item.stock <= 0) return "Out of stock.";
+	return "This item cannot be sold.";
+}
+
 function getExpiryWarningLabel(value) {
 	if (!value) return "None";
 	const parsed = new Date(value);
@@ -298,6 +410,16 @@ function getExpiryWarningLabel(value) {
 	if (daysLeft < 0) return "Expired";
 	if (daysLeft <= 30) return "Expiring Soon";
 	return "None";
+}
+
+function normalizeBillingProduct(product) {
+	return {
+		...product,
+		expiryRisk: mapExpiryRiskToUi(product.expiryRisk || product.expiryRiskKey || null),
+		inventoryStatus: product.inventoryStatus || "",
+		isImmediateReview: product.isImmediateReview === true,
+		billingDisabled: product.billingDisabled === true,
+	};
 }
 
 function openItemDetailsModal(itemId) {
@@ -313,7 +435,10 @@ function openItemDetailsModal(itemId) {
 	if (modalUnit) modalUnit.textContent = String(item.unit || "").trim() || "N/A";
 	if (modalDescription) modalDescription.textContent = String(item.description || "").trim() || "N/A";
 	if (modalExpiry) modalExpiry.textContent = formatDisplayDate(item.expiryDate || item.nearestExpiry || item.nearest_expiry);
-	if (modalWarning) modalWarning.textContent = getExpiryWarningLabel(item.expiryDate || item.nearestExpiry || item.nearest_expiry);
+	if (modalWarning) {
+		modalWarning.textContent = getExpiryWarningLabel(item.expiryDate || item.nearestExpiry || item.nearest_expiry);
+		modalWarning.className = "font-semibold text-slate-900";
+	}
 	if (modalSupplier) modalSupplier.textContent = String(item.supplier || "").trim() || "N/A";
 
 	openModal(itemDetailsModal);
@@ -323,8 +448,16 @@ function openItemDetailsModal(itemId) {
 
 function getSelectedItems() {
 	return state.products
-		.filter((item) => (state.quantities[item.id] || 0) > 0)
-		.map((item) => ({ ...item, qty: state.quantities[item.id] }));
+		.filter((item) => (state.quantities[item.id] || 0) > 0 && !isItemUnsaleable(item))
+		.map((item) => {
+			const quantity = state.quantities[item.id];
+			const subtotal = item.price * quantity;
+			return {
+				...item,
+				qty: quantity,
+				subtotal,
+			};
+		});
 }
 
 function getFilteredItems() {
@@ -339,13 +472,11 @@ function getFilteredItems() {
 function computeSaleTotals() {
 	const selected = getSelectedItems();
 	const itemCount = selected.reduce((total, item) => total + item.qty, 0);
-	const subtotal = selected.reduce((total, item) => total + item.price * item.qty, 0);
+	const subtotal = selected.reduce((total, item) => total + item.subtotal, 0);
 	const discount = subtotal * state.discountRate;
-	// Prices are VAT-inclusive: total already contains the 12% VAT
-	const totalDue = Math.max(subtotal - discount, 0);
-	// Reverse VAT extraction: Net = Total / 1.12, VAT = Total - Net
-	const netAmount = totalDue / 1.12;
-	const vat = totalDue - netAmount;
+	const discountedSubtotal = Math.max(subtotal - discount, 0);
+	const vat = discountedSubtotal * VAT_RATE;
+	const totalDue = discountedSubtotal + vat;
 	return { selected, itemCount, subtotal, discount, vat, totalDue };
 }
 
@@ -411,20 +542,23 @@ function renderItemRows() {
 	itemsTableBody.innerHTML = filtered
 		.map((item) => {
 			const currentQty = state.quantities[item.id] || 0;
-			const displayQty = currentQty > 0 ? currentQty : 1;
-			const isOutOfStock = item.stock <= 0;
-			const isMinusDisabled = isOutOfStock || currentQty <= 1;
-			const isPlusDisabled = isOutOfStock || currentQty >= item.stock;
+			const displayQty = currentQty > 0 ? currentQty : 0;
+			const isNotSellable = isItemUnsaleable(item);
+			const disabledTooltip = isItemExpired(item) ? "Cannot sell expired items." : getUnsaleableMessage(item);
+			const isMinusDisabled = isNotSellable || currentQty <= 0;
+			const isPlusDisabled = isNotSellable || currentQty >= item.stock;
 			return `
-				<tr class="text-sm text-slate-800">
+				<tr class="text-sm ${isNotSellable ? "bg-slate-100/80 text-slate-400 opacity-70" : "text-slate-800"}">
 					<td class="px-3 py-3 font-medium">
-						<button type="button" class="billing-item-link bg-transparent border-0 p-0 text-left font-medium hover:underline" data-action="view-item" data-id="${item.id}">${item.name}</button>
+						${isNotSellable
+							? `<span class="text-left font-medium text-slate-400">${item.name}</span>`
+							: `<button type="button" class="billing-item-link bg-transparent border-0 p-0 text-left font-medium hover:underline" data-action="view-item" data-id="${item.id}">${item.name}</button>`}
 					</td>
-					<td class="px-3 py-3 text-slate-600">${String(item.strength || item.Strength || item.dose || item.dosageStrength || "").trim() || "N/A"}</td>
-					<td class="px-3 py-3">${formatPeso(item.price)}</td>
-					<td class="px-3 py-3 text-slate-600">${item.stock} units</td>
+					<td class="px-3 py-3 ${isNotSellable ? "text-slate-400" : "text-slate-600"}">${String(item.strength || item.Strength || item.dose || item.dosageStrength || "").trim() || "N/A"}</td>
+					<td class="px-3 py-3 ${isNotSellable ? "text-slate-400" : ""}">${formatPeso(item.price)}</td>
+					<td class="px-3 py-3 ${isNotSellable ? "text-slate-400" : "text-slate-600"}">${item.stock} units</td>
 					<td class="px-3 py-3">
-						<div class="mx-auto flex w-fit items-center gap-2">
+						<div class="mx-auto flex w-fit items-center gap-2" ${isNotSellable ? `title="${disabledTooltip}"` : ""}>
 							<button
 								type="button"
 								data-action="decrement"
@@ -440,14 +574,14 @@ function renderItemRows() {
 								type="number"
 								data-role="qty-input"
 								data-id="${item.id}"
-								min="1"
+								min="0"
 								max="${item.stock}"
 								step="1"
 								inputmode="numeric"
-								value="${isOutOfStock ? 0 : displayQty}"
-								${isOutOfStock ? "disabled" : ""}
+								value="${isNotSellable ? 0 : displayQty}"
+								${isNotSellable ? "disabled" : ""}
 								class="pos-qty-input h-6 w-[55px] border border-slate-300 bg-white px-1 text-center text-xs font-semibold text-slate-800 outline-none focus:border-cyan-600${
-									isOutOfStock ? " cursor-not-allowed bg-slate-100 text-slate-400" : ""
+									isNotSellable ? " cursor-not-allowed bg-slate-100 text-slate-400" : ""
 								}"
 							/>
 							<button
@@ -473,12 +607,12 @@ function validateCommittedQuantity(item, rawValue, previousQty) {
 	const cleaned = String(rawValue ?? "").replace(/[^\d-]/g, "").trim();
 
 	if (!cleaned) {
-		return previousQty > 0 ? previousQty : 1;
+		return previousQty > 0 ? previousQty : 0;
 	}
 
 	const parsed = Number.parseInt(cleaned, 10);
-	if (!Number.isFinite(parsed) || parsed <= 0) {
-		return 1;
+	if (!Number.isFinite(parsed) || parsed < 0) {
+		return 0;
 	}
 
 	return Math.min(parsed, item.stock);
@@ -491,7 +625,15 @@ function commitQuantityInput(inputEl) {
 	if (!idValue) return;
 
 	const item = state.products.find((entry) => entry.id === idValue);
-	if (!item || item.stock <= 0) return;
+	if (!item || isItemUnsaleable(item)) {
+		if (item) {
+			showToast(getUnsaleableMessage(item), "error");
+		}
+		inputEl.value = "0";
+		state.quantities[idValue] = 0;
+		refreshUi();
+		return;
+	}
 
 	const previousQty = state.quantities[idValue] || 0;
 	const committedQty = validateCommittedQuantity(item, inputEl.value, previousQty);
@@ -513,14 +655,16 @@ function renderSummaryPanel() {
 
 	selectedItemsPanel.innerHTML = selected
 		.map((item) => {
-			const lineTotal = item.price * item.qty;
+			const lineTotal = item.subtotal;
 			return `
-				<div class="mb-2 border-b border-slate-200 pb-2 text-sm last:mb-0 last:border-b-0 last:pb-0">
+				<div class="mb-2 border-b border-slate-200 pb-2 text-sm last:mb-0 last:border-b-0 last:pb-0" data-cart-item-id="${item.id}">
 					<div class="flex items-start justify-between gap-2">
 						<p class="font-medium text-slate-800">${item.name}</p>
-						<p class="whitespace-nowrap font-semibold text-slate-700">${formatPeso(lineTotal)}</p>
+						<button type="button" data-action="remove-cart-item" data-id="${item.id}" class="rounded border border-rose-300 px-2 py-0.5 text-[10px] font-semibold text-rose-700 hover:bg-rose-50">Remove</button>
 					</div>
-					<p class="text-xs text-slate-500">${item.qty} × ${formatPeso(item.price)}</p>
+					<p class="text-xs text-slate-500">Price: ${formatPeso(item.price)}</p>
+					<p class="mt-1 text-xs text-slate-500">Qty: ${item.qty}</p>
+					<p class="mt-1 text-xs font-medium text-slate-600">Subtotal: ${formatPeso(lineTotal)}</p>
 				</div>
 			`;
 		})
@@ -654,6 +798,14 @@ function refreshUi() {
 function setQuantity(itemId, nextQty) {
 	const item = state.products.find((entry) => entry.id === itemId);
 	if (!item) return;
+	if (isItemUnsaleable(item)) {
+		if (nextQty > 0) {
+			showToast(getUnsaleableMessage(item), "error");
+		}
+		state.quantities[itemId] = 0;
+		refreshUi();
+		return;
+	}
 
 	const boundedQty = Math.max(0, Math.min(nextQty, item.stock));
 	state.quantities[itemId] = boundedQty;
@@ -664,6 +816,11 @@ function setQuantity(itemId, nextQty) {
 		state.patientName = "";
 	}
 	refreshUi();
+}
+
+function removeCartItem(itemId) {
+	if (!itemId) return;
+	setQuantity(itemId, 0);
 }
 
 function resetActiveSale() {
@@ -784,28 +941,37 @@ async function handleCompleteSale() {
 	showLoading("Processing payment...");
 
 	try {
+		const totalsBeforeReset = computeSaleTotals();
 		const result = await completeTransaction(state.activeTransactionId, tendered);
 
 		// Refresh products to get updated stock
 		await loadProducts();
 
 		// Build success display data
-		const totals = computeSaleTotals();
 		state.lastCompletedSale = {
 			clinicName: CLINIC_NAME,
 			transactionId: result.transactionId,
+			transactionCode: formatTransactionCode(result.transactionId),
 			patientId: state.patientId,
 			patientName: state.patientName,
-			selected: totals.selected,
-			subtotal: totals.subtotal,
-			discount: totals.discount,
-			vat: totals.vat,
-			totalDue: totals.totalDue,
+			selected: totalsBeforeReset.selected,
+			subtotal: totalsBeforeReset.subtotal,
+			discount: totalsBeforeReset.discount,
+			vat: totalsBeforeReset.vat,
+			totalDue: totalsBeforeReset.totalDue,
+			confirmedTotalAmount: Number(result.totalAmount || totalsBeforeReset.totalDue),
 		};
+
+		resetActiveSale();
+		state.activeView = "sale";
 
 		hideLoading();
 		showSuccessModal();
-		showToast("Sale completed successfully!", "success");
+		showSuccessToast({
+			transactionCode: state.lastCompletedSale.transactionCode,
+			totalAmount: state.lastCompletedSale.confirmedTotalAmount,
+		});
+		refreshUi();
 	} catch (error) {
 		hideLoading();
 		showToast(error.message || "Failed to complete sale", "error");
@@ -816,7 +982,7 @@ function showSuccessModal() {
 	if (!state.lastCompletedSale) return;
 
 	successClinic.textContent = state.lastCompletedSale.clinicName;
-	successTxnId.textContent = String(state.lastCompletedSale.transactionId).slice(-8).toUpperCase();
+	successTxnId.textContent = state.lastCompletedSale.transactionCode;
 	successPatientId.textContent = state.lastCompletedSale.patientId;
 	successItems.innerHTML = state.lastCompletedSale.selected
 		.map((item) => `<p>${item.name} (${item.qty}) - ${formatPeso(item.qty * item.price)}</p>`)
@@ -824,7 +990,7 @@ function showSuccessModal() {
 	successSubtotal.textContent = formatPeso(state.lastCompletedSale.subtotal);
 	successDiscount.textContent = formatPeso(state.lastCompletedSale.discount);
 	successVat.textContent = formatPeso(state.lastCompletedSale.vat);
-	successTotal.textContent = formatPeso(state.lastCompletedSale.totalDue);
+	successTotal.textContent = formatPeso(state.lastCompletedSale.confirmedTotalAmount ?? state.lastCompletedSale.totalDue);
 
 	openModal(successModal);
 }
@@ -958,7 +1124,14 @@ async function handleVoidTransaction() {
 async function loadProducts() {
 	try {
 		const products = await fetchBillingProducts();
-		state.products = products;
+		state.products = products.map(normalizeBillingProduct);
+		state.products.forEach((item) => {
+			if (isItemUnsaleable(item)) {
+				state.quantities[item.id] = 0;
+			} else if ((state.quantities[item.id] || 0) > item.stock) {
+				state.quantities[item.id] = item.stock;
+			}
+		});
 	} catch (error) {
 		showToast("Failed to load products: " + error.message, "error");
 		state.products = [];
@@ -1035,7 +1208,11 @@ function attachEvents() {
 			return;
 		}
 		const item = state.products.find((entry) => entry.id === idValue);
-		if (!item || item.stock <= 0) return;
+		if (!item) return;
+		if (isItemUnsaleable(item)) {
+			showToast(getUnsaleableMessage(item), "error");
+			return;
+		}
 		const currentQty = state.quantities[idValue] || 0;
 
 		if (action === "increment") {
@@ -1044,8 +1221,20 @@ function attachEvents() {
 		}
 
 		if (action === "decrement") {
-			if (currentQty <= 1) return;
+			if (currentQty <= 0) return;
 			setQuantity(idValue, currentQty - 1);
+		}
+	});
+
+	selectedItemsPanel.addEventListener("click", (event) => {
+		const target = event.target;
+		if (!(target instanceof HTMLButtonElement)) return;
+		const action = target.dataset.action;
+		const idValue = target.dataset.id;
+		if (!action || !idValue) return;
+
+		if (action === "remove-cart-item") {
+			removeCartItem(idValue);
 		}
 	});
 
@@ -1214,6 +1403,16 @@ async function init() {
 		hideLoading();
 		refreshUi();
 		attachEvents();
+		if (!productRefreshTimer) {
+			productRefreshTimer = setInterval(async () => {
+				try {
+					await loadProducts();
+					refreshUi();
+				} catch {
+					// Silent refresh keeps billing aligned with live inventory status changes.
+				}
+			}, PRODUCT_REFRESH_INTERVAL_MS);
+		}
 	} catch (error) {
 		hideLoading();
 		showToast("Failed to initialize billing system", "error");

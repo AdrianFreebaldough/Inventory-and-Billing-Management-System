@@ -6,6 +6,8 @@ import OWNER_ArchivedProduct from "../models/OWNER_archivedProduct.js";
 import ActivityLog from "../models/activityLog.js";
 import mongoose from "mongoose";
 import { getExpirationStatus, getDaysUntilExpiry } from "../services/expirationService.js";
+import { classifyExpiryRisk, toUiExpiryRiskKey } from "../services/fefoService.js";
+import { getBatchLifecycleFlags, getBatchEffectiveStatus } from "../services/batchLifecycleService.js";
 
 // Reuse existing InventoryRequest schema so staff can request restocks without direct stock edits.
 
@@ -35,6 +37,7 @@ const STAFF_buildCategoryFilterRegex = (value) => {
 
   const aliases = {
     medicine: "medicine",
+    medicines: "medicine",
     "first aid": "first aid",
     vitamins: "vitamin",
     vitamin: "vitamin",
@@ -45,6 +48,34 @@ const STAFF_buildCategoryFilterRegex = (value) => {
   const escapedCanonical = canonical.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const pattern = `^${escapedCanonical.replace(/\s+/g, "[-_\\s]*")}s?$`;
   return new RegExp(pattern, "i");
+};
+
+const STAFF_normalizeCategory = (value) => {
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/&/g, "and")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+
+  if (!normalized) return "";
+
+  const canonicalMap = {
+    medicine: "Medicine",
+    medicines: "Medicine",
+    vitamin: "Vitamin",
+    vitamins: "Vitamin",
+    "first aid": "First Aid",
+    "first aid medical supplies": "First Aid",
+    "personal care": "Personal Care",
+  };
+
+  const canonical = canonicalMap[normalized] || normalized;
+  return canonical
+    .split(" ")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
 };
 
 const STAFF_pickFirstNonEmpty = (...values) => {
@@ -78,6 +109,8 @@ const STAFF_buildLegacyBatch = (product) => {
     product: product._id,
     batchNumber: fallbackBatchNumber,
     quantity: Number(product.quantity ?? 0),
+    currentQuantity: Number(product.quantity ?? 0),
+    initialQuantity: Number(product.quantity ?? 0),
     expiryDate: product.expiryDate || null,
     supplier: product.supplier || null,
     createdAt: product.createdAt || null,
@@ -107,25 +140,31 @@ const STAFF_attachBatchDataToItems = async (items) => {
   return items.map((item) => {
     const key = String(item._id);
     const existingBatches = batchesByProduct.get(key) || [];
-    const availableBatches = existingBatches.filter((batch) => Number(batch.quantity) > 0);
+    const availableBatches = existingBatches.filter((batch) => Number(batch.currentQuantity ?? batch.quantity ?? 0) > 0);
     const fallbackLegacyBatch = availableBatches.length === 0 ? STAFF_buildLegacyBatch(item) : null;
     const finalBatches = fallbackLegacyBatch ? [fallbackLegacyBatch] : availableBatches;
-    const totalBatchQuantity = finalBatches.reduce((sum, batch) => sum + Number(batch.quantity || 0), 0);
+    const totalBatchQuantity = finalBatches.reduce((sum, batch) => sum + Number(batch.currentQuantity ?? batch.quantity ?? 0), 0);
     const productQuantity = Number(item.quantity ?? 0);
 
     const nearestBatch = finalBatches
       .filter((batch) => batch.expiryDate)
       .sort((a, b) => new Date(a.expiryDate) - new Date(b.expiryDate))[0] || null;
 
+    const batchesWithRisk = finalBatches.map((batch) => ({
+      ...batch,
+      expiryRisk: classifyExpiryRisk(batch.expiryDate),
+    }));
+
     return {
       ...item,
       productQuantity,
-      batches: finalBatches,
-      batchCount: finalBatches.length,
+      batches: batchesWithRisk,
+      batchCount: batchesWithRisk.length,
       totalBatchQuantity,
       nearestExpiryDate: nearestBatch?.expiryDate || item.expiryDate || null,
       nearestBatchNumber: nearestBatch?.batchNumber || item.batchNumber || null,
       nearestBatchSupplier: nearestBatch?.supplier || item.supplier || null,
+      expiryRisk: classifyExpiryRisk(nearestBatch?.expiryDate || item.expiryDate || null),
     };
   });
 };
@@ -191,6 +230,7 @@ const STAFF_buildItemPayload = (item) => {
     category: item.category,
     stockStatus: STAFF_mapStockStatus(item.status),
     currentQuantity: Number(item.productQuantity ?? item.quantity ?? 0),
+    totalQuantity: Number(item.productQuantity ?? item.quantity ?? 0),
     batchQuantity: Number(item.totalBatchQuantity ?? 0),
     unit: item.unit || "pcs",
     unitPrice: item.unitPrice ?? 0,
@@ -198,16 +238,29 @@ const STAFF_buildItemPayload = (item) => {
     supplier: STAFF_pickFirstNonEmpty(item.nearestBatchSupplier, item.supplier, item.supplierName),
     description: item.description || "",
     expiryDate: referenceExpiryDate || null,
+    nearestExpiryDate: referenceExpiryDate || null,
+    expiryRisk: item.expiryRisk || classifyExpiryRisk(referenceExpiryDate),
+    expiryRiskKey: toUiExpiryRiskKey(item.expiryRisk || classifyExpiryRisk(referenceExpiryDate)),
     batchNumber: item.nearestBatchNumber || item.batchNumber || null,
     batchCount: Number(item.batchCount ?? (item.batches || []).length ?? 0),
     batches: Array.isArray(item.batches) ? item.batches.map((batch) => ({
       batchId: batch._id,
       batchNumber: batch.batchNumber || null,
-      quantity: Number(batch.quantity ?? 0),
+      quantity: Number(
+        Number.isFinite(Number(batch.initialQuantity)) ? Number(batch.initialQuantity) : Number(batch.quantity ?? 0)
+      ),
+      currentQuantity: Number(batch.currentQuantity ?? batch.quantity ?? 0),
+      originalQuantity: Number.isFinite(Number(batch.initialQuantity))
+        ? Number(batch.initialQuantity)
+        : Number(batch.quantity ?? 0),
       expiryDate: batch.expiryDate || null,
+      expiryRisk: batch.expiryRisk || classifyExpiryRisk(batch.expiryDate),
+      status: getBatchEffectiveStatus(batch),
+      statusKey: String(getBatchEffectiveStatus(batch)).toLowerCase().replace(/\s+/g, "-"),
       supplier: batch.supplier || null,
       createdAt: batch.createdAt || null,
       isLegacy: !!batch.isLegacy,
+      ...getBatchLifecycleFlags(batch),
     })) : [],
     isArchived: !!item.isArchived,
     genericName: STAFF_pickFirstNonEmpty(item.genericName, item.generic),
@@ -240,7 +293,7 @@ const STAFF_logActivity = async ({
 
 export const STAFF_getInventory = async (req, res) => {
   try {
-    const { category, expirationFilter } = req.query;
+    const { category, expirationFilter, expiryRisk } = req.query;
     const lowStockOnly = STAFF_toBoolean(req.query.lowStockOnly);
     const includeArchived = STAFF_toBoolean(req.query.includeArchived);
     const includePending = STAFF_toBoolean(req.query.includePending);
@@ -286,6 +339,11 @@ export const STAFF_getInventory = async (req, res) => {
     const enrichedItems = await STAFF_enrichMissingFieldsFromApprovedRequests(itemsWithBatches);
     const data = enrichedItems.map(STAFF_buildItemPayload);
 
+    const normalizedRiskFilter = String(expiryRisk || "").trim().toLowerCase();
+    const filteredData = normalizedRiskFilter
+      ? data.filter((entry) => entry.expiryRiskKey === normalizedRiskFilter)
+      : data;
+
     /* ---- Optionally include pending ADD_ITEM requests as virtual items ---- */
     if (includePending && !includeArchived) {
       const pendingFilter = {
@@ -303,18 +361,22 @@ export const STAFF_getInventory = async (req, res) => {
         .lean();
 
       pendingRequests.forEach((pr) => {
-        data.push({
+        filteredData.push({
           itemId: pr._id,
           itemName: pr.itemName,
           category: pr.category,
           stockStatus: "PENDING",
           currentQuantity: pr.initialQuantity || 0,
+          totalQuantity: pr.initialQuantity || 0,
           unit: pr.unit || "pcs",
           unitPrice: pr.unitPrice ?? 0,
           minStock: pr.minStock ?? 10,
           supplier: null,
           description: pr.description || "",
           expiryDate: pr.expiryDate || null,
+          nearestExpiryDate: pr.expiryDate || null,
+          expiryRisk: classifyExpiryRisk(pr.expiryDate || null),
+          expiryRiskKey: toUiExpiryRiskKey(classifyExpiryRisk(pr.expiryDate || null)),
           batchNumber: pr.batchNumber || null,
           isArchived: false,
           isPendingRequest: true,
@@ -323,8 +385,8 @@ export const STAFF_getInventory = async (req, res) => {
     }
 
     return res.status(200).json({
-      count: data.length,
-      data,
+      count: filteredData.length,
+      data: filteredData,
     });
   } catch (error) {
     return res.status(500).json({ message: error.message });
@@ -386,8 +448,9 @@ export const STAFF_createAddItemRequest = async (req, res) => {
     const request = await InventoryRequest.create({
       requestType: "ADD_ITEM",
       requestedBy: req.user.id,
+      date_requested: new Date(),
       itemName: String(itemName).trim(),
-      category: String(category).trim(),
+      category: STAFF_normalizeCategory(category),
       initialQuantity: parsedQuantity,
       unitPrice: parsedUnitPrice,
       unit: unit ? String(unit).trim() : "pcs",
@@ -427,6 +490,7 @@ export const STAFF_createAddItemRequest = async (req, res) => {
         batchNumber: request.batchNumber,
         requestType: request.requestType,
         status: request.status,
+        date_requested: request.date_requested || request.createdAt,
         createdAt: request.createdAt,
       },
     });
@@ -468,6 +532,7 @@ export const STAFF_createRestockRequest = async (req, res) => {
       product: product._id,
       requestedQuantity: parsedQuantity,
       requestedBy: req.user.id,
+      date_requested: new Date(),
       status: "pending",
     });
 
@@ -488,6 +553,7 @@ export const STAFF_createRestockRequest = async (req, res) => {
         productName: product.name,
         requestedQuantity: request.requestedQuantity,
         status: request.status,
+        date_requested: request.date_requested || request.createdAt,
         createdAt: request.createdAt,
       },
     });

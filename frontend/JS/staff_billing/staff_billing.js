@@ -50,6 +50,8 @@ const state = {
 	activeView: "sale",
 	transactionLog: [],
 	activeTransactionId: null,
+	checkoutMode: false,
+	cashTendered: 0,
 	heldTransactions: [],
 	heldCounter: 1,
 	currentModal: null,
@@ -79,6 +81,7 @@ const txnStatusElement = document.getElementById("txnStatus");
 const patientIdInput = document.getElementById("patientIdInput");
 const patientIdHint = document.getElementById("patientIdHint");
 const proceedButton = document.getElementById("proceedBtn");
+const patientInfoSection = document.getElementById("patientInfoSection");
 
 const menuPosButton = document.getElementById("menuPosBtn");
 const holdTopButton = document.getElementById("holdTopBtn");
@@ -87,32 +90,23 @@ const newSaleButton = document.getElementById("newSaleBtn");
 const historyButton = document.getElementById("historyBtn");
 const discountButton = document.getElementById("discountBtn");
 const clearAllButton = document.getElementById("clearAllBtn");
+const cartActionSection = document.getElementById("cartActionSection");
+const paymentSection = document.getElementById("paymentSection");
+const quickCashButtons = document.getElementById("quickCashButtons");
+const cashTenderedInlineInput = document.getElementById("cashTenderedInlineInput");
+const paymentTotalDue = document.getElementById("paymentTotalDue");
+const paymentCashValue = document.getElementById("paymentCashValue");
+const paymentChangeValue = document.getElementById("paymentChangeValue");
+const paymentStatus = document.getElementById("paymentStatus");
+const backToCartBtn = document.getElementById("backToCartBtn");
+const finalizeBtn = document.getElementById("finalizeBtn");
 
 const modalOverlay = document.getElementById("modalOverlay");
-const summaryModal = document.getElementById("summaryModal");
-const cashModal = document.getElementById("cashModal");
 const successModal = document.getElementById("successModal");
 const heldModal = document.getElementById("heldModal");
 const historyViewModal = document.getElementById("historyViewModal");
 const voidConfirmModal = document.getElementById("voidConfirmModal");
 const itemDetailsModal = document.getElementById("itemDetailsModal");
-
-const summaryClinic = document.getElementById("summaryClinic");
-const summaryTxnId = document.getElementById("summaryTxnId");
-const summaryPatientId = document.getElementById("summaryPatientId");
-const summaryItemsBody = document.getElementById("summaryItemsBody");
-const summarySubtotal = document.getElementById("summarySubtotal");
-const summaryDiscount = document.getElementById("summaryDiscount");
-const summaryVat = document.getElementById("summaryVat");
-const summaryTotal = document.getElementById("summaryTotal");
-const summaryBackBtn = document.getElementById("summaryBackBtn");
-const summaryProceedBtn = document.getElementById("summaryProceedBtn");
-
-const cashTotalDue = document.getElementById("cashTotalDue");
-const cashTenderedInput = document.getElementById("cashTenderedInput");
-const cashChangeValue = document.getElementById("cashChangeValue");
-const cashBackBtn = document.getElementById("cashBackBtn");
-const finalizeBtn = document.getElementById("finalizeBtn");
 
 const successClinic = document.getElementById("successClinic");
 const successTxnId = document.getElementById("successTxnId");
@@ -232,24 +226,7 @@ function showSuccessToast({ transactionCode, totalAmount }) {
 		<div class="text-sm font-semibold">Transaction Successful</div>
 		<div class="text-xs opacity-95">Transaction ID: ${transactionCode}</div>
 		<div class="text-xs opacity-95">Total Amount: ${formatPeso(totalAmount)}</div>
-		<div class="mt-2 flex gap-2">
-			<button type="button" data-toast-action="print" class="rounded border border-white/70 px-2 py-1 text-[11px] font-semibold hover:bg-white/10">Print Receipt</button>
-			<button type="button" data-toast-action="new" class="rounded border border-white/70 px-2 py-1 text-[11px] font-semibold hover:bg-white/10">New Transaction</button>
-		</div>
 	`;
-
-	toast.addEventListener("click", (event) => {
-		const target = event.target;
-		if (!(target instanceof HTMLButtonElement)) return;
-		const action = target.dataset.toastAction;
-		if (action === "print") {
-			window.print();
-		}
-		if (action === "new") {
-			closeAllModals();
-			refreshUi();
-		}
-	});
 
 	toastContainer.appendChild(toast);
 
@@ -309,7 +286,7 @@ function formatDateTime(isoString) {
 /* ===== Modals ===== */
 
 function closeAllModals() {
-	[summaryModal, cashModal, successModal, heldModal, historyViewModal, voidConfirmModal, itemDetailsModal].forEach((modal) => {
+	[successModal, heldModal, historyViewModal, voidConfirmModal, itemDetailsModal].forEach((modal) => {
 		modal.classList.add("hidden");
 		modal.classList.remove("flex");
 	});
@@ -476,7 +453,8 @@ function computeSaleTotals() {
 	const discount = subtotal * state.discountRate;
 	const discountedSubtotal = Math.max(subtotal - discount, 0);
 	const vat = discountedSubtotal * VAT_RATE;
-	const totalDue = discountedSubtotal + vat;
+	// Prices are VAT-inclusive; keep VAT as display-only and do not add it again.
+	const totalDue = discountedSubtotal;
 	return { selected, itemCount, subtotal, discount, vat, totalDue };
 }
 
@@ -543,10 +521,11 @@ function renderItemRows() {
 		.map((item) => {
 			const currentQty = state.quantities[item.id] || 0;
 			const displayQty = currentQty > 0 ? currentQty : 0;
+			const checkoutLocked = state.checkoutMode;
 			const isNotSellable = isItemUnsaleable(item);
 			const disabledTooltip = isItemExpired(item) ? "Cannot sell expired items." : getUnsaleableMessage(item);
-			const isMinusDisabled = isNotSellable || currentQty <= 0;
-			const isPlusDisabled = isNotSellable || currentQty >= item.stock;
+			const isMinusDisabled = isNotSellable || checkoutLocked || currentQty <= 0;
+			const isPlusDisabled = isNotSellable || checkoutLocked || currentQty >= item.stock;
 			return `
 				<tr class="text-sm ${isNotSellable ? "bg-slate-100/80 text-slate-400 opacity-70" : "text-slate-800"}">
 					<td class="px-3 py-3 font-medium">
@@ -558,7 +537,7 @@ function renderItemRows() {
 					<td class="px-3 py-3 ${isNotSellable ? "text-slate-400" : ""}">${formatPeso(item.price)}</td>
 					<td class="px-3 py-3 ${isNotSellable ? "text-slate-400" : "text-slate-600"}">${item.stock} units</td>
 					<td class="px-3 py-3">
-						<div class="mx-auto flex w-fit items-center gap-2" ${isNotSellable ? `title="${disabledTooltip}"` : ""}>
+						<div class="mx-auto flex w-fit items-center gap-2" ${(isNotSellable || checkoutLocked) ? `title="${checkoutLocked ? "Back to cart to edit quantities." : disabledTooltip}"` : ""}>
 							<button
 								type="button"
 								data-action="decrement"
@@ -579,9 +558,9 @@ function renderItemRows() {
 								step="1"
 								inputmode="numeric"
 								value="${isNotSellable ? 0 : displayQty}"
-								${isNotSellable ? "disabled" : ""}
+								${isNotSellable || checkoutLocked ? "disabled" : ""}
 								class="pos-qty-input h-6 w-[55px] border border-slate-300 bg-white px-1 text-center text-xs font-semibold text-slate-800 outline-none focus:border-cyan-600${
-									isNotSellable ? " cursor-not-allowed bg-slate-100 text-slate-400" : ""
+									isNotSellable || checkoutLocked ? " cursor-not-allowed bg-slate-100 text-slate-400" : ""
 								}"
 							/>
 							<button
@@ -650,17 +629,21 @@ function renderSummaryPanel() {
 		discountElement.textContent = formatPeso(0);
 		vatElement.textContent = formatPeso(0);
 		totalDueElement.textContent = formatPeso(0);
+		renderInlinePayment();
 		return;
 	}
 
 	selectedItemsPanel.innerHTML = selected
 		.map((item) => {
 			const lineTotal = item.subtotal;
+			const isLockedForCheckout = state.checkoutMode;
 			return `
 				<div class="mb-2 border-b border-slate-200 pb-2 text-sm last:mb-0 last:border-b-0 last:pb-0" data-cart-item-id="${item.id}">
 					<div class="flex items-start justify-between gap-2">
 						<p class="font-medium text-slate-800">${item.name}</p>
-						<button type="button" data-action="remove-cart-item" data-id="${item.id}" class="rounded border border-rose-300 px-2 py-0.5 text-[10px] font-semibold text-rose-700 hover:bg-rose-50">Remove</button>
+						<button type="button" data-action="remove-cart-item" data-id="${item.id}" ${isLockedForCheckout ? "disabled" : ""} class="rounded border border-rose-300 px-2 py-0.5 text-[10px] font-semibold ${
+							isLockedForCheckout ? "cursor-not-allowed text-rose-300" : "text-rose-700 hover:bg-rose-50"
+						}">Remove</button>
 					</div>
 					<p class="text-xs text-slate-500">Price: ${formatPeso(item.price)}</p>
 					<p class="mt-1 text-xs text-slate-500">Qty: ${item.qty}</p>
@@ -675,6 +658,64 @@ function renderSummaryPanel() {
 	discountElement.textContent = formatPeso(discount);
 	vatElement.textContent = formatPeso(vat);
 	totalDueElement.textContent = formatPeso(totalDue);
+	renderInlinePayment();
+}
+
+function setCheckoutMode(enabled) {
+	state.checkoutMode = Boolean(enabled);
+	if (!state.checkoutMode) {
+		state.cashTendered = 0;
+		// Clear quick button active states when exiting checkout
+		quickCashButtons?.querySelectorAll("button").forEach((btn) => {
+			btn.classList.remove("border-cyan-600", "bg-cyan-50", "text-cyan-700");
+			btn.classList.add("border-slate-300", "bg-white", "text-slate-700");
+		});
+	}
+	// Toggle patient info visibility based on payment mode
+	if (patientInfoSection) {
+		patientInfoSection.classList.toggle("hidden", state.checkoutMode);
+	}
+	renderInlinePayment();
+}
+
+function renderInlinePayment() {
+	if (!paymentSection || !cartActionSection) return;
+	const totals = computeSaleTotals();
+	const showPayment = state.checkoutMode;
+	cartActionSection.classList.toggle("hidden", showPayment);
+	paymentSection.classList.toggle("hidden", !showPayment);
+	paymentTotalDue.textContent = formatPeso(totals.totalDue);
+	paymentCashValue.textContent = formatPeso(state.cashTendered || 0);
+	const change = Math.max((state.cashTendered || 0) - totals.totalDue, 0);
+	paymentChangeValue.textContent = formatPeso(change);
+
+	if (!showPayment) {
+		return;
+	}
+
+	const hasSufficientCash = totals.totalDue > 0 && (state.cashTendered || 0) >= totals.totalDue;
+	let statusMsg = "Enter cash amount.";
+	let statusColor = "text-amber-600";
+	if (totals.totalDue <= 0) {
+		statusMsg = "No payable amount.";
+		statusColor = "text-slate-500";
+	} else if (state.cashTendered > 0) {
+		if (hasSufficientCash) {
+			statusMsg = "✔ Payment sufficient. Ready to finalize.";
+			statusColor = "text-emerald-600";
+		} else {
+			const shortage = totals.totalDue - state.cashTendered;
+			statusMsg = `Insufficient: Need ₱${shortage.toFixed(2)} more.`;
+			statusColor = "text-rose-600";
+		}
+	}
+	paymentStatus.textContent = statusMsg;
+	paymentStatus.className = `text-[11px] font-semibold ${statusColor}`;
+
+	setFinalizeEnabled(hasSufficientCash);
+	if (cashTenderedInlineInput) {
+		cashTenderedInlineInput.value = state.cashTendered ? String(state.cashTendered) : "";
+	}
 }
 
 function renderHistoryTable() {
@@ -827,6 +868,8 @@ function resetActiveSale() {
 	Object.keys(state.quantities).forEach((key) => {
 		state.quantities[key] = 0;
 	});
+	state.checkoutMode = false;
+	state.cashTendered = 0;
 	state.discountRate = 0;
 	state.patientId = "";
 	state.patientName = "";
@@ -834,37 +877,16 @@ function resetActiveSale() {
 	searchInput.value = "";
 	state.searchTerm = "";
 	state.activeCategory = "All Items";
+	if (cashTenderedInlineInput) {
+		cashTenderedInlineInput.value = "";
+	}
+	// Ensure patient info is visible after transaction completes
+	if (patientInfoSection) {
+		patientInfoSection.classList.remove("hidden");
+	}
 }
 
 /* ===== Transaction Flow ===== */
-
-function openSummaryModal() {
-	const totals = computeSaleTotals();
-	if (!state.patientId || totals.itemCount === 0) return;
-
-	summaryClinic.textContent = CLINIC_NAME;
-	summaryTxnId.textContent = state.activeTransactionId ? String(state.activeTransactionId).slice(-8).toUpperCase() : "PENDING";
-	summaryPatientId.textContent = state.patientId;
-	const summaryPatientNameEl = document.getElementById("summaryPatientName");
-	if (summaryPatientNameEl) summaryPatientNameEl.textContent = state.patientName || "N/A";
-	summaryItemsBody.innerHTML = totals.selected
-		.map(
-			(item) => `
-				<tr class="text-xs text-slate-700">
-					<td class="px-3 py-2">${item.name}</td>
-					<td class="px-3 py-2 text-center">${item.qty}</td>
-					<td class="px-3 py-2 text-right">${formatPeso(item.qty * item.price)}</td>
-				</tr>
-			`
-		)
-		.join("");
-	summarySubtotal.textContent = formatPeso(totals.subtotal);
-	summaryDiscount.textContent = formatPeso(totals.discount);
-	summaryVat.textContent = formatPeso(totals.vat);
-	summaryTotal.textContent = formatPeso(totals.totalDue);
-
-	openModal(summaryModal);
-}
 
 async function handleProceedToPayment() {
 	const totals = computeSaleTotals();
@@ -893,35 +915,37 @@ async function handleProceedToPayment() {
 		await proceedToPayment(result.transactionId);
 
 		hideLoading();
-		openCashModal();
+		setCheckoutMode(true);
 	} catch (error) {
 		hideLoading();
 		showToast(error.message || "Failed to create transaction", "error");
 	}
 }
 
-function openCashModal() {
-	const totals = computeSaleTotals();
-	cashTotalDue.textContent = formatPeso(totals.totalDue);
-	cashTenderedInput.value = "";
-	cashChangeValue.textContent = formatPeso(0);
-	setFinalizeEnabled(false);
-	openModal(cashModal);
-}
-
 function setFinalizeEnabled(enabled) {
 	finalizeBtn.disabled = !enabled;
 	finalizeBtn.className = enabled
-		? "min-w-28 border border-emerald-600 bg-emerald-500 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-400"
-		: "min-w-28 cursor-not-allowed border border-slate-300 bg-slate-200 px-3 py-2 text-xs font-semibold text-slate-400";
+		? "border border-emerald-600 bg-emerald-500 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-400"
+		: "cursor-not-allowed border border-slate-300 bg-slate-200 px-3 py-2 text-xs font-semibold text-slate-400";
 }
 
 function updateCashChange() {
-	const { totalDue } = computeSaleTotals();
-	const tendered = Number(cashTenderedInput.value || 0);
-	const change = tendered - totalDue;
-	cashChangeValue.textContent = formatPeso(Math.max(change, 0));
-	setFinalizeEnabled(tendered >= totalDue && totalDue > 0);
+	const rawValue = cashTenderedInlineInput?.value || "";
+	const nextAmount = parseFloat(rawValue);
+	if (rawValue === "") {
+		state.cashTendered = 0;
+	} else if (Number.isNaN(nextAmount) || nextAmount < 0) {
+		state.cashTendered = 0;
+		if (cashTenderedInlineInput) cashTenderedInlineInput.value = "";
+	} else {
+		state.cashTendered = nextAmount;
+	}
+	renderInlinePayment();
+}
+
+function applyQuickCash(amount) {
+	state.cashTendered = Number(amount || 0);
+	renderInlinePayment();
 }
 
 async function handleCompleteSale() {
@@ -930,7 +954,7 @@ async function handleCompleteSale() {
 		return;
 	}
 
-	const tendered = Number(cashTenderedInput.value || 0);
+	const tendered = Number(state.cashTendered || 0);
 	const { totalDue } = computeSaleTotals();
 
 	if (tendered < totalDue) {
@@ -938,6 +962,7 @@ async function handleCompleteSale() {
 		return;
 	}
 
+	setFinalizeEnabled(false);
 	showLoading("Processing payment...");
 
 	try {
@@ -962,9 +987,6 @@ async function handleCompleteSale() {
 			confirmedTotalAmount: Number(result.totalAmount || totalsBeforeReset.totalDue),
 		};
 
-		resetActiveSale();
-		state.activeView = "sale";
-
 		hideLoading();
 		showSuccessModal();
 		showSuccessToast({
@@ -974,6 +996,7 @@ async function handleCompleteSale() {
 		refreshUi();
 	} catch (error) {
 		hideLoading();
+		setFinalizeEnabled(true);
 		showToast(error.message || "Failed to complete sale", "error");
 	}
 }
@@ -1355,27 +1378,44 @@ function attachEvents() {
 
 	proceedButton.addEventListener("click", () => {
 		if (proceedButton.disabled) return;
-		openSummaryModal();
+		handleProceedToPayment();
 	});
 
-	summaryBackBtn.addEventListener("click", closeAllModals);
-	summaryProceedBtn.addEventListener("click", handleProceedToPayment);
+	backToCartBtn?.addEventListener("click", () => {
+		setCheckoutMode(false);
+	});
 
-	cashBackBtn.addEventListener("click", openSummaryModal);
-	cashTenderedInput.addEventListener("input", updateCashChange);
+	quickCashButtons?.addEventListener("click", (event) => {
+		const target = event.target;
+		if (!(target instanceof HTMLButtonElement)) return;
+		const amount = Number(target.dataset.cashQuick || 0);
+		if (!Number.isFinite(amount) || amount <= 0) return;
+		
+		// Visual feedback: highlight selected button
+		Array.from(quickCashButtons.querySelectorAll("button")).forEach((btn) => {
+			btn.classList.remove("border-cyan-600", "bg-cyan-50", "text-cyan-700");
+			btn.classList.add("border-slate-300", "bg-white", "text-slate-700");
+		});
+		target.classList.add("border-cyan-600", "bg-cyan-50", "text-cyan-700");
+		target.classList.remove("border-slate-300", "bg-white", "text-slate-700");
+		
+		applyQuickCash(amount);
+	});
+
+	cashTenderedInlineInput?.addEventListener("input", updateCashChange);
 
 	finalizeBtn.addEventListener("click", () => {
 		if (finalizeBtn.disabled) return;
 		handleCompleteSale();
 	});
 
-	printSlipBtn.addEventListener("click", () => {
+	printSlipBtn?.addEventListener("click", () => {
 		if (state.lastCompletedSale) {
 			window.print();
 		}
 	});
 
-	nextSaleBtn.addEventListener("click", async () => {
+	nextSaleBtn?.addEventListener("click", async () => {
 		resetActiveSale();
 		await loadProducts();
 		closeAllModals();
@@ -1384,7 +1424,7 @@ function attachEvents() {
 	});
 
 	modalOverlay.addEventListener("click", () => {
-		const closableModals = ["summaryModal", "heldModal", "historyViewModal", "voidConfirmModal", "itemDetailsModal"];
+		const closableModals = ["heldModal", "historyViewModal", "voidConfirmModal", "itemDetailsModal"];
 		if (closableModals.includes(state.currentModal)) {
 			closeAllModals();
 		}

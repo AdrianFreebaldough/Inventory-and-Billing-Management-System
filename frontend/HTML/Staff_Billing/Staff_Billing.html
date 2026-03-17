@@ -79,41 +79,71 @@
 					</div>
 				</div>
 
-				<aside class="border border-slate-300 bg-white">
-					<div class="border-b border-slate-300 bg-black px-3 py-2 text-[11px] text-slate-200">
+				<aside class="flex h-[560px] min-h-0 flex-col overflow-hidden border border-slate-300 bg-white">
+					<div class="shrink-0 border-b border-slate-300 bg-black px-3 py-2 text-[11px] text-slate-200">
 						<p class="uppercase tracking-wider">Transaction ID: <span id="txnId" class="font-semibold text-white"></span></p>
-						<label for="patientIdInput" class="mt-2 block text-[10px] uppercase tracking-wider text-slate-300">Patient ID</label>
-						<input id="patientIdInput" type="text" placeholder="Enter patient ID..." class="mt-1 w-full border border-slate-600 bg-slate-900 px-2 py-1 text-xs text-white outline-none focus:border-cyan-500" />
-						<p id="patientIdHint" class="mt-1 text-[10px] text-slate-400">Patient name auto-fills when a valid Patient ID is entered.</p>
-						<label for="patientNameInput" class="mt-2 block text-[10px] uppercase tracking-wider text-slate-300">Patient Name</label>
-						<input id="patientNameInput" type="text" readonly placeholder="Auto-filled from patient record" class="mt-1 w-full border border-slate-600 bg-slate-900 px-2 py-1 text-xs text-white outline-none focus:border-cyan-500" />
-						<p class="mt-1">Status: <span id="txnStatus" class="font-semibold text-rose-400"></span></p>
-					</div>
-
-					<div id="selectedItems" class="h-[240px] overflow-y-auto border-b border-slate-300 bg-slate-50 p-2 text-xs text-slate-500">
-						No items selected.
-					</div>
-
-					<div class="border-b border-slate-300 bg-black px-3 py-3 text-xs text-emerald-300">
-						<div class="mb-1 flex items-center justify-between"><span>ITEMS:</span><span id="itemsCount">0</span></div>
-						<div class="mb-1 flex items-center justify-between"><span>SUBTOTAL:</span><span id="subtotalValue">₱0.00</span></div>
-						<div class="mb-1 flex items-center justify-between"><span>DISCOUNT:</span><span id="discountValue">₱0.00</span></div>
-						<div class="mb-1 flex items-center justify-between"><span>VAT (12%):</span><span id="vatValue">₱0.00</span></div>
-						<div class="mt-3 border-t border-emerald-900 pt-2 text-right text-xl font-semibold text-emerald-400">
-							<span class="mr-2 text-xs align-middle text-emerald-200">TOTAL DUE</span>
-							<span id="totalDueValue">₱0.00</span>
+						<div id="patientInfoSection" class="mt-2">
+							<label for="patientIdInput" class="block text-[10px] uppercase tracking-wider text-slate-300">Patient ID</label>
+							<input id="patientIdInput" type="text" placeholder="Enter patient ID..." class="mt-1 w-full border border-slate-600 bg-slate-900 px-2 py-1 text-xs text-white outline-none focus:border-cyan-500" />
+							<p id="patientIdHint" class="mt-1 text-[10px] text-slate-400">Patient name auto-fills when a valid Patient ID is entered.</p>
+							<label for="patientNameInput" class="mt-2 block text-[10px] uppercase tracking-wider text-slate-300">Patient Name</label>
+							<input id="patientNameInput" type="text" readonly placeholder="Auto-filled from patient record" class="mt-1 w-full border border-slate-600 bg-slate-900 px-2 py-1 text-xs text-white outline-none focus:border-cyan-500" />
+							<p class="mt-1">Status: <span id="txnStatus" class="font-semibold text-rose-400"></span></p>
 						</div>
 					</div>
 
-					<div class="grid grid-cols-3 border-b border-slate-300 text-xs font-medium">
-						<button id="holdSummaryBtn" type="button" class="border-r border-slate-300 bg-amber-500 px-2 py-2 text-slate-900 hover:bg-amber-400">HOLD</button>
-						<button id="discountBtn" type="button" class="border-r border-slate-300 bg-cyan-500 px-2 py-2 text-slate-900 hover:bg-cyan-400">DISCOUNT %</button>
-						<button id="clearAllBtn" type="button" class="bg-rose-600 px-2 py-2 text-white hover:bg-rose-500">CLEAR ALL</button>
+					<div id="selectedItems" class="min-h-0 flex-1 overflow-y-auto border-b border-slate-300 bg-slate-50 p-2 text-xs text-slate-500">
+						No items selected.
 					</div>
 
-					<button id="proceedBtn" type="button" disabled class="w-full cursor-not-allowed bg-slate-200 py-2.5 text-xs font-semibold text-slate-400">
-						PROCEED TO PAYMENT
-					</button>
+					<div class="shrink-0 flex flex-col border-t border-slate-300 bg-slate-950">
+						<div class="shrink-0 border-b border-slate-700 px-3 py-1.5 text-[11px] text-emerald-300">
+							<div class="flex items-center justify-between"><span>ITEMS:</span><span id="itemsCount">0</span></div>
+							<div class="flex items-center justify-between"><span>SUBTOTAL:</span><span id="subtotalValue">₱0.00</span></div>
+							<div class="flex items-center justify-between"><span>DISCOUNT:</span><span id="discountValue">₱0.00</span></div>
+							<div class="flex items-center justify-between"><span>VAT (12%):</span><span id="vatValue">₱0.00</span></div>
+							<div class="mt-1 border-t border-emerald-900 pt-0.5 text-right">
+								<p class="text-[9px] font-semibold tracking-wide text-emerald-100">TOTAL DUE</p>
+								<p id="totalDueValue" class="text-xl font-extrabold leading-none text-emerald-300">₱0.00</p>
+							</div>
+						</div>
+
+						<div id="cartActionSection" class="shrink-0">
+							<div class="grid grid-cols-3 border-b border-slate-300 text-xs font-medium">
+								<button id="holdSummaryBtn" type="button" class="border-r border-slate-300 bg-amber-500 px-2 py-2 text-slate-900 hover:bg-amber-400">HOLD</button>
+								<button id="discountBtn" type="button" class="border-r border-slate-300 bg-cyan-500 px-2 py-2 text-slate-900 hover:bg-cyan-400">DISCOUNT %</button>
+								<button id="clearAllBtn" type="button" class="bg-rose-600 px-2 py-2 text-white hover:bg-rose-500">CLEAR ALL</button>
+							</div>
+
+							<button id="proceedBtn" type="button" disabled class="w-full cursor-not-allowed bg-slate-200 py-2.5 text-xs font-semibold text-slate-400">
+								PROCEED TO PAYMENT
+							</button>
+						</div>
+
+						<section id="paymentSection" class="hidden shrink-0 overflow-y-auto bg-slate-50 p-3">
+							<p class="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-700">Cash Tendered</p>
+							<div id="quickCashButtons" class="mb-3 grid grid-cols-4 gap-2">
+								<button type="button" data-cash-quick="100" class="border border-slate-300 bg-white px-2 py-1.5 text-xs font-semibold text-slate-700 hover:border-cyan-500 hover:text-cyan-700">₱100</button>
+								<button type="button" data-cash-quick="200" class="border border-slate-300 bg-white px-2 py-1.5 text-xs font-semibold text-slate-700 hover:border-cyan-500 hover:text-cyan-700">₱200</button>
+								<button type="button" data-cash-quick="500" class="border border-slate-300 bg-white px-2 py-1.5 text-xs font-semibold text-slate-700 hover:border-cyan-500 hover:text-cyan-700">₱500</button>
+								<button type="button" data-cash-quick="1000" class="border border-slate-300 bg-white px-2 py-1.5 text-xs font-semibold text-slate-700 hover:border-cyan-500 hover:text-cyan-700">₱1000</button>
+							</div>
+
+							<label for="cashTenderedInlineInput" class="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-600">Cash Input</label>
+											<input id="cashTenderedInlineInput" type="number" min="0" step="0.01" placeholder="Enter amount" inputmode="decimal" class="mb-3 w-full border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-cyan-600" />
+							<div class="space-y-1 rounded border border-slate-200 bg-white p-2 text-xs text-slate-700">
+								<div class="flex items-center justify-between"><span>Total Due</span><span id="paymentTotalDue">₱0.00</span></div>
+								<div class="flex items-center justify-between"><span>Cash</span><span id="paymentCashValue">₱0.00</span></div>
+								<div class="flex items-center justify-between font-semibold text-slate-900"><span>Change</span><span id="paymentChangeValue">₱0.00</span></div>
+											</div>
+
+											<p id="paymentStatus" class="mt-2 text-[11px] font-semibold text-amber-600">Enter cash amount.</p>
+							<div class="mt-3 grid grid-cols-2 gap-2">
+								<button id="backToCartBtn" type="button" class="border border-slate-400 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100">BACK TO CART</button>
+								<button id="finalizeBtn" type="button" class="cursor-not-allowed border border-slate-300 bg-slate-200 px-3 py-2 text-xs font-semibold text-slate-400" disabled>FINALIZE SALE</button>
+							</div>
+						</section>
+					</div>
 				</aside>
 				</section>
 			</section>
@@ -140,65 +170,11 @@
 
 	<div id="modalOverlay" class="fixed inset-0 z-40 hidden bg-black/50"></div>
 
-	<section id="summaryModal" class="fixed inset-0 z-50 hidden items-center justify-center p-4">
-		<div class="w-full max-w-2xl border border-slate-300 bg-white shadow-lg">
-			<header class="border-b border-slate-300 bg-black px-4 py-3 text-xs font-semibold uppercase tracking-wider text-white">Transaction Summary</header>
-			<div class="space-y-3 p-4 text-xs text-slate-700">
-				<div class="grid gap-2 sm:grid-cols-2">
-					<p>Clinic: <span id="summaryClinic" class="font-semibold text-slate-900"></span></p>
-					<p>Transaction ID: <span id="summaryTxnId" class="font-semibold text-slate-900"></span></p>
-					<p class="sm:col-span-2">Patient ID: <span id="summaryPatientId" class="font-semibold text-slate-900"></span></p>
-					<p class="sm:col-span-2">Patient Name: <span id="summaryPatientName" class="font-semibold text-slate-900"></span></p>
-				</div>
-
-				<div class="max-h-60 overflow-auto border border-slate-200">
-					<table class="w-full border-collapse">
-						<thead class="sticky top-0 bg-slate-100 text-left text-[11px] uppercase tracking-wide text-slate-600">
-							<tr>
-								<th class="px-3 py-2">Item</th>
-								<th class="px-3 py-2 text-center">Qty</th>
-								<th class="px-3 py-2 text-right">Price</th>
-							</tr>
-						</thead>
-						<tbody id="summaryItemsBody" class="divide-y divide-slate-200"></tbody>
-					</table>
-				</div>
-
-				<div class="ml-auto w-full max-w-xs space-y-1 border border-slate-200 bg-slate-50 p-3 text-xs">
-					<div class="flex items-center justify-between"><span>Subtotal</span><span id="summarySubtotal">₱0.00</span></div>
-					<div class="flex items-center justify-between"><span>Discount</span><span id="summaryDiscount">₱0.00</span></div>
-					<div class="flex items-center justify-between"><span>VAT (12%)</span><span id="summaryVat">₱0.00</span></div>
-					<div class="flex items-center justify-between border-t border-slate-300 pt-2 font-semibold text-slate-900"><span>Total Due</span><span id="summaryTotal">₱0.00</span></div>
-				</div>
-			</div>
-			<footer class="flex justify-end gap-2 border-t border-slate-300 bg-slate-50 px-4 py-3">
-				<button id="summaryBackBtn" type="button" class="min-w-28 border border-slate-400 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100">BACK TO EDIT</button>
-				<button id="summaryProceedBtn" type="button" class="min-w-32 border border-emerald-600 bg-emerald-500 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-400">PROCEED TO PAYMENT</button>
-			</footer>
-		</div>
-	</section>
-
-	<section id="cashModal" class="fixed inset-0 z-50 hidden items-center justify-center p-4">
-		<div class="w-full max-w-md border border-slate-300 bg-white shadow-lg">
-			<header class="border-b border-slate-300 bg-black px-4 py-3 text-xs font-semibold uppercase tracking-wider text-white">Cash Tendered</header>
-			<div class="space-y-3 p-4 text-xs text-slate-700">
-				<p>Total Due: <span id="cashTotalDue" class="font-semibold text-slate-900">₱0.00</span></p>
-				<label for="cashTenderedInput" class="block text-[11px] font-semibold uppercase tracking-wide text-slate-600">Cash Tendered</label>
-				<input id="cashTenderedInput" type="number" min="0" step="0.01" placeholder="0.00" class="w-full border border-slate-300 px-3 py-2 text-sm text-slate-900 outline-none focus:border-cyan-600" />
-				<p>Change: <span id="cashChangeValue" class="font-semibold text-slate-900">₱0.00</span></p>
-			</div>
-			<footer class="flex justify-end gap-2 border-t border-slate-300 bg-slate-50 px-4 py-3">
-				<button id="cashBackBtn" type="button" class="min-w-28 border border-slate-400 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100">BACK TO EDIT</button>
-				<button id="finalizeBtn" type="button" class="min-w-28 cursor-not-allowed border border-slate-300 bg-slate-200 px-3 py-2 text-xs font-semibold text-slate-400" disabled>FINALIZE SALE</button>
-			</footer>
-		</div>
-	</section>
-
 	<section id="successModal" class="fixed inset-0 z-50 hidden items-center justify-center p-4">
 		<div class="w-full max-w-2xl border border-slate-300 bg-white shadow-lg">
-			<header class="border-b border-emerald-700 bg-emerald-600 px-4 py-3 text-xs font-semibold uppercase tracking-wider text-white">Transaction Successful</header>
+			<header class="border-b border-emerald-700 bg-emerald-600 px-4 py-3 text-xs font-semibold uppercase tracking-wider text-white">Transaction Completed</header>
 			<div class="space-y-3 p-4 text-xs text-slate-700">
-				<p class="text-sm font-semibold text-emerald-700">Sale completed successfully.</p>
+				<p class="text-sm font-semibold text-emerald-700">✔ Transaction Completed</p>
 				<div class="border border-slate-200 bg-slate-50 p-3">
 					<p>Clinic: <span id="successClinic" class="font-semibold text-slate-900"></span></p>
 					<p>Transaction ID: <span id="successTxnId" class="font-semibold text-slate-900"></span></p>
@@ -213,8 +189,8 @@
 				</div>
 			</div>
 			<footer class="flex justify-end gap-2 border-t border-slate-300 bg-slate-50 px-4 py-3">
-				<button id="printSlipBtn" type="button" class="min-w-24 border border-cyan-600 bg-cyan-500 px-3 py-2 text-xs font-semibold text-white hover:bg-cyan-400">PRINT SLIP</button>
-				<button id="nextSaleBtn" type="button" class="min-w-24 border border-emerald-600 bg-emerald-500 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-400">NEXT SALE</button>
+				<button id="printSlipBtn" type="button" class="min-w-24 border border-cyan-600 bg-cyan-500 px-3 py-2 text-xs font-semibold text-white hover:bg-cyan-400">PRINT RECEIPT</button>
+				<button id="nextSaleBtn" type="button" class="min-w-24 border border-emerald-600 bg-emerald-500 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-400">NEW SALE</button>
 			</footer>
 		</div>
 	</section>

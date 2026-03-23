@@ -2,6 +2,8 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 
 export const BATCH_MANUAL_STATUS = {
   ACTIVE: "Active",
+  LOW_STOCK: "Low Stock",
+  OUT_OF_STOCK: "Out of Stock",
   PENDING_DISPOSAL: "Pending Disposal",
   DISPOSED: "Disposed",
   EMPTY: "Empty",
@@ -9,6 +11,8 @@ export const BATCH_MANUAL_STATUS = {
 
 export const BATCH_EFFECTIVE_STATUS = {
   ACTIVE: "Active",
+  LOW_STOCK: "Low Stock",
+  OUT_OF_STOCK: "Out of Stock",
   EXPIRED: "Expired",
   IMMEDIATE_REVIEW: "Immediate Review",
   PENDING_DISPOSAL: "Pending Disposal",
@@ -36,9 +40,11 @@ export const isDateValue = (value) => {
 
 const normalizeManualStatus = (status) => {
   const normalized = String(status || "").trim().toLowerCase();
+  if (normalized === "low stock") return BATCH_MANUAL_STATUS.LOW_STOCK;
+  if (normalized === "out of stock") return BATCH_MANUAL_STATUS.OUT_OF_STOCK;
   if (normalized === "pending disposal") return BATCH_MANUAL_STATUS.PENDING_DISPOSAL;
   if (normalized === "disposed") return BATCH_MANUAL_STATUS.DISPOSED;
-  if (normalized === "empty") return BATCH_MANUAL_STATUS.EMPTY;
+  if (normalized === "empty") return BATCH_MANUAL_STATUS.OUT_OF_STOCK;
   return BATCH_MANUAL_STATUS.ACTIVE;
 };
 
@@ -93,7 +99,7 @@ export const getBatchEffectiveStatus = (batch, referenceDate = new Date()) => {
   if (quantity <= 0) {
     return manualStatus === BATCH_MANUAL_STATUS.DISPOSED
       ? BATCH_EFFECTIVE_STATUS.DISPOSED
-      : BATCH_EFFECTIVE_STATUS.EMPTY;
+      : BATCH_EFFECTIVE_STATUS.OUT_OF_STOCK;
   }
 
   const risk = getBatchExpiryRisk(batch?.expiryDate, referenceDate);
@@ -128,7 +134,7 @@ export const getBatchLifecycleFlags = (batch, referenceDate = new Date()) => {
       ![
         BATCH_EFFECTIVE_STATUS.PENDING_DISPOSAL,
         BATCH_EFFECTIVE_STATUS.DISPOSED,
-        BATCH_EFFECTIVE_STATUS.EMPTY,
+        BATCH_EFFECTIVE_STATUS.OUT_OF_STOCK,
       ].includes(effectiveStatus),
     isExpired: effectiveStatus === BATCH_EFFECTIVE_STATUS.EXPIRED,
     isImmediateReview: effectiveStatus === BATCH_EFFECTIVE_STATUS.IMMEDIATE_REVIEW,

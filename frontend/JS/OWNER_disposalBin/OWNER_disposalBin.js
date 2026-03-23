@@ -1,4 +1,5 @@
 import { apiFetch, buildQueryString } from "../utils/apiClient.js";
+import { printStandardClinicReport } from "../utils/reportPrintTemplate.js";
 
 const API = {
   logs: "/api/owner/disposal",
@@ -9,6 +10,7 @@ const API = {
 
 const AUTO_REFRESH_MS = 15000;
 let disposalAutoRefreshTimer = null;
+let disposalRowsSnapshot = [];
 
 const formatDate = (value) => {
   if (!value) return "—";
@@ -136,6 +138,85 @@ const getFilters = () => ({
   status: document.getElementById("disposalStatusFilter")?.value || "",
 });
 
+const getPrintFilterMap = (filters = getFilters()) => {
+  const formattedDateRange = filters.startDate || filters.endDate
+    ? `${filters.startDate ? formatDate(filters.startDate) : "Any"} to ${filters.endDate ? formatDate(filters.endDate) : "Any"}`
+    : "All Dates";
+
+  return {
+    "Date Range": formattedDateRange,
+    "Item Name": filters.itemName || "",
+    Reason: filters.reason || "",
+    Status: filters.status || "",
+  };
+};
+
+const renderPrintTable = (rows) => {
+  const body = document.getElementById("disposalPrintTableBody");
+  if (!body) {
+    return;
+  }
+
+  if (!rows.length) {
+    body.innerHTML = '<tr><td colspan="10" class="px-2 py-2 text-center">No disposal records found for the selected filters.</td></tr>';
+    return;
+  }
+
+  body.innerHTML = rows
+    .map(
+      (row) => `
+      <tr>
+        <td class="ibms-report-col-reference">${escapeHtml(row.referenceId)}</td>
+        <td class="ibms-report-col-date">${escapeHtml(formatDate(row.dateDisposed || row.dateApproved || row.dateRequested))}</td>
+        <td class="ibms-report-col-item">${escapeHtml(row.itemName)}</td>
+        <td class="ibms-report-col-batch">${escapeHtml(row.batchNumber)}</td>
+        <td class="ibms-report-col-expiration">${escapeHtml(formatDate(row.expirationDate))}</td>
+        <td class="ibms-report-col-quantity">${escapeHtml(row.quantityDisposed)}</td>
+        <td class="ibms-report-col-reason">${escapeHtml(row.reason)}</td>
+        <td class="ibms-report-col-requested">${escapeHtml(row.requestedBy?.name || "-")}</td>
+        <td class="ibms-report-col-approved">${escapeHtml(row.approvedBy?.name || "-")}</td>
+        <td class="ibms-report-col-status">${escapeHtml(row.status)}</td>
+      </tr>`
+    )
+    .join("");
+};
+
+const updatePrintState = (rows) => {
+  const printBtn = document.getElementById("disposalPrintBtn");
+  const safeRows = Array.isArray(rows) ? rows : [];
+  const hasRows = safeRows.length > 0;
+
+  if (printBtn) {
+    printBtn.disabled = !hasRows;
+    printBtn.title = hasRows ? "Print current filtered results" : "No records to print";
+  }
+};
+
+const printDisposalTable = () => {
+  if (!disposalRowsSnapshot.length) {
+    showToast("No records to print", "error");
+    return;
+  }
+
+  renderPrintTable(disposalRowsSnapshot);
+
+  printStandardClinicReport({
+    printRootId: "disposalReportPrintLayout",
+    reportTitle: "Disposal Records Report",
+    moduleName: "Disposal Records Module",
+    clinicName: "ZCMMF Clinic",
+    systemName: "IBMS",
+    logoUrl: "../../assets/zealLogo.png",
+    filters: getPrintFilterMap(),
+    recordCount: disposalRowsSnapshot.length,
+    columnCount: 10,
+    orientation: "landscape",
+    onBeforePrint: () => {
+      renderPrintTable(disposalRowsSnapshot);
+    },
+  });
+};
+
 const renderSummary = (rows) => {
   const pendingCount = rows.filter((row) => row.status === "Pending").length;
   const disposedRows = rows.filter((row) => row.status === "Disposed" || row.status === "Approved");
@@ -197,7 +278,9 @@ const renderTable = (rows) => {
   const resultCount = document.getElementById("disposalResultCount");
   if (!body) return;
 
+  disposalRowsSnapshot = Array.isArray(rows) ? rows : [];
   resultCount.textContent = `${rows.length} record${rows.length === 1 ? "" : "s"}`;
+  updatePrintState(disposalRowsSnapshot);
 
   if (!rows.length) {
     body.innerHTML = '<tr><td colspan="11" class="px-4 py-8 text-center text-sm text-slate-500">No disposal records found for the selected filters.</td></tr>';
@@ -279,6 +362,7 @@ export async function initOwnerDisposalBin() {
   }
 
   document.getElementById("disposalApplyFiltersBtn")?.addEventListener("click", loadDisposalLogs);
+  document.getElementById("disposalPrintBtn")?.addEventListener("click", printDisposalTable);
   document.getElementById("disposalResetFiltersBtn")?.addEventListener("click", async () => {
     document.getElementById("disposalStartDate").value = "";
     document.getElementById("disposalEndDate").value = "";
@@ -300,6 +384,7 @@ export async function initOwnerDisposalBin() {
   });
 
   await loadDisposalLogs();
+  updatePrintState(disposalRowsSnapshot);
 
   disposalAutoRefreshTimer = setInterval(() => {
     loadDisposalLogs();

@@ -5,6 +5,7 @@ import STAFF_ActivityLog from "../models/STAFF_activityLog.js";
 import STAFF_BillingTransaction from "../models/STAFF_billingTransaction.js";
 import { createStockLog } from "./Owner_StockLog.service.js";
 import { buildFefoAllocationPlan, classifyExpiryRisk, sortBatchesForFefo, toUiExpiryRiskKey } from "./fefoService.js";
+import { BATCH_MANUAL_STATUS } from "./batchLifecycleService.js";
 
 class STAFF_BillingError extends Error {
   constructor(message, statusCode = 400) {
@@ -88,6 +89,33 @@ const STAFF_executeWithOptionalTransaction = async (workFn) => {
     return workFn(null);
   } finally {
     await session.endSession();
+  }
+};
+
+const STAFF_syncBatchManualStatus = async ({ batchId, session = null }) => {
+  if (!batchId) return;
+
+  const query = InventoryBatch.findById(batchId);
+  if (session) {
+    query.session(session);
+  }
+
+  const batch = await query;
+  if (!batch) return;
+
+  const normalizedStatus = String(batch.status || "").trim().toLowerCase();
+  if (normalizedStatus === "disposed" || normalizedStatus === "pending disposal") {
+    return;
+  }
+
+  const currentQuantity = Number(batch.currentQuantity ?? batch.quantity ?? 0);
+  const desiredStatus = currentQuantity <= 0
+    ? BATCH_MANUAL_STATUS.OUT_OF_STOCK
+    : BATCH_MANUAL_STATUS.ACTIVE;
+
+  if (batch.status !== desiredStatus) {
+    batch.status = desiredStatus;
+    await batch.save(session ? { session } : undefined);
   }
 };
 
@@ -263,6 +291,19 @@ const STAFF_getLiveBatchStateByProductIds = async (productIds, session = null) =
       session ? { session } : undefined
     );
     batch.currentQuantity = normalizedCurrentQuantity;
+    if (normalizedCurrentQuantity <= 0 && String(batch.status || "").trim().toLowerCase() !== "disposed") {
+      await InventoryBatch.updateOne(
+        {
+          _id: batch._id,
+          status: { $ne: BATCH_MANUAL_STATUS.DISPOSED },
+        },
+        {
+          $set: { status: BATCH_MANUAL_STATUS.OUT_OF_STOCK },
+        },
+        session ? { session } : undefined
+      );
+      batch.status = BATCH_MANUAL_STATUS.OUT_OF_STOCK;
+    }
   }
   const batchesByProductId = new Map();
 
@@ -344,6 +385,10 @@ const STAFF_allocateItemFromBatches = async ({ item, session, referenceDate }) =
       }
 
       appliedAllocations.push(allocation);
+      await STAFF_syncBatchManualStatus({
+        batchId: allocation.batchId,
+        session,
+      });
     }
   } catch (error) {
     if (!session && appliedAllocations.length) {
@@ -610,6 +655,11 @@ export const STAFF_voidBillingTransaction = async ({ transactionId, staffId, rea
         // Add the restored quantity to the first (nearest expiry) batch
         const restoredToCurrent = Number(batches[0].currentQuantity ?? batches[0].quantity ?? 0) + Number(item.quantity ?? 0);
         batches[0].currentQuantity = restoredToCurrent;
+        if (String(batches[0].status || "").trim().toLowerCase() !== "disposed" && String(batches[0].status || "").trim().toLowerCase() !== "pending disposal") {
+          batches[0].status = restoredToCurrent <= 0
+            ? BATCH_MANUAL_STATUS.OUT_OF_STOCK
+            : BATCH_MANUAL_STATUS.ACTIVE;
+        }
         await batches[0].save({ session });
       }
 

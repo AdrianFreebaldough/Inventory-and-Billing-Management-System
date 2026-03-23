@@ -16,7 +16,7 @@ const State = {
     abortController: null
 };
 const DOM = {};
-const ReportCache = { sales: null, inventory: null, billing: null, disposal: null };
+const ReportCache = { sales: null, inventory: null, billing: null };
 
 // Track current module for cleanup
 let currentModule = null;
@@ -77,8 +77,7 @@ function setupPreload() {
     
     const preloadMap = {
         'tab-inventory': () => import('../../admin_Reports/admin_Reports_Inventory/admin_Reports_Inventory.js'),
-        'tab-billing': () => import('../admin_Reports_Billing/admin_Reports_Billing.js'),
-        'tab-disposal': () => import('../admin_Reports_Disposal/admin_Reports_Disposal.js')
+        'tab-billing': () => import('../admin_Reports_Billing/admin_Reports_Billing.js')
     };
     
     DOM.nav.addEventListener('mouseover', (e) => {
@@ -99,8 +98,7 @@ function handleNavClick(e) {
     const tabMap = { 
         'tab-sales': 'sales', 
         'tab-inventory': 'inventory', 
-        'tab-billing': 'billing',
-        'tab-disposal': 'disposal' 
+        'tab-billing': 'billing' 
     };
     const tab = tabMap[btn.id];
     
@@ -122,8 +120,7 @@ function handleNavClick(e) {
     const loaders = { 
         sales: loadSales, 
         inventory: loadInventory, 
-        billing: loadBilling,
-        disposal: loadDisposal 
+        billing: loadBilling 
     };
     
     debouncedLoad(loaders[tab]);
@@ -598,54 +595,3 @@ function updateChartsAndStats() {
     updateStats(State.currentPeriod);
 }
 
-async function loadDisposal() {
-    if (!DOM.content) return;
-
-    State.abortController = new AbortController();
-    const signal = State.abortController.signal;
-
-    try {
-        showLoading();
-
-        if (signal.aborted) return;
-
-        if (!ReportCache.disposal) {
-            const res = await fetch('../../HTML/admin_Reports/admin_Reports_Disposal/admin_Reports_Disposal.html', { signal });
-            if (!res.ok) throw new Error(`HTTP ${res.status}: Failed to fetch disposal HTML`);
-            const html = await res.text();
-            const temp = document.createElement('div');
-            temp.innerHTML = html;
-            ReportCache.disposal = temp.querySelector('#contentArea')?.innerHTML || temp.innerHTML;
-        }
-
-        if (signal.aborted) return;
-        DOM.content.innerHTML = ReportCache.disposal;
-
-        let module;
-        try {
-            module = await import('../admin_Reports_Disposal/admin_Reports_Disposal.js');
-        } catch (importErr) {
-            throw new Error(`Failed to load disposal module: ${importErr.message}`);
-        }
-
-        if (signal.aborted) return;
-
-        currentModule = module;
-
-        if (module.initReports) {
-            const timeoutPromise = new Promise((_, reject) =>
-                setTimeout(() => reject(new Error('Disposal initialization timeout')), 10000)
-            );
-            await Promise.race([module.initReports(), timeoutPromise]);
-        }
-    } catch (err) {
-        if (err.name === 'AbortError') return;
-        console.error('Disposal load error:', err);
-        showError('Disposal Reports', err);
-        currentModule = null;
-    } finally {
-        if (State.abortController?.signal === signal) {
-            State.abortController = null;
-        }
-    }
-}

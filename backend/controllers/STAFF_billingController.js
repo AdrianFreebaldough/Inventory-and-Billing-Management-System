@@ -45,6 +45,85 @@ const STAFF_handleBillingError = (res, error) => {
   return res.status(500).json({ message: error.message || "Internal server error" });
 };
 
+const STAFF_normalizeCategoryValue = (value) => {
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/&/g, "and")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+
+  if (!normalized) return "";
+
+  const canonicalMap = {
+    antibiotic: "Antibiotic",
+    antibiotics: "Antibiotic",
+    medicine: "Medicine",
+    medicines: "Medicine",
+    analgesic: "Analgesic",
+    analgesics: "Analgesic",
+    antipyretic: "Antipyretic",
+    antipyretics: "Antipyretic",
+    antihistamine: "Antihistamine",
+    antihistamines: "Antihistamine",
+    antacid: "Antacid",
+    antacids: "Antacid",
+    vitamin: "Vitamin",
+    vitamins: "Vitamin",
+    vaccine: "Vaccine",
+    vaccines: "Vaccine",
+    "first aid": "First Aid",
+    "first aid medical supplies": "First Aid",
+    "first aid and medical supplies": "First Aid",
+    "personal care": "Personal Care",
+  };
+
+  return canonicalMap[normalized] || normalized
+    .split(" ")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+};
+
+const STAFF_buildCategoryFilterRegex = (value) => {
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/&/g, "and")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+
+  if (!normalized) return null;
+
+  const aliases = {
+    antibiotic: "antibiotic",
+    antibiotics: "antibiotic",
+    medicine: "medicine",
+    medicines: "medicine",
+    analgesic: "analgesic",
+    analgesics: "analgesic",
+    antipyretic: "antipyretic",
+    antipyretics: "antipyretic",
+    antihistamine: "antihistamine",
+    antihistamines: "antihistamine",
+    antacid: "antacid",
+    antacids: "antacid",
+    vitamin: "vitamin",
+    vitamins: "vitamin",
+    vaccine: "vaccine",
+    vaccines: "vaccine",
+    "first aid": "first aid",
+    "first aid medical supplies": "first aid",
+    "first aid and medical supplies": "first aid",
+    "personal care": "personal care",
+  };
+
+  const canonical = aliases[normalized] || normalized;
+  const escapedCanonical = canonical.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const pattern = `^${escapedCanonical.replace(/\s+/g, "[-_\\s]*")}s?$`;
+  return new RegExp(pattern, "i");
+};
+
 export const STAFF_createTransaction = async (req, res) => {
   try {
     const transaction = await STAFF_createBillingTransaction({
@@ -212,8 +291,11 @@ export const STAFF_getBillingProducts = async (req, res) => {
       isArchived: { $ne: true },
     };
 
-    if (category && category !== "All Items") {
-      filter.category = String(category).trim();
+    if (category && category !== "All Categories" && category !== "All Items") {
+      const categoryRegex = STAFF_buildCategoryFilterRegex(category);
+      if (categoryRegex) {
+        filter.category = categoryRegex;
+      }
     }
 
     const products = await Product.find(filter)
@@ -299,7 +381,7 @@ export const STAFF_getBillingProducts = async (req, res) => {
       return {
         id: product._id,
         name: product.name,
-        category: product.category,
+        category: STAFF_normalizeCategoryValue(product.category),
         genericName: product.genericName || fallback?.genericName || null,
         brandName: product.brandName || fallback?.brandName || null,
         medicineName: product.medicineName || fallback?.medicineName || null,

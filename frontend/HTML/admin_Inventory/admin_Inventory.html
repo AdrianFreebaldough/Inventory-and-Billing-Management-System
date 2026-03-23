@@ -28,24 +28,11 @@
             >
           </div>
           
-          <div class="relative">
-            <button id="filterBtn" class="border border-gray-300 rounded px-4 py-2 text-sm font-medium hover:bg-gray-50 flex items-center gap-2 shadow-sm transition-colors">
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"></path>
-              </svg>
-              All Categories
-            </button>
-            <!-- Category Dropdown -->
-            <div id="categoryDropdown" class="hidden absolute top-full right-0 mt-1 w-56 bg-white border border-gray-200 rounded-lg shadow-lg z-50">
-              <div class="p-2">
-                <div class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 px-2">Categories</div>
-                <button class="category-dropdown-item w-full text-left px-3 py-2 text-sm hover:bg-blue-50 rounded transition-colors" data-category="all">All Categories</button>
-                <button class="category-dropdown-item w-full text-left px-3 py-2 text-sm hover:bg-blue-50 rounded transition-colors" data-category="medicine">Medicine</button>
-                <button class="category-dropdown-item w-full text-left px-3 py-2 text-sm hover:bg-blue-50 rounded transition-colors" data-category="first-aid">First Aid & Medical Supplies</button>
-                <button class="category-dropdown-item w-full text-left px-3 py-2 text-sm hover:bg-blue-50 rounded transition-colors" data-category="vitamins">Vitamins</button>
-                <button class="category-dropdown-item w-full text-left px-3 py-2 text-sm hover:bg-blue-50 rounded transition-colors" data-category="personal-care">Personal Care</button>
-              </div>
-            </div>
+          <div>
+            <select id="categoryFilterSelect" aria-label="Filter by category" class="w-56 border border-gray-300 rounded px-3 py-2 text-sm font-medium bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors">
+              <option value="" disabled>Filter by category</option>
+              <option value="All Categories" selected>All Categories</option>
+            </select>
           </div>
           
           <button id="addItemBtn" class="bg-blue-600 text-white px-4 py-2 rounded font-medium hover:bg-blue-700 flex items-center gap-2 transition-colors shadow-sm">
@@ -138,24 +125,11 @@
             >
           </div>
           
-          <div class="relative">
-            <button id="filterBtnRestock" class="border border-gray-300 rounded px-4 py-2 text-sm font-medium hover:bg-gray-50 flex items-center gap-2 shadow-sm transition-colors">
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"></path>
-              </svg>
-              All Categories
-            </button>
-            <!-- Category Dropdown -->
-            <div id="categoryDropdownRestock" class="hidden absolute top-full right-0 mt-1 w-56 bg-white border border-gray-200 rounded-lg shadow-lg z-50">
-              <div class="p-2">
-                <div class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 px-2">Categories</div>
-                <button class="category-dropdown-item-restock w-full text-left px-3 py-2 text-sm hover:bg-blue-50 rounded transition-colors" data-category="all">All Categories</button>
-                <button class="category-dropdown-item-restock w-full text-left px-3 py-2 text-sm hover:bg-blue-50 rounded transition-colors" data-category="medicine">Medicine</button>
-                <button class="category-dropdown-item-restock w-full text-left px-3 py-2 text-sm hover:bg-blue-50 rounded transition-colors" data-category="first-aid">First Aid & Medical Supplies</button>
-                <button class="category-dropdown-item-restock w-full text-left px-3 py-2 text-sm hover:bg-blue-50 rounded transition-colors" data-category="vitamins">Vitamins</button>
-                <button class="category-dropdown-item-restock w-full text-left px-3 py-2 text-sm hover:bg-blue-50 rounded transition-colors" data-category="personal-care">Personal Care</button>
-              </div>
-            </div>
+          <div>
+            <select id="categoryFilterSelectRestock" aria-label="Filter restock by category" class="w-56 border border-gray-300 rounded px-3 py-2 text-sm font-medium bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors">
+              <option value="" disabled>Filter by category</option>
+              <option value="All Categories" selected>All Categories</option>
+            </select>
           </div>
           
           <button id="addItemBtnRestock" class="bg-blue-600 text-white px-4 py-2 rounded font-medium hover:bg-blue-700 flex items-center gap-2 transition-colors shadow-sm opacity-50 cursor-not-allowed" disabled>

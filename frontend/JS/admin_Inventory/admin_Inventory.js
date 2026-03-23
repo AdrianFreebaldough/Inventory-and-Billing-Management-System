@@ -4,6 +4,14 @@
    Every read / write goes through the backend via apiFetch.
    ============================================================= */
 import { apiFetch } from "../utils/apiClient.js";
+import {
+  ALL_CATEGORIES_LABEL,
+  buildAddItemCategoryOptionsMarkup,
+  buildFilterCategoryOptionsMarkup,
+  isAllCategories,
+  normalizeInventoryCategoryKey,
+  toCanonicalInventoryCategory,
+} from "../utils/inventoryCategories.js";
 
 /* ================= API ENDPOINTS ================= */
 const API = {
@@ -34,9 +42,9 @@ let restockRequests = [];
 let filteredItems = [];
 let filteredRestockRequests = [];
 let currentStatusFilter = "all";
-let currentCategoryFilter = "all";
+let currentCategoryFilter = ALL_CATEGORIES_LABEL;
 let currentRestockStatusFilter = "all";
-let currentRestockCategoryFilter = "all";
+let currentRestockCategoryFilter = ALL_CATEGORIES_LABEL;
 let showArchivedItems = false;
 let showLowStockOnly = false;
 let currentInventoryPage = 1;
@@ -138,7 +146,7 @@ function mapBackendItemToUI(p) {
     id:              String(p._id || p.itemId || ""),
     name:            p.name || p.itemName || "",
     type:            p.name || "",              // brand column – use name
-    category:        p.category || "",
+    category:        toCanonicalInventoryCategory(p.category || ""),
     currentQuantity: p.currentQuantity ?? p.quantity ?? 0,
     minStock:        p.minStock ?? 10,
     unit:            p.unit || "pcs",
@@ -203,10 +211,10 @@ function getBatchStatusPill(batch) {
     return { label: "Pending Disposal", textClass: "text-orange-700", dotColor: "#f97316" };
   }
   if (normalizedStatus === "disposed") {
-    return { label: "Disposed", textClass: "text-slate-700", dotColor: "#64748b" };
+    return { label: "Disposed", textClass: "text-red-700", dotColor: "#dc2626" };
   }
-  if (normalizedStatus === "empty") {
-    return { label: "Empty", textClass: "text-slate-500", dotColor: "#94a3b8" };
+  if (normalizedStatus === "empty" || normalizedStatus === "out-of-stock") {
+    return { label: "Out of Stock", textClass: "text-slate-600", dotColor: "#94a3b8" };
   }
   if (normalizedStatus === "expired") {
     return { label: "Expired", textClass: "text-red-800", dotColor: "#991b1b" };
@@ -237,7 +245,7 @@ function mapBackendRequestToUI(r) {
     requestType:     r.requestType,
     itemName:        isRestock ? (product.name || "Unknown") : (r.itemName || "Unknown"),
     type:            isRestock ? (product.name || "Unknown") : (r.itemName || "Unknown"),
-    category:        isRestock ? (product.category || "") : (r.category || ""),
+    category:        toCanonicalInventoryCategory(isRestock ? (product.category || "") : (r.category || "")),
     currentQuantity: isRestock ? (product.quantity ?? 0) : 0,
     minStock:        isRestock ? 10 : 10,       // product minStock not populated; safe default
     unit:            r.unit || "pcs",
@@ -337,10 +345,7 @@ function mapBackendDisposalToUI(r) {
 /* ================= API FETCH HELPERS ================= */
 async function fetchInventoryItems() {
   try {
-    const categoryQuery = currentCategoryFilter !== "all"
-      ? `?category=${encodeURIComponent(normalizeCategoryKey(currentCategoryFilter))}`
-      : "";
-    const res = await apiFetch(`${API.activeInventory}${categoryQuery}`);
+    const res = await apiFetch(API.activeInventory);
     return (res?.data || []).map(mapBackendItemToUI);
   } catch (err) {
     showToast(`Failed to load inventory: ${err.message}`, "error");
@@ -404,6 +409,7 @@ async function refreshInventory() {
   } else {
     inventoryItems = await fetchInventoryItems();
   }
+  renderInventoryCategorySelect(inventoryItems);
   applyFilters();
 }
 
@@ -415,6 +421,7 @@ async function refreshRequests() {
   ]);
 
   restockRequests = [...inventoryReqs, ...discrepancyReqs, ...disposalReqs];
+  renderRestockCategorySelect(restockRequests);
   applyRestockFilters();
 }
 
@@ -441,7 +448,10 @@ function getRequestStatusSortPriority(status) {
 function getFilterConfig(status)     { return FILTER_CONFIG[normalizeStatus(status)]  || FILTER_CONFIG["all"]; }
 function getStatusColors(status)     { return STATUS_COLORS[normalizeStatus(status)]  || STATUS_COLORS["in-stock"]; }
 function getStatusDisplayText(status){ return STATUS_DISPLAY[normalizeStatus(status)] || "In Stock"; }
-function formatCategory(cat)         { return cat ? cat.split(/[-_\s]+/).map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(" ") : ""; }
+function formatCategory(cat) {
+  if (!cat) return "";
+  return toCanonicalInventoryCategory(cat);
+}
 function getStatusSortPriority(status){
   const normalized = normalizeStatus(status);
   return Object.prototype.hasOwnProperty.call(STATUS_SORT_PRIORITY, normalized)
@@ -457,25 +467,39 @@ function formatDateDisplay(value, fallback = "N/A") {
 }
 
 function normalizeCategoryKey(value) {
-  const normalized = String(value || "")
-    .trim()
-    .toLowerCase()
-    .replace(/&/g, "and")
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
+  return normalizeInventoryCategoryKey(value).replace(/\s+/g, "-");
+}
 
-  const aliases = {
-    medicine: "medicine",
-    medicines: "medicine",
-    vitamin: "vitamin",
-    vitamins: "vitamin",
-    "first-aid": "first-aid",
-    "first-aid-and-medical-supplies": "first-aid",
-    "first-aid-medical-supplies": "first-aid",
-    "personal-care": "personal-care",
-  };
+function getCategoryOptions(items = []) {
+  return Array.isArray(items) ? items : [];
+}
 
-  return aliases[normalized] || normalized;
+function renderInventoryCategorySelect(items = inventoryItems) {
+  const categorySelect = document.getElementById("categoryFilterSelect");
+  if (!categorySelect) return;
+
+  const selectedValue = currentCategoryFilter || ALL_CATEGORIES_LABEL;
+  categorySelect.innerHTML = buildFilterCategoryOptionsMarkup(selectedValue);
+
+  const hasSelection = categorySelect.querySelector(`option[value="${selectedValue}"]`) !== null;
+  currentCategoryFilter = hasSelection ? selectedValue : ALL_CATEGORIES_LABEL;
+  categorySelect.value = currentCategoryFilter;
+  categorySelect.classList.toggle("border-blue-500", !isAllCategories(currentCategoryFilter));
+  categorySelect.classList.toggle("bg-blue-50", !isAllCategories(currentCategoryFilter));
+}
+
+function renderRestockCategorySelect(items = restockRequests) {
+  const categorySelect = document.getElementById("categoryFilterSelectRestock");
+  if (!categorySelect) return;
+
+  const selectedValue = currentRestockCategoryFilter || ALL_CATEGORIES_LABEL;
+  categorySelect.innerHTML = buildFilterCategoryOptionsMarkup(selectedValue);
+
+  const hasSelection = categorySelect.querySelector(`option[value="${selectedValue}"]`) !== null;
+  currentRestockCategoryFilter = hasSelection ? selectedValue : ALL_CATEGORIES_LABEL;
+  categorySelect.value = currentRestockCategoryFilter;
+  categorySelect.classList.toggle("border-blue-500", !isAllCategories(currentRestockCategoryFilter));
+  categorySelect.classList.toggle("bg-blue-50", !isAllCategories(currentRestockCategoryFilter));
 }
 
 function getExpiryMeta(expiryValue) {
@@ -768,7 +792,7 @@ function applyFilters() {
     })();
     const itemCategoryKey = normalizeCategoryKey(item.category);
     const activeCategoryKey = normalizeCategoryKey(currentCategoryFilter);
-    const matchCategory = currentCategoryFilter === "all" || itemCategoryKey === activeCategoryKey;
+    const matchCategory = isAllCategories(currentCategoryFilter) || itemCategoryKey === activeCategoryKey;
     const matchStockFilter = !showLowStockOnly || item.status === "low-stock" || item.status === "out-of-stock";
     return matchSearch && matchStatus && matchCategory && matchStockFilter;
   });
@@ -792,7 +816,7 @@ function applyRestockFilters() {
     const matchStatus   = currentRestockStatusFilter   === "all" || req.status   === currentRestockStatusFilter;
     const requestCategoryKey = normalizeCategoryKey(req.category);
     const activeCategoryKey = normalizeCategoryKey(currentRestockCategoryFilter);
-    const matchCategory = currentRestockCategoryFilter === "all" || requestCategoryKey === activeCategoryKey;
+    const matchCategory = isAllCategories(currentRestockCategoryFilter) || requestCategoryKey === activeCategoryKey;
     return matchSearch && matchStatus && matchCategory;
   });
 
@@ -1612,17 +1636,7 @@ function showEditDiscrepancyModal(item) {
         <div>
           <label class="block text-xs text-gray-700 mb-1">Category</label>
           <select id="discrepancyCategoryInput" class="w-full border border-gray-300 rounded px-3 py-2 bg-white">
-            <option value="">Select category</option>
-            <option value="Medicine" ${currentCategory === "Medicine" ? "selected" : ""}>Medicine</option>
-            <option value="Antibiotic" ${currentCategory === "Antibiotic" ? "selected" : ""}>Antibiotic</option>
-            <option value="Analgesic" ${currentCategory === "Analgesic" ? "selected" : ""}>Analgesic</option>
-            <option value="Antipyretic" ${currentCategory === "Antipyretic" ? "selected" : ""}>Antipyretic</option>
-            <option value="Antihistamine" ${currentCategory === "Antihistamine" ? "selected" : ""}>Antihistamine</option>
-            <option value="Antacid" ${currentCategory === "Antacid" ? "selected" : ""}>Antacid</option>
-            <option value="Vitamin" ${currentCategory === "Vitamin" ? "selected" : ""}>Vitamin</option>
-            <option value="Vaccine" ${currentCategory === "Vaccine" ? "selected" : ""}>Vaccine</option>
-            <option value="First Aid" ${currentCategory === "First Aid" ? "selected" : ""}>First Aid</option>
-            <option value="Personal Care" ${currentCategory === "Personal Care" ? "selected" : ""}>Personal Care</option>
+            ${buildAddItemCategoryOptionsMarkup(currentCategory)}
           </select>
         </div>
         <div>
@@ -1809,17 +1823,7 @@ function showAddItemModal() {
           <div>
             <label class="block text-xs text-gray-700 mb-1 font-medium">Category <span class="text-red-600">*</span></label>
             <select id="addCategory" class="w-full border border-gray-300 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
-              <option value="">Select category</option>
-              <option value="Medicine">Medicine</option>
-              <option value="Antibiotic">Antibiotic</option>
-              <option value="Analgesic">Analgesic</option>
-              <option value="Antipyretic">Antipyretic</option>
-              <option value="Antihistamine">Antihistamine</option>
-              <option value="Antacid">Antacid</option>
-              <option value="Vitamin">Vitamin</option>
-              <option value="Vaccine">Vaccine</option>
-              <option value="First Aid">First Aid</option>
-              <option value="Personal Care">Personal Care</option>
+              ${buildAddItemCategoryOptionsMarkup()}
             </select>
             <p id="addCategoryError" class="text-red-600 text-xs mt-1 hidden">Required</p>
           </div>
@@ -2119,39 +2123,20 @@ export async function initAdminInventory() {
     })
   );
 
-  /* ---- Category dropdowns (inventory) ---- */
-  const filterBtn       = document.getElementById("filterBtn");
-  const categoryDropdown = document.getElementById("categoryDropdown");
-  filterBtn?.addEventListener("click", (e) => { e.stopPropagation(); categoryDropdown.classList.toggle("hidden"); });
-
-  /* ---- Category dropdowns (restock) ---- */
-  const filterBtnRestock       = document.getElementById("filterBtnRestock");
-  const categoryDropdownRestock = document.getElementById("categoryDropdownRestock");
-  filterBtnRestock?.addEventListener("click", (e) => { e.stopPropagation(); categoryDropdownRestock.classList.toggle("hidden"); });
-
-  document.addEventListener("click", (e) => {
-    if (!categoryDropdown?.contains(e.target) && e.target !== filterBtn) categoryDropdown?.classList.add("hidden");
-    if (!categoryDropdownRestock?.contains(e.target) && e.target !== filterBtnRestock) categoryDropdownRestock?.classList.add("hidden");
+  const categoryFilterSelect = document.getElementById("categoryFilterSelect");
+  categoryFilterSelect?.addEventListener("change", () => {
+    currentCategoryFilter = categoryFilterSelect.value || ALL_CATEGORIES_LABEL;
+    currentInventoryPage = 1;
+    renderInventoryCategorySelect(inventoryItems);
+    applyFilters();
   });
 
-  document.querySelectorAll(".category-dropdown-item").forEach(btn =>
-    btn.addEventListener("click", () => {
-      currentCategoryFilter = btn.dataset.category;
-      currentInventoryPage = 1;
-      categoryDropdown.classList.add("hidden");
-      filterBtn.innerHTML = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"></path></svg> ${btn.textContent}`;
-      applyFilters();
-    })
-  );
-
-  document.querySelectorAll(".category-dropdown-item-restock").forEach(btn =>
-    btn.addEventListener("click", () => {
-      currentRestockCategoryFilter = btn.dataset.category;
-      categoryDropdownRestock.classList.add("hidden");
-      filterBtnRestock.innerHTML = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"></path></svg> ${btn.textContent}`;
-      applyRestockFilters();
-    })
-  );
+  const categoryFilterSelectRestock = document.getElementById("categoryFilterSelectRestock");
+  categoryFilterSelectRestock?.addEventListener("change", () => {
+    currentRestockCategoryFilter = categoryFilterSelectRestock.value || ALL_CATEGORIES_LABEL;
+    renderRestockCategorySelect(restockRequests);
+    applyRestockFilters();
+  });
 
   /* ---- Search inputs ---- */
   document.getElementById("searchInventory")?.addEventListener("input", debounce(() => {

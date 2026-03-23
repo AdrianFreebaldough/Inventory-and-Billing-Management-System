@@ -254,7 +254,7 @@ export const createDisposalRequest = async ({
     }
 
     const effectiveStatus = getBatchEffectiveStatus(batch);
-    if ([BATCH_EFFECTIVE_STATUS.PENDING_DISPOSAL, BATCH_EFFECTIVE_STATUS.DISPOSED, BATCH_EFFECTIVE_STATUS.EMPTY].includes(effectiveStatus)) {
+    if ([BATCH_EFFECTIVE_STATUS.PENDING_DISPOSAL, BATCH_EFFECTIVE_STATUS.DISPOSED, BATCH_EFFECTIVE_STATUS.OUT_OF_STOCK].includes(effectiveStatus)) {
       throw new Error("This batch is not eligible for disposal");
     }
 
@@ -384,7 +384,7 @@ export const directOwnerDisposal = async ({
     }
 
     const effectiveStatus = getBatchEffectiveStatus(batch);
-    if ([BATCH_EFFECTIVE_STATUS.PENDING_DISPOSAL, BATCH_EFFECTIVE_STATUS.DISPOSED, BATCH_EFFECTIVE_STATUS.EMPTY].includes(effectiveStatus)) {
+    if ([BATCH_EFFECTIVE_STATUS.PENDING_DISPOSAL, BATCH_EFFECTIVE_STATUS.DISPOSED, BATCH_EFFECTIVE_STATUS.OUT_OF_STOCK].includes(effectiveStatus)) {
       throw new Error("This batch is not eligible for disposal");
     }
 
@@ -506,7 +506,7 @@ export const rejectDisposalRequest = async ({ disposalId, ownerId }) => {
     const batch = await batchQuery;
     if (batch) {
       const remainingQuantity = Number(batch.currentQuantity ?? batch.quantity ?? 0);
-      batch.status = remainingQuantity > 0 ? BATCH_MANUAL_STATUS.ACTIVE : BATCH_MANUAL_STATUS.EMPTY;
+      batch.status = remainingQuantity > 0 ? BATCH_MANUAL_STATUS.ACTIVE : BATCH_MANUAL_STATUS.OUT_OF_STOCK;
       await batch.save(session ? { session } : undefined);
     }
 

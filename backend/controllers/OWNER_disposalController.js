@@ -114,30 +114,3 @@ export const OWNER_approveDisposalRequest = async (req, res) => {
   }
 };
 
-export const OWNER_getDisposalReport = async (req, res) => {
-  try {
-    const data = await getDisposalLogs({
-      startDate: req.query.startDate,
-      endDate: req.query.endDate,
-      itemName: req.query.itemName,
-      reason: req.query.reason,
-      status: req.query.status,
-    });
-
-    const rows = data
-      .filter((entry) => entry.status === "Disposed" || entry.status === "Approved")
-      .map((entry) => ({
-        date: entry.dateDisposed || entry.dateApproved || entry.dateRequested,
-        item: entry.itemName,
-        batch: entry.batchNumber,
-        quantity: entry.quantityDisposed,
-        reason: entry.reason,
-        approvedBy: entry.approvedBy?.name || "—",
-        referenceId: entry.referenceId,
-      }));
-
-    return res.status(200).json({ count: rows.length, data: rows });
-  } catch (error) {
-    return res.status(400).json({ message: error.message || "Failed to fetch disposal report" });
-  }
-};

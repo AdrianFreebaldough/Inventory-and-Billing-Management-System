@@ -10,9 +10,15 @@
   <script>
     window.IBMSAuth?.protectPage({ requiredRole: "owner" });
   </script>
+  <style>
+    html,
+    body {
+      overflow-x: hidden;
+    }
+  </style>
 </head>
 
-<body class="flex min-h-screen bg-gray-50">
+<body class="flex min-h-screen overflow-x-hidden bg-gray-50">
 
 <!-- ===== SIDEBAR ===== -->
 <aside class="w-64 bg-white border-r flex flex-col fixed h-screen">
@@ -76,7 +82,7 @@
 
 
 <!-- ===== MAIN ===== -->
-<main class="ml-64 flex min-h-screen flex-1 flex-col">
+<main class="ml-64 flex min-h-screen flex-1 flex-col overflow-x-hidden">
 
   <!-- HEADER -->
   <header class="fixed left-64 right-0 top-0 z-20 h-16 flex justify-end items-center px-4 bg-white border-b">

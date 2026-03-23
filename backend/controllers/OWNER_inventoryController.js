@@ -43,10 +43,22 @@ const OWNER_normalizeCategory = (value) => {
   if (!normalized) return "";
 
   const canonicalMap = {
+    antibiotic: "Antibiotic",
+    antibiotics: "Antibiotic",
     medicine: "Medicine",
     medicines: "Medicine",
+    analgesic: "Analgesic",
+    analgesics: "Analgesic",
+    antipyretic: "Antipyretic",
+    antipyretics: "Antipyretic",
+    antihistamine: "Antihistamine",
+    antihistamines: "Antihistamine",
+    antacid: "Antacid",
+    antacids: "Antacid",
     vitamin: "Vitamin",
     vitamins: "Vitamin",
+    vaccine: "Vaccine",
+    vaccines: "Vaccine",
     "first aid": "First Aid",
     "first aid medical supplies": "First Aid",
     "personal care": "Personal Care",
@@ -69,12 +81,25 @@ const OWNER_buildCategoryFilterRegex = (value) => {
     .trim();
 
   if (!normalized) return null;
+  if (normalized === "all categories") return null;
 
   const aliases = {
+    antibiotic: "antibiotic",
+    antibiotics: "antibiotic",
     medicine: "medicine",
     medicines: "medicine",
+    analgesic: "analgesic",
+    analgesics: "analgesic",
+    antipyretic: "antipyretic",
+    antipyretics: "antipyretic",
+    antihistamine: "antihistamine",
+    antihistamines: "antihistamine",
+    antacid: "antacid",
+    antacids: "antacid",
     vitamin: "vitamin",
     vitamins: "vitamin",
+    vaccine: "vaccine",
+    vaccines: "vaccine",
     "first aid": "first aid",
     "first aid medical supplies": "first aid",
     "personal care": "personal care",
@@ -160,13 +185,13 @@ const OWNER_attachBatchDataToProducts = async (products) => {
   return products.map((product) => {
     const key = String(product._id);
     const existingBatches = batchesByProduct.get(key) || [];
-    const availableBatches = existingBatches.filter((batch) => Number(batch.currentQuantity ?? batch.quantity ?? 0) > 0);
-    const fallbackLegacyBatch = availableBatches.length === 0 ? OWNER_buildLegacyBatch(product) : null;
-    const finalBatches = fallbackLegacyBatch ? [fallbackLegacyBatch] : availableBatches;
+    const fallbackLegacyBatch = existingBatches.length === 0 ? OWNER_buildLegacyBatch(product) : null;
+    const finalBatches = fallbackLegacyBatch ? [fallbackLegacyBatch] : existingBatches;
     const totalBatchQuantity = finalBatches.reduce((sum, batch) => sum + Number(batch.currentQuantity ?? batch.quantity ?? 0), 0);
     const productQuantity = Number(product.quantity ?? 0);
 
     const nearestBatch = finalBatches
+      .filter((batch) => Number(batch.currentQuantity ?? batch.quantity ?? 0) > 0)
       .filter((batch) => batch.expiryDate)
       .sort((a, b) => new Date(a.expiryDate) - new Date(b.expiryDate))[0] || null;
 
@@ -378,7 +403,7 @@ export const OWNER_getInventoryItemDetails = async (req, res) => {
       .lean();
 
     const positiveBatches = allBatches.filter((batch) => Number(batch.currentQuantity ?? batch.quantity ?? 0) > 0);
-    const fallbackLegacyBatch = positiveBatches.length === 0 ? OWNER_buildLegacyBatch(product) : null;
+    const fallbackLegacyBatch = allBatches.length === 0 ? OWNER_buildLegacyBatch(product) : null;
     const responseBatches = fallbackLegacyBatch ? [fallbackLegacyBatch] : allBatches;
 
     const nearestBatch = positiveBatches

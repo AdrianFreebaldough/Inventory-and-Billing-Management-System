@@ -1,11 +1,19 @@
 import { apiFetch } from "../utils/apiClient.js";
+import {
+    ALL_CATEGORIES_LABEL,
+    buildAddItemCategoryOptionsMarkup,
+    buildFilterCategoryOptionsMarkup,
+    isAllCategories,
+    normalizeInventoryCategoryKey,
+    toCanonicalInventoryCategory,
+} from "../utils/inventoryCategories.js";
 
 /* ================= STATE ================= */
 let inventoryItems = [];
 let activityLog = [];
 let restockRequests = [];
 let filteredItems = [];
-let currentCategoryFilter = "all";
+let currentCategoryFilter = ALL_CATEGORIES_LABEL;
 let currentStatusFilter = "all";
 let showLowStockOnly = false;
 let showArchivedItems = false;
@@ -133,29 +141,30 @@ function getStatusSortPriority(status) {
 
 function formatCategory(category) {
     if (!category) return '';
-    return category.split(/[-_\s]+/).map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(' ');
+    return toCanonicalInventoryCategory(category);
 }
 
 function normalizeCategoryKey(value) {
-    const normalized = String(value || '')
-        .trim()
-        .toLowerCase()
-        .replace(/&/g, 'and')
-        .replace(/[^a-z0-9]+/g, '-')
-        .replace(/^-+|-+$/g, '');
+    return normalizeInventoryCategoryKey(value).replace(/\s+/g, '-');
+}
 
-    const aliases = {
-        medicine: 'medicine',
-        medicines: 'medicine',
-        vitamin: 'vitamin',
-        vitamins: 'vitamin',
-        'first-aid': 'first-aid',
-        'first-aid-and-medical-supplies': 'first-aid',
-        'first-aid-medical-supplies': 'first-aid',
-        'personal-care': 'personal-care',
-    };
+function getInventoryCategoryOptions(items = []) {
+    return Array.isArray(items) ? items : [];
+}
 
-    return aliases[normalized] || normalized;
+function renderCategoryFilterSelect(items = inventoryItems) {
+    const categorySelect = document.getElementById('categoryFilterSelect');
+    if (!categorySelect) return;
+
+    const selectedValue = currentCategoryFilter || ALL_CATEGORIES_LABEL;
+    categorySelect.innerHTML = buildFilterCategoryOptionsMarkup(selectedValue);
+
+    const hasSelection = categorySelect.querySelector(`option[value="${selectedValue}"]`) !== null;
+    currentCategoryFilter = hasSelection ? selectedValue : ALL_CATEGORIES_LABEL;
+    categorySelect.value = currentCategoryFilter;
+
+    categorySelect.classList.toggle('border-blue-500', !isAllCategories(currentCategoryFilter));
+    categorySelect.classList.toggle('bg-blue-50', !isAllCategories(currentCategoryFilter));
 }
 
 function formatDateDisplay(value, fallback = "N/A") {
@@ -246,10 +255,10 @@ function getBatchStatusPill(batch) {
         return { label: "Pending Disposal", textClass: "text-orange-700", dotColor: "#f97316" };
     }
     if (normalized === "disposed") {
-        return { label: "Disposed", textClass: "text-slate-700", dotColor: "#64748b" };
+        return { label: "Disposed", textClass: "text-red-700", dotColor: "#dc2626" };
     }
-    if (normalized === "empty") {
-        return { label: "Empty", textClass: "text-slate-500", dotColor: "#94a3b8" };
+    if (normalized === "empty" || normalized === "out-of-stock") {
+        return { label: "Out of Stock", textClass: "text-slate-600", dotColor: "#94a3b8" };
     }
     return null;
 }
@@ -275,13 +284,13 @@ async function fetchInventoryItems() {
         if (showArchivedItems) query.includeArchived = "true";
         if (!showArchivedItems) query.includePending = "true";
         if (showLowStockOnly) query.lowStockOnly = "true";
-        if (currentCategoryFilter !== "all") query.category = normalizeCategoryKey(currentCategoryFilter);
 
         const qs = Object.entries(query).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join("&");
         const url = qs ? `${API.ITEMS}?${qs}` : API.ITEMS;
 
         const result = await apiFetch(url);
         inventoryItems = (result.data || []).map(mapBackendItemToUI);
+        renderCategoryFilterSelect(inventoryItems);
         return inventoryItems;
     } catch (error) {
         console.error("Failed to fetch inventory:", error);
@@ -321,7 +330,7 @@ function mapBackendItemToUI(item) {
     return {
         id: String(item.itemId),
         name: item.itemName || "",
-        category: item.category || "",
+        category: toCanonicalInventoryCategory(item.category || ""),
         type: item.category ? formatCategory(item.category) : "",
         currentQuantity: item.currentQuantity ?? 0,
         unit: item.unit || "pcs",
@@ -618,7 +627,7 @@ function applyFilters() {
 
         const itemCategoryKey = normalizeCategoryKey(item.category);
         const activeCategoryKey = normalizeCategoryKey(currentCategoryFilter);
-        const matchesCategory = currentCategoryFilter === 'all' || itemCategoryKey === activeCategoryKey;
+        const matchesCategory = isAllCategories(currentCategoryFilter) || itemCategoryKey === activeCategoryKey;
         const matchesStatus = (() => {
             if (currentStatusFilter === 'all') return true;
             if (riskFilters.has(currentStatusFilter)) return item.expiryRisk === currentStatusFilter;
@@ -1139,32 +1148,81 @@ function openQuantityAdjustmentModal(item) {
         document.body.appendChild(modal);
     }
 
+    const expectedRemaining = Number(item.expectedRemaining ?? item.currentQuantity ?? 0);
+    const initialPhysicalCount = Number(item.physicalCount ?? expectedRemaining);
+    const currentGenericName = String(item.genericName || item.generic || "");
+    const currentDosageForm = String(item.dosageForm || item.dosage || "");
+    const currentStrength = String(item.strength || item.dose || "");
+    const currentCategory = String(item.category || "");
+
     modal.innerHTML = `
-        <div class="w-full max-w-md bg-white rounded-xl shadow-sm p-6 relative">
+        <div class="w-full max-w-[480px] bg-white rounded-xl shadow-sm p-6 relative">
             <button id="adjustCloseBtn" class="absolute top-4 right-4 text-gray-400 hover:text-gray-700 text-2xl leading-none">&times;</button>
             <h2 class="text-lg font-semibold text-gray-900 mb-1">Report Discrepancy</h2>
-            <p class="text-sm text-gray-600 mb-4">Submit quantity mismatch for approval before any inventory change.</p>
-            <div class="mb-4">
-                <label class="block text-sm font-semibold mb-1">Item Name</label>
-                <input type="text" value="${item.name}" readonly class="w-full border border-gray-300 rounded px-3 py-2 text-sm bg-gray-50 text-gray-700" />
+            <p class="text-sm text-gray-600 mb-4">Submit discrepancy for approval. Inventory will not update until approved.</p>
+
+            <div class="space-y-3 text-sm">
+                <div class="flex justify-between py-2 border-b border-gray-100">
+                    <span class="text-gray-600">Expected Remaining</span>
+                    <span class="font-semibold text-gray-900">${expectedRemaining} ${escapeHtml(item.unit || "pcs")}</span>
+                </div>
+
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs text-gray-700 mb-1">Category</label>
+                        <select id="discrepancyCategoryInput" class="w-full border border-gray-300 rounded px-3 py-2 bg-white">
+                            ${buildAddItemCategoryOptionsMarkup(currentCategory)}
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs text-gray-700 mb-1">Generic Name</label>
+                        <input id="discrepancyGenericNameInput" type="text" value="${escapeHtml(currentGenericName)}" placeholder="e.g., Acetaminophen" class="w-full border border-gray-300 rounded px-3 py-2" />
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs text-gray-700 mb-1">Dosage Form</label>
+                        <select id="discrepancyDosageFormInput" class="w-full border border-gray-300 rounded px-3 py-2 bg-white">
+                            <option value="">Select dosage form</option>
+                            <option value="Tablet" ${currentDosageForm === "Tablet" ? "selected" : ""}>Tablet</option>
+                            <option value="Capsule" ${currentDosageForm === "Capsule" ? "selected" : ""}>Capsule</option>
+                            <option value="Syrup" ${currentDosageForm === "Syrup" ? "selected" : ""}>Syrup</option>
+                            <option value="Injection" ${currentDosageForm === "Injection" ? "selected" : ""}>Injection</option>
+                            <option value="Ointment" ${currentDosageForm === "Ointment" ? "selected" : ""}>Ointment</option>
+                            <option value="Cream" ${currentDosageForm === "Cream" ? "selected" : ""}>Cream</option>
+                            <option value="Drops" ${currentDosageForm === "Drops" ? "selected" : ""}>Drops</option>
+                            <option value="Inhaler" ${currentDosageForm === "Inhaler" ? "selected" : ""}>Inhaler</option>
+                            <option value="Powder" ${currentDosageForm === "Powder" ? "selected" : ""}>Powder</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs text-gray-700 mb-1">Strength</label>
+                        <input id="discrepancyStrengthInput" type="text" value="${escapeHtml(currentStrength)}" placeholder="e.g., 500 mg" class="w-full border border-gray-300 rounded px-3 py-2" />
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-xs text-gray-700 mb-1">Physical Count (Actual Quantity) <span class="text-red-600">*</span></label>
+                    <input id="actualQtyInput" type="number" min="0" value="${initialPhysicalCount}" class="w-full border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-500" />
+                    <p id="adjustQtyError" class="text-red-600 text-xs mt-1 hidden">Physical count is required.</p>
+                </div>
+
+                <div class="grid grid-cols-2 gap-3">
+                    <div class="border border-gray-200 rounded-lg p-3 bg-gray-50">
+                        <p class="text-xs text-gray-500">Variance</p>
+                        <p id="discrepancyVariancePreview" class="text-sm font-semibold text-gray-800 mt-1">0 ${escapeHtml(item.unit || "pcs")}</p>
+                    </div>
+                    <div class="border border-gray-200 rounded-lg p-3 bg-gray-50">
+                        <p class="text-xs text-gray-500">Status</p>
+                        <p id="discrepancyStatusPreview" class="text-sm font-semibold text-gray-800 mt-1">Balanced</p>
+                    </div>
+                </div>
             </div>
-            <div class="mb-4">
-                <label class="block text-sm font-semibold mb-1">System Quantity</label>
-                <input type="text" value="${item.currentQuantity} ${item.unit}" readonly class="w-full border border-gray-300 rounded px-3 py-2 text-sm bg-gray-50 text-gray-700" />
-            </div>
-            <div class="mb-4">
-                <label class="block text-sm font-semibold mb-1">Actual Quantity on Hand <span class="text-red-600">*</span></label>
-                <input id="actualQtyInput" type="number" min="0" placeholder="Enter actual count" class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500" />
-                <p id="adjustQtyError" class="text-red-600 text-xs mt-1 hidden">Actual quantity is required.</p>
-            </div>
-            <div class="mb-4">
-                <label class="block text-sm font-semibold mb-1">Reason <span class="text-red-600">*</span></label>
-                <textarea id="adjustReasonInput" rows="3" placeholder="Describe the discrepancy reason..." class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 resize-none"></textarea>
-                <p id="adjustReasonError" class="text-red-600 text-xs mt-1 hidden">Reason is required.</p>
-            </div>
-            <div class="flex gap-2">
-                <button id="adjustCancelBtn" class="flex-1 border border-gray-300 py-2 rounded bg-white text-sm font-semibold hover:bg-gray-50">Cancel</button>
-                <button id="adjustSubmitBtn" class="flex-1 bg-amber-500 text-white py-2 rounded text-sm font-semibold hover:bg-amber-600">Submit</button>
+
+            <div class="mt-5 grid grid-cols-2 gap-3">
+                <button id="adjustCancelBtn" class="w-full border border-gray-300 py-2.5 rounded-lg bg-white text-sm font-semibold hover:bg-gray-50 transition-colors text-gray-700">Cancel</button>
+                <button id="adjustSubmitBtn" class="w-full bg-amber-500 text-white py-2.5 rounded-lg text-sm font-semibold hover:bg-amber-600 transition-colors">Submit Discrepancy</button>
             </div>
         </div>
     `;
@@ -1175,35 +1233,56 @@ function openQuantityAdjustmentModal(item) {
     modal.querySelector("#adjustCloseBtn").addEventListener("click", close);
     modal.querySelector("#adjustCancelBtn").addEventListener("click", close);
 
+    const actualQtyInput = modal.querySelector("#actualQtyInput");
+    const variancePreview = modal.querySelector("#discrepancyVariancePreview");
+    const statusPreview = modal.querySelector("#discrepancyStatusPreview");
+
+    const updateVariancePreview = () => {
+        const physicalCount = Number(actualQtyInput?.value ?? initialPhysicalCount);
+        const variance = physicalCount - expectedRemaining;
+        if (variancePreview) {
+            variancePreview.textContent = `${variance >= 0 ? "+" : ""}${variance} ${item.unit}`;
+            variancePreview.className = `text-sm font-semibold mt-1 ${variance === 0 ? "text-green-700" : "text-amber-700"}`;
+        }
+        if (statusPreview) {
+            const status = variance === 0 ? "Balanced" : "With Variance";
+            statusPreview.textContent = status;
+            statusPreview.className = `text-sm font-semibold mt-1 ${status === "Balanced" ? "text-green-700" : "text-amber-700"}`;
+        }
+    };
+
+    updateVariancePreview();
+    actualQtyInput?.addEventListener("input", updateVariancePreview);
+
     modal.querySelector("#adjustSubmitBtn").addEventListener("click", async () => {
         const actualQtyEl = modal.querySelector("#actualQtyInput");
-        const reasonEl = modal.querySelector("#adjustReasonInput");
         const qtyErrorEl = modal.querySelector("#adjustQtyError");
-        const reasonErrorEl = modal.querySelector("#adjustReasonError");
+        const category = String(modal.querySelector("#discrepancyCategoryInput")?.value || "").trim();
+        const genericName = String(modal.querySelector("#discrepancyGenericNameInput")?.value || "").trim();
+        const dosageForm = String(modal.querySelector("#discrepancyDosageFormInput")?.value || "").trim();
+        const strength = String(modal.querySelector("#discrepancyStrengthInput")?.value || "").trim();
 
         qtyErrorEl.classList.add("hidden");
-        reasonErrorEl.classList.add("hidden");
 
         const actualQuantity = actualQtyEl.value.trim();
-        const reason = reasonEl.value.trim();
         let valid = true;
 
         if (actualQuantity === "" || isNaN(Number(actualQuantity)) || Number(actualQuantity) < 0) {
             qtyErrorEl.classList.remove("hidden");
             valid = false;
         }
-        if (!reason) {
-            reasonErrorEl.classList.remove("hidden");
-            valid = false;
-        }
         if (!valid) return;
+
+        const variance = Number(actualQuantity) - expectedRemaining;
+        const discrepancyStatus = variance === 0 ? "Balanced" : "With Variance";
+        const reason = `Discrepancy report submitted by staff. Category: ${category || "N/A"}; Generic: ${genericName || "N/A"}; Dosage Form: ${dosageForm || "N/A"}; Strength: ${strength || "N/A"}; Variance: ${variance}; Status preview: ${discrepancyStatus}.`;
 
         try {
             await apiFetch(API.QUANTITY_ADJUSTMENT, {
                 method: "POST",
                 body: JSON.stringify({ productId: item.id, actualQuantity: Number(actualQuantity), reason }),
             });
-            showToast("Discrepancy report submitted successfully", "success");
+            showToast("Discrepancy report submitted successfully. Status: Pending", "success");
             close();
             await refreshAllData();
         } catch (error) {
@@ -1543,17 +1622,7 @@ function showAddItemModal() {
                     <div>
                         <label class="block text-xs text-gray-700 mb-1 font-medium">Category <span class="text-red-600">*</span></label>
                         <select id="addCategory" class="w-full border border-gray-300 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
-                            <option value="">Select category</option>
-                            <option value="Antibiotic">Antibiotic</option>
-                            <option value="Medicine">Medicine</option>
-                            <option value="Analgesic">Analgesic</option>
-                            <option value="Antipyretic">Antipyretic</option>
-                            <option value="Antihistamine">Antihistamine</option>
-                            <option value="Antacid">Antacid</option>
-                            <option value="Vitamin">Vitamin</option>
-                            <option value="Vaccine">Vaccine</option>
-                            <option value="First Aid">First Aid</option>
-                            <option value="Personal Care">Personal Care</option>
+                            ${buildAddItemCategoryOptionsMarkup()}
                         </select>
                         <p id="addCategoryError" class="text-red-600 text-xs mt-1 hidden">Required</p>
                     </div>
@@ -1794,8 +1863,7 @@ export async function initInventory() {
     const itemDetailsModal = document.getElementById("itemDetailsModal");
     const closeItemDetails = document.getElementById("closeItemDetails");
     const closeDetails = document.getElementById("closeDetails");
-    const filterBtn = document.getElementById("filterBtn");
-    const categoryDropdown = document.getElementById("categoryDropdown");
+    const categoryFilterSelect = document.getElementById("categoryFilterSelect");
 
     if (!inventoryGrid) {
         console.error("CRITICAL: Inventory DOM not ready");
@@ -1810,37 +1878,10 @@ export async function initInventory() {
     const debouncedApplyFilters = debounce(applyFilters, 300);
     searchInput?.addEventListener("input", debouncedApplyFilters);
 
-    /* ================= CATEGORY DROPDOWN ================= */
-    filterBtn?.addEventListener("click", (e) => {
-        e.stopPropagation();
-        categoryDropdown?.classList.toggle("hidden");
-    });
-
-    document.addEventListener("click", (e) => {
-        if (!categoryDropdown?.contains(e.target) && e.target !== filterBtn) {
-            categoryDropdown?.classList.add("hidden");
-        }
-    });
-
-    document.querySelectorAll(".category-dropdown-item").forEach(btn => {
-        btn.addEventListener("click", async () => {
-            currentCategoryFilter = btn.dataset.category;
-            categoryDropdown?.classList.add("hidden");
-
-            const categoryText = btn.textContent;
-            if (filterBtn) {
-                filterBtn.innerHTML = `
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"></path>
-                    </svg>
-                    ${categoryText}
-                `;
-            }
-
-            /* Re-fetch from backend with new category filter */
-            await fetchInventoryItems();
-            applyFilters();
-        });
+    categoryFilterSelect?.addEventListener("change", () => {
+        currentCategoryFilter = categoryFilterSelect.value || ALL_CATEGORIES_LABEL;
+        renderCategoryFilterSelect(inventoryItems);
+        applyFilters();
     });
 
     /* ================= STATUS FILTERS ================= */

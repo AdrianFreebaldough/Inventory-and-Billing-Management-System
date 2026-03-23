@@ -5,7 +5,6 @@ import {
   OWNER_getDisposalLogDetails,
   OWNER_createDisposalRequest,
   OWNER_approveDisposalRequest,
-  OWNER_getDisposalReport,
   OWNER_directDisposal,
   OWNER_rejectDisposalRequest,
 } from "../controllers/OWNER_disposalController.js";
@@ -15,7 +14,6 @@ const OWNER_disposalRouter = express.Router();
 OWNER_disposalRouter.use(protect, authorizeRoles("owner"));
 
 OWNER_disposalRouter.get("/", OWNER_getDisposalLogs);
-OWNER_disposalRouter.get("/report", OWNER_getDisposalReport);
 OWNER_disposalRouter.get("/:id", OWNER_getDisposalLogDetails);
 OWNER_disposalRouter.post("/", OWNER_createDisposalRequest);
 OWNER_disposalRouter.post("/direct", OWNER_directDisposal);

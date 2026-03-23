@@ -13,20 +13,19 @@ import {
 	fetchReceipt,
 } from "./BillingAPI.js";
 import { apiFetch } from "../utils/apiClient.js";
+import {
+	ALL_CATEGORIES_LABEL,
+	buildFilterCategoryOptionsMarkup,
+	isAllCategories,
+	normalizeInventoryCategoryKey,
+	toCanonicalInventoryCategory,
+} from "../utils/inventoryCategories.js";
 
 /* ===== Constants ===== */
 
 const BILLING_MODE_RETURN_KEY = "lastStaffRoute";
 const VAT_RATE = 0.12;
 const CLINIC_NAME = "IBMS Clinic";
-const PRODUCT_CATEGORIES = [
-	"All Items",
-	"Medicines",
-	"Medical Supplies",
-	"Medical Equipment",
-	"Diagnostic Kits",
-	"General Supplies",
-];
 const PRODUCT_REFRESH_INTERVAL_MS = 60000;
 const UNSALEABLE_INVENTORY_STATUSES = new Set([
 	"expired",
@@ -41,7 +40,7 @@ let productRefreshTimer = null;
 
 const state = {
 	products: [],
-	activeCategory: "All Items",
+	activeCategory: ALL_CATEGORIES_LABEL,
 	searchTerm: "",
 	quantities: {},
 	discountRate: 0,
@@ -62,7 +61,7 @@ const state = {
 
 /* ===== DOM Elements ===== */
 
-const categoryTabs = document.getElementById("categoryTabs");
+const categoryFilter = document.getElementById("categoryFilter");
 const itemsTableBody = document.getElementById("itemsTableBody");
 const searchInput = document.getElementById("searchInput");
 const selectedItemsPanel = document.getElementById("selectedItems");
@@ -392,11 +391,26 @@ function getExpiryWarningLabel(value) {
 function normalizeBillingProduct(product) {
 	return {
 		...product,
+		category: toCanonicalInventoryCategory(product.category || ""),
 		expiryRisk: mapExpiryRiskToUi(product.expiryRisk || product.expiryRiskKey || null),
 		inventoryStatus: product.inventoryStatus || "",
 		isImmediateReview: product.isImmediateReview === true,
 		billingDisabled: product.billingDisabled === true,
 	};
+}
+
+function renderCategoryFilterOptions() {
+	if (!categoryFilter) return;
+	const selectedValue = state.activeCategory || ALL_CATEGORIES_LABEL;
+	categoryFilter.innerHTML = buildFilterCategoryOptionsMarkup(selectedValue);
+
+	const hasSelectedOption = categoryFilter.querySelector(`option[value="${selectedValue}"]`) !== null;
+	const appliedValue = hasSelectedOption ? selectedValue : ALL_CATEGORIES_LABEL;
+	state.activeCategory = appliedValue;
+	categoryFilter.value = appliedValue;
+
+	categoryFilter.classList.toggle("border-cyan-600", !isAllCategories(appliedValue));
+	categoryFilter.classList.toggle("bg-cyan-50", !isAllCategories(appliedValue));
 }
 
 function openItemDetailsModal(itemId) {
@@ -440,7 +454,9 @@ function getSelectedItems() {
 function getFilteredItems() {
 	const term = state.searchTerm.trim().toLowerCase();
 	return state.products.filter((item) => {
-		const categoryMatch = state.activeCategory === "All Items" || item.category === state.activeCategory;
+		const itemCategoryKey = normalizeInventoryCategoryKey(item.category);
+		const activeCategoryKey = normalizeInventoryCategoryKey(state.activeCategory);
+		const categoryMatch = isAllCategories(state.activeCategory) || itemCategoryKey === activeCategoryKey;
 		const searchMatch = item.name.toLowerCase().includes(term);
 		return categoryMatch && searchMatch;
 	});
@@ -483,27 +499,6 @@ function updatePaymentLockStatus() {
 	patientIdHint.textContent = itemCount > 0 ? "Patient ID ready. You can proceed to payment." : "Patient ID ready. Add items to continue.";
 	patientIdHint.className = itemCount > 0 ? "mt-1 text-[10px] text-emerald-300" : "mt-1 text-[10px] text-slate-400";
 	setProceedButtonEnabled(itemCount > 0 && Boolean(state.patientId));
-}
-
-function renderTabs() {
-	categoryTabs.innerHTML = PRODUCT_CATEGORIES
-		.map((tab) => {
-			const isActive = tab === state.activeCategory;
-			return `
-				<button
-					type="button"
-					data-category="${tab}"
-					class="min-w-24 border px-3 py-1.5 text-[11px] font-medium transition ${
-						isActive
-							? "border-slate-800 bg-slate-900 text-white"
-							: "border-slate-300 bg-white text-slate-700 hover:border-slate-400"
-					}"
-				>
-					${tab}
-				</button>
-			`;
-		})
-		.join("");
 }
 
 function renderItemRows() {
@@ -826,7 +821,7 @@ function refreshUi() {
 	patientIdInput.value = state.patientId;
 	const patientNameInputEl = document.getElementById("patientNameInput");
 	if (patientNameInputEl) patientNameInputEl.value = state.patientName;
-	renderTabs();
+	renderCategoryFilterOptions();
 	renderItemRows();
 	renderSummaryPanel();
 	updatePaymentLockStatus();
@@ -876,7 +871,7 @@ function resetActiveSale() {
 	state.activeTransactionId = null;
 	searchInput.value = "";
 	state.searchTerm = "";
-	state.activeCategory = "All Items";
+	state.activeCategory = ALL_CATEGORIES_LABEL;
 	if (cashTenderedInlineInput) {
 		cashTenderedInlineInput.value = "";
 	}
@@ -1174,13 +1169,11 @@ async function loadHistory() {
 /* ===== Event Handlers ===== */
 
 function attachEvents() {
-	categoryTabs.addEventListener("click", (event) => {
+	categoryFilter?.addEventListener("change", (event) => {
 		const target = event.target;
-		if (!(target instanceof HTMLElement)) return;
-		const selectedCategory = target.dataset.category;
-		if (!selectedCategory) return;
-		state.activeCategory = selectedCategory;
-		renderTabs();
+		if (!(target instanceof HTMLSelectElement)) return;
+		state.activeCategory = target.value || ALL_CATEGORIES_LABEL;
+		renderCategoryFilterOptions();
 		renderItemRows();
 	});
 

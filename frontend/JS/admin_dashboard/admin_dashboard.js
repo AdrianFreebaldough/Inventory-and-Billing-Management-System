@@ -188,7 +188,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const profileBtn        = document.getElementById("profileBtn");
   const logoutBtn         = document.getElementById("logoutBtn");
 
-  const MAIN_CONTENT_BASE_CLASSES = "flex-1 overflow-y-auto p-6 pt-20";
+  const MAIN_CONTENT_BASE_CLASSES = "flex-1 overflow-y-auto overflow-x-hidden p-6 pt-20";
 
   function ensureOwnerLayoutShell() {
     if (!mainContent) return;
@@ -197,6 +197,7 @@ document.addEventListener("DOMContentLoaded", () => {
     mainContent.style.top = "";
     mainContent.style.marginTop = "";
     mainContent.style.transform = "";
+    mainContent.style.overflowX = "hidden";
   }
 
   /* ================= OWNER INFO ================= */

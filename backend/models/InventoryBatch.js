@@ -57,7 +57,7 @@ const inventoryBatchSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ["Active", "Pending Disposal", "Disposed", "Empty"],
+      enum: ["Active", "Low Stock", "Out of Stock", "Pending Disposal", "Disposed", "Empty"],
       default: "Active",
       index: true,
     },

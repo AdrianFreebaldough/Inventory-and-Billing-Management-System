@@ -8,6 +8,11 @@ import { createStockLog } from "../services/Owner_StockLog.service.js";
 import { getExpirationStatus, getDaysUntilExpiry } from "../services/expirationService.js";
 import { classifyExpiryRisk, toUiExpiryRiskKey } from "../services/fefoService.js";
 import { getBatchLifecycleFlags, getBatchEffectiveStatus } from "../services/batchLifecycleService.js";
+import {
+  applyBatchDeltaToProduct,
+  setProductQuantityViaBatches,
+  syncProductFromBatchTotals,
+} from "../services/inventoryIntegrityService.js";
 
 const OWNER_parseNonNegativeNumber = (value) => {
   const parsed = Number(value);
@@ -393,6 +398,12 @@ export const OWNER_getInventoryItemDetails = async (req, res) => {
   try {
     const { itemId } = req.params;
 
+    await syncProductFromBatchTotals({
+      productId: itemId,
+      createDefaultBatchIfMissing: true,
+      warningContext: "owner-item-details",
+    });
+
     const product = await Product.findById(itemId).lean();
     if (!product) {
       return res.status(404).json({ message: "Inventory item not found" });
@@ -739,9 +750,6 @@ export const OWNER_approveInventoryRequest = async (req, res) => {
         const normalizedSupplier = supplier ? String(supplier).trim() : null;
 
         const quantityBefore = product.quantity;
-        product.quantity += finalQuantity;
-        OWNER_syncDiscrepancyFromQuantity(product);
-        await product.save({ session });
 
         if (finalQuantity > 0) {
           await InventoryBatch.create(
@@ -760,6 +768,13 @@ export const OWNER_approveInventoryRequest = async (req, res) => {
             { session }
           );
         }
+
+        const syncResult = await syncProductFromBatchTotals({
+          productId: product._id,
+          session,
+          createDefaultBatchIfMissing: true,
+          warningContext: "owner-approve-restock",
+        });
 
         request.status = "approved";
         request.reviewedBy = ownerId;
@@ -780,7 +795,7 @@ export const OWNER_approveInventoryRequest = async (req, res) => {
                 movement: {
                   quantityBefore,
                   quantityChange: finalQuantity,
-                  quantityAfter: product.quantity,
+                  quantityAfter: syncResult.totalBatchQuantity,
                 },
                 originalRequestedQuantity: request.requestedQuantity,
                 approvedQuantity: finalQuantity,
@@ -809,7 +824,7 @@ export const OWNER_approveInventoryRequest = async (req, res) => {
           productId: product._id,
           quantityBefore,
           quantityAdded: finalQuantity,
-          quantityAfter: product.quantity,
+          quantityAfter: syncResult.totalBatchQuantity,
           batchNumber: normalizedBatchNumber,
           expirationDate: normalizedExpiryDate,
           supplier: normalizedSupplier,
@@ -989,6 +1004,10 @@ export const OWNER_archiveProduct = async (req, res) => {
 export const OWNER_adjustProductStock = async (req, res) => {
   const { productId } = req.params;
   const parsedQuantityChange = Number(req.body?.quantityChange);
+  const batchNumber = (req.body?.batchNumber || "").trim();
+  const expirationDate = req.body?.expirationDate ? new Date(req.body.expirationDate) : null;
+  const supplier = (req.body?.supplier || "").trim() || null;
+  const notes = (req.body?.notes || "").trim() || "Owner manual stock adjustment";
 
   if (!Number.isFinite(parsedQuantityChange) || parsedQuantityChange === 0) {
     return res.status(400).json({ message: "quantityChange must be a non-zero number" });
@@ -1005,15 +1024,44 @@ export const OWNER_adjustProductStock = async (req, res) => {
     }
 
     const quantityBefore = Number(product.quantity);
-    const quantityAfter = quantityBefore + parsedQuantityChange;
 
-    if (quantityAfter < 0) {
-      return res.status(400).json({ message: "Adjustment would result in negative stock" });
+    let syncResult;
+    
+    if (parsedQuantityChange > 0) {
+      // Create new batch with provided details
+      const newBatchNumber = batchNumber || OWNER_generateBatchNumber("RST");
+      
+      await InventoryBatch.create({
+        product: product._id,
+        batchNumber: newBatchNumber,
+        quantity: parsedQuantityChange,
+        currentQuantity: parsedQuantityChange,
+        initialQuantity: parsedQuantityChange,
+        expiryDate: expirationDate,
+        supplier,
+        notes,
+        status: "Active",
+        createdBy: req.user?.id,
+      });
+
+      // Sync product from batches
+      syncResult = await syncProductFromBatchTotals({
+        productId: product._id,
+        createDefaultBatchIfMissing: false,
+        warningContext: "owner-adjust-stock-add",
+      });
+    } else {
+      // For negative quantities, use the standard function
+      syncResult = await applyBatchDeltaToProduct({
+        productId: product._id,
+        quantityDelta: parsedQuantityChange,
+        actorId: req.user.id,
+        batchPrefix: "ADJ",
+        notes,
+      });
     }
 
-    product.quantity = quantityAfter;
-    OWNER_syncDiscrepancyFromQuantity(product);
-    await product.save();
+    const quantityAfter = Number(syncResult.totalBatchQuantity ?? quantityBefore);
 
     await ActivityLog.create({
       action: "ADJUST_STOCK",
@@ -1026,13 +1074,16 @@ export const OWNER_adjustProductStock = async (req, res) => {
           quantityChange: parsedQuantityChange,
           quantityAfter,
         },
-        notes: "Owner manually adjusted stock",
+        batchNumber,
+        expirationDate,
+        supplier,
+        notes,
       },
     });
 
     await createStockLog({
       productId: product._id,
-      movementType: "ADJUST",
+      movementType: "RESTOCK",
       quantityChange: parsedQuantityChange,
       performedBy: {
         userId: req.user.id,
@@ -1048,6 +1099,8 @@ export const OWNER_adjustProductStock = async (req, res) => {
         quantityBefore,
         quantityChange: parsedQuantityChange,
         quantityAfter,
+        batchNumber,
+        expirationDate,
       },
     });
   } catch (error) {
@@ -1185,37 +1238,49 @@ export const OWNER_updateDiscrepancy = async (req, res) => {
 
     const quantityDelta = parsedPhysicalCount - previous.quantity;
 
-    // Discrepancy reconciliation: system quantity must match the counted quantity.
-    product.quantity = parsedPhysicalCount;
-    product.expectedRemaining = parsedPhysicalCount;
-    product.physicalCount = parsedPhysicalCount;
-    product.variance = 0;
-    product.discrepancyStatus = "Balanced";
+    // Discrepancy reconciliation must adjust batch-level quantities first.
+    await setProductQuantityViaBatches({
+      productId: product._id,
+      targetQuantity: parsedPhysicalCount,
+      actorId: req.user.id,
+      batchPrefix: "DISC",
+      notes: "Owner discrepancy adjustment",
+    });
+
+    const updatedProduct = await Product.findById(product._id);
+    if (!updatedProduct) {
+      return res.status(404).json({ message: "Active product not found" });
+    }
+
+    updatedProduct.physicalCount = parsedPhysicalCount;
+    updatedProduct.expectedRemaining = Number(updatedProduct.quantity ?? 0);
+    updatedProduct.variance = parsedPhysicalCount - Number(updatedProduct.quantity ?? 0);
+    updatedProduct.discrepancyStatus = updatedProduct.variance === 0 ? "Balanced" : "With Variance";
 
     // Allow owners to complete legacy medicine fields for old records while reviewing discrepancy data.
     if (typeof category === "string") {
       const normalizedCategory = OWNER_normalizeCategory(category);
       if (normalizedCategory) {
-        product.category = normalizedCategory;
+        updatedProduct.category = normalizedCategory;
       }
     }
 
     if (typeof genericName === "string") {
       const normalizedGeneric = genericName.trim();
-      product.genericName = normalizedGeneric || null;
+      updatedProduct.genericName = normalizedGeneric || null;
     }
 
     if (typeof dosageForm === "string") {
       const normalizedDosageForm = dosageForm.trim();
-      product.dosageForm = normalizedDosageForm || null;
+      updatedProduct.dosageForm = normalizedDosageForm || null;
     }
 
     if (typeof strength === "string") {
       const normalizedStrength = strength.trim();
-      product.strength = normalizedStrength || null;
+      updatedProduct.strength = normalizedStrength || null;
     }
 
-    await product.save();
+    await updatedProduct.save();
 
     await ActivityLog.create({
       action: "EDIT_DISCREPANCY",
@@ -1227,21 +1292,21 @@ export const OWNER_updateDiscrepancy = async (req, res) => {
       actorEmail: req.user.email || null,
       performedBy: req.user.id,
       entityType: "Product",
-      entityId: product._id,
-      description: `Owner updated discrepancy for ${product.name}`,
+      entityId: updatedProduct._id,
+      description: `Owner updated discrepancy for ${updatedProduct.name}`,
       details: {
-        itemName: product.name,
+        itemName: updatedProduct.name,
         previousValue: previous,
         updatedValue: {
-          quantity: product.quantity,
-          category: product.category,
-          genericName: product.genericName,
-          dosageForm: product.dosageForm,
-          strength: product.strength,
-          expectedRemaining: product.expectedRemaining,
-          physicalCount: product.physicalCount,
-          variance: product.variance,
-          status: product.discrepancyStatus,
+          quantity: updatedProduct.quantity,
+          category: updatedProduct.category,
+          genericName: updatedProduct.genericName,
+          dosageForm: updatedProduct.dosageForm,
+          strength: updatedProduct.strength,
+          expectedRemaining: updatedProduct.expectedRemaining,
+          physicalCount: updatedProduct.physicalCount,
+          variance: updatedProduct.variance,
+          status: updatedProduct.discrepancyStatus,
         },
         notes: "Owner directly edited discrepancy values",
       },
@@ -1250,7 +1315,7 @@ export const OWNER_updateDiscrepancy = async (req, res) => {
     // Log discrepancy adjustment in Stock Logs if quantity changed
     if (quantityDelta !== 0) {
       await createStockLog({
-        productId: product._id,
+        productId: updatedProduct._id,
         movementType: "ADJUSTMENT",
         quantityChange: quantityDelta,
         performedBy: {
@@ -1258,26 +1323,26 @@ export const OWNER_updateDiscrepancy = async (req, res) => {
           role: req.user.role,
         },
         source: "MANUAL",
-        notes: `Discrepancy adjustment: previous qty ${previous.quantity}, new qty ${product.quantity}, difference ${quantityDelta}`,
+        notes: `Discrepancy adjustment: previous qty ${previous.quantity}, new qty ${updatedProduct.quantity}, difference ${quantityDelta}`,
       });
     }
 
     return res.status(200).json({
       message: "Discrepancy updated successfully",
       data: {
-        productId: product._id,
-        itemName: product.name,
+        productId: updatedProduct._id,
+        itemName: updatedProduct.name,
         previousValue: previous,
         updatedValue: {
-          quantity: product.quantity,
-          category: product.category,
-          genericName: product.genericName,
-          dosageForm: product.dosageForm,
-          strength: product.strength,
-          expectedRemaining: product.expectedRemaining,
-          physicalCount: product.physicalCount,
-          variance: product.variance,
-          status: product.discrepancyStatus,
+          quantity: updatedProduct.quantity,
+          category: updatedProduct.category,
+          genericName: updatedProduct.genericName,
+          dosageForm: updatedProduct.dosageForm,
+          strength: updatedProduct.strength,
+          expectedRemaining: updatedProduct.expectedRemaining,
+          physicalCount: updatedProduct.physicalCount,
+          variance: updatedProduct.variance,
+          status: updatedProduct.discrepancyStatus,
         },
       },
     });

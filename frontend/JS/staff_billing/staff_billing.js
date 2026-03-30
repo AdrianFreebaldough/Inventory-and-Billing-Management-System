@@ -354,7 +354,7 @@ function isItemUnsaleableByStatus(item) {
 
 function isItemUnsaleable(item) {
 	if (!item) return true;
-	if (item.stock <= 0) return true;
+	if (Number(item.sellableStock ?? item.stock ?? 0) <= 0) return true;
 	if (item?.billingDisabled === true && !isItemImmediateReview(item)) return true;
 	if (isItemUnsaleableByStatus(item)) return true;
 	if (isItemExpired(item)) return true;
@@ -370,7 +370,7 @@ function getUnsaleableMessage(item) {
 	if (String(item?.inventoryStatus || "").trim().toLowerCase() === "disposed") {
 		return "Cannot sell disposed items.";
 	}
-	if (item.stock <= 0) return "Out of stock.";
+	if (Number(item.sellableStock ?? item.stock ?? 0) <= 0) return "Out of stock.";
 	return "This item cannot be sold.";
 }
 
@@ -389,8 +389,12 @@ function getExpiryWarningLabel(value) {
 }
 
 function normalizeBillingProduct(product) {
+	const normalizedDisplayStock = Number(product.stock ?? 0);
+	const normalizedSellableStock = Number(product.sellableStock ?? product.stock ?? 0);
 	return {
 		...product,
+		stock: normalizedDisplayStock,
+		sellableStock: normalizedSellableStock,
 		category: toCanonicalInventoryCategory(product.category || ""),
 		expiryRisk: mapExpiryRiskToUi(product.expiryRisk || product.expiryRiskKey || null),
 		inventoryStatus: product.inventoryStatus || "",
@@ -516,11 +520,12 @@ function renderItemRows() {
 		.map((item) => {
 			const currentQty = state.quantities[item.id] || 0;
 			const displayQty = currentQty > 0 ? currentQty : 0;
+			const maxSellableStock = Number(item.sellableStock ?? item.stock ?? 0);
 			const checkoutLocked = state.checkoutMode;
 			const isNotSellable = isItemUnsaleable(item);
 			const disabledTooltip = isItemExpired(item) ? "Cannot sell expired items." : getUnsaleableMessage(item);
 			const isMinusDisabled = isNotSellable || checkoutLocked || currentQty <= 0;
-			const isPlusDisabled = isNotSellable || checkoutLocked || currentQty >= item.stock;
+			const isPlusDisabled = isNotSellable || checkoutLocked || currentQty >= maxSellableStock;
 			return `
 				<tr class="text-sm ${isNotSellable ? "bg-slate-100/80 text-slate-400 opacity-70" : "text-slate-800"}">
 					<td class="px-3 py-3 font-medium">
@@ -549,7 +554,7 @@ function renderItemRows() {
 								data-role="qty-input"
 								data-id="${item.id}"
 								min="0"
-								max="${item.stock}"
+								max="${maxSellableStock}"
 								step="1"
 								inputmode="numeric"
 								value="${isNotSellable ? 0 : displayQty}"
@@ -589,7 +594,7 @@ function validateCommittedQuantity(item, rawValue, previousQty) {
 		return 0;
 	}
 
-	return Math.min(parsed, item.stock);
+	return Math.min(parsed, Number(item.sellableStock ?? item.stock ?? 0));
 }
 
 function commitQuantityInput(inputEl) {
@@ -843,7 +848,8 @@ function setQuantity(itemId, nextQty) {
 		return;
 	}
 
-	const boundedQty = Math.max(0, Math.min(nextQty, item.stock));
+	const maxSellableStock = Number(item.sellableStock ?? item.stock ?? 0);
+	const boundedQty = Math.max(0, Math.min(nextQty, maxSellableStock));
 	state.quantities[itemId] = boundedQty;
 
 	const { itemCount } = computeSaleTotals();
@@ -1146,8 +1152,8 @@ async function loadProducts() {
 		state.products.forEach((item) => {
 			if (isItemUnsaleable(item)) {
 				state.quantities[item.id] = 0;
-			} else if ((state.quantities[item.id] || 0) > item.stock) {
-				state.quantities[item.id] = item.stock;
+			} else if ((state.quantities[item.id] || 0) > Number(item.sellableStock ?? item.stock ?? 0)) {
+				state.quantities[item.id] = Number(item.sellableStock ?? item.stock ?? 0);
 			}
 		});
 	} catch (error) {
@@ -1232,7 +1238,7 @@ function attachEvents() {
 		const currentQty = state.quantities[idValue] || 0;
 
 		if (action === "increment") {
-			setQuantity(idValue, Math.min(currentQty + 1, item.stock));
+			setQuantity(idValue, Math.min(currentQty + 1, Number(item.sellableStock ?? item.stock ?? 0)));
 			return;
 		}
 

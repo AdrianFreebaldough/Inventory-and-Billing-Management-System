@@ -13,13 +13,14 @@ let isLoading = false;
 let pendingAddUser = null;
 let pendingEditUser = null;
 let pendingArchiveUserId = null;
+let pendingArchiveReason = "";
 let currentEditUserId = null;
+let showArchivedOnly = false;
 
 const userFilterOptions = [
 	{ value: "All", label: "All Status" },
 	{ value: "Active", label: "Active" },
 	{ value: "Inactive", label: "Inactive" },
-	{ value: "Archived", label: "Archived" },
 ];
 
 const activityFilterOptions = [
@@ -226,6 +227,14 @@ function getFilteredUsers() {
 			user.role.toLowerCase().includes(searchValue) ||
 			user.email.toLowerCase().includes(searchValue);
 
+		if (showArchivedOnly) {
+			return matchesSearch && user.status === "Archived";
+		}
+
+		if (user.status === "Archived") {
+			return false;
+		}
+
 		const matchesStatus = statusValue === "All" || user.status === statusValue;
 
 		return matchesSearch && matchesStatus;
@@ -423,11 +432,18 @@ async function refreshCurrentViewFromApi() {
 async function switchView(view) {
 	if (view !== "users" && view !== "activity") return;
 	currentView = view;
+	if (view === "users") {
+		showArchivedOnly = false;
+	}
 
 	const userSearchInput = document.getElementById("userSearchInput");
 	if (userSearchInput) userSearchInput.value = "";
 
 	renderFilterOptions();
+	const statusFilter = document.getElementById("statusFilter");
+	if (view === "users" && statusFilter) {
+		statusFilter.value = "All";
+	}
 	updateViewControls();
 	await refreshCurrentViewFromApi();
 }
@@ -459,7 +475,7 @@ async function submitPendingEdit() {
 async function submitArchive() {
 	if (!pendingArchiveUserId) return;
 
-	const archiveReason = document.getElementById("archiveReason")?.value.trim();
+	const archiveReason = String(pendingArchiveReason || "").trim();
 	if (!archiveReason) {
 		showMessage("Archive reason is required.");
 		closeModal("confirmArchiveModal");
@@ -471,6 +487,7 @@ async function submitArchive() {
 		setLoadingState(true);
 		await archiveOwnerUser(pendingArchiveUserId, archiveReason);
 		pendingArchiveUserId = null;
+		pendingArchiveReason = "";
 		closeModal("confirmArchiveModal");
 		const reasonInput = document.getElementById("archiveReason");
 		if (reasonInput) reasonInput.value = "";
@@ -514,7 +531,8 @@ function bindEvents() {
 
 	archivedAccountBtn?.addEventListener("click", () => {
 		if (currentView !== "users" || !statusFilter) return;
-		statusFilter.value = "Archived";
+		showArchivedOnly = true;
+		statusFilter.value = "All";
 		renderUsersTable();
 	});
 
@@ -638,6 +656,13 @@ function bindEvents() {
 	confirmSaveBtn?.addEventListener("click", submitPendingEdit);
 
 	archiveProceedBtn?.addEventListener("click", () => {
+		const archiveReason = document.getElementById("archiveReason")?.value.trim() || "";
+		if (!archiveReason) {
+			showMessage("Archive reason is required.");
+			return;
+		}
+
+		pendingArchiveReason = archiveReason;
 		closeModal("archiveModal");
 		openModal("confirmArchiveModal");
 	});
@@ -653,6 +678,7 @@ function bindEvents() {
 			if (modalId === "confirmSaveModal") pendingEditUser = null;
 			if (modalId === "confirmArchiveModal" || modalId === "archiveModal") {
 				pendingArchiveUserId = null;
+				pendingArchiveReason = "";
 				const archiveReason = document.getElementById("archiveReason");
 				if (archiveReason) archiveReason.value = "";
 			}
@@ -685,7 +711,9 @@ export async function initUserManagement() {
 	pendingAddUser = null;
 	pendingEditUser = null;
 	pendingArchiveUserId = null;
+	pendingArchiveReason = "";
 	currentEditUserId = null;
+	showArchivedOnly = false;
 
 	bindEvents();
 	renderFilterOptions();

@@ -353,16 +353,32 @@ export const STAFF_getBillingProducts = async (req, res) => {
       const fallback = fallbackMap.get(String(product._id));
       const productBatches = batchesByProduct.get(String(product._id)) || [];
       const effectiveStatuses = productBatches.map((batch) => getBatchEffectiveStatus(batch));
-      const nearestBatch = STAFF_pickNearestBatch(productBatches);
-      const nearestExpiryDate = nearestBatch?.expiryDate || product.expiryDate || null;
-      const expiryRisk = classifyExpiryRisk(nearestExpiryDate);
-      const expiryRiskKey = toUiExpiryRiskKey(expiryRisk);
+      const eligibleBatches = productBatches.filter((batch) => {
+        const quantity = Number(batch?.currentQuantity ?? batch?.quantity ?? 0);
+        return Number.isFinite(quantity) && quantity > 0 && isBatchEligibleForBilling(batch);
+      });
       const eligibleStock = productBatches.length
         ? STAFF_sumEligibleBatchQuantity(productBatches)
-        : (expiryRiskKey === "expired" ? 0 : Number(product.quantity ?? 0));
+        : Number(product.quantity ?? 0);
+      const hasSellableStock = eligibleStock > 0;
+      const nearestSellableBatch = STAFF_pickNearestBatch(eligibleBatches);
+      const nearestOverallBatch = STAFF_pickNearestBatch(productBatches);
+      const nearestExpiryDate = hasSellableStock
+        ? (nearestSellableBatch?.expiryDate || null)
+        : (nearestOverallBatch?.expiryDate || product.expiryDate || null);
+      const expiryRisk = classifyExpiryRisk(nearestExpiryDate);
+      const expiryRiskKey = toUiExpiryRiskKey(expiryRisk);
+      const totalBatchStock = productBatches.length
+        ? productBatches.reduce((sum, batch) => sum + Number(batch?.currentQuantity ?? batch?.quantity ?? 0), 0)
+        : Number(product.quantity ?? 0);
 
       let inventoryStatus = product.status;
-      if (effectiveStatuses.includes(BATCH_EFFECTIVE_STATUS.DISPOSED)) {
+      if (hasSellableStock) {
+        const sellableEffectiveStatuses = eligibleBatches.map((batch) => getBatchEffectiveStatus(batch));
+        inventoryStatus = sellableEffectiveStatuses.includes(BATCH_EFFECTIVE_STATUS.IMMEDIATE_REVIEW)
+          ? "Immediate Review"
+          : "In Stock";
+      } else if (effectiveStatuses.includes(BATCH_EFFECTIVE_STATUS.DISPOSED)) {
         inventoryStatus = "Disposed";
       } else if (effectiveStatuses.includes(BATCH_EFFECTIVE_STATUS.PENDING_DISPOSAL)) {
         inventoryStatus = "Pending Disposal";
@@ -377,6 +393,10 @@ export const STAFF_getBillingProducts = async (req, res) => {
         inventoryStatus === "Expired" ||
         inventoryStatus === "Pending Disposal" ||
         eligibleStock <= 0;
+
+      const stockForBillingDisplay = inventoryStatus === "Expired"
+        ? totalBatchStock
+        : eligibleStock;
 
       return {
         id: product._id,
@@ -398,7 +418,9 @@ export const STAFF_getBillingProducts = async (req, res) => {
         isImmediateReview: inventoryStatus === "Immediate Review",
         billingDisabled,
         supplier: product.supplier || null,
-        stock: eligibleStock,
+        stock: stockForBillingDisplay,
+        sellableStock: eligibleStock,
+        totalStock: totalBatchStock,
         price: product.unitPrice ?? 0,
       };
     });

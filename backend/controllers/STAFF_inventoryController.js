@@ -8,6 +8,7 @@ import mongoose from "mongoose";
 import { getExpirationStatus, getDaysUntilExpiry } from "../services/expirationService.js";
 import { classifyExpiryRisk, toUiExpiryRiskKey } from "../services/fefoService.js";
 import { getBatchLifecycleFlags, getBatchEffectiveStatus } from "../services/batchLifecycleService.js";
+import { syncProductFromBatchTotals } from "../services/inventoryIntegrityService.js";
 
 // Reuse existing InventoryRequest schema so staff can request restocks without direct stock edits.
 
@@ -423,6 +424,12 @@ export const STAFF_getInventory = async (req, res) => {
 export const STAFF_getInventoryItemDetails = async (req, res) => {
   try {
     const { itemId } = req.params;
+
+    await syncProductFromBatchTotals({
+      productId: itemId,
+      createDefaultBatchIfMissing: true,
+      warningContext: "staff-item-details",
+    });
 
     const item = await Product.findById(itemId)
       .select("name category status quantity unit unitPrice minStock supplier description expiryDate batchNumber isArchived createdAt genericName brandName dosageForm strength medicineName")

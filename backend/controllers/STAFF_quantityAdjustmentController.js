@@ -5,6 +5,7 @@ import STAFF_ActivityLog from "../models/STAFF_activityLog.js";
 import User from "../models/user.js";
 import { createStockLog } from "../services/Owner_StockLog.service.js";
 import mongoose from "mongoose";
+import { setProductQuantityViaBatches } from "../services/inventoryIntegrityService.js";
 
 const OWNER_getAdjustmentTimestamp = (adjustment) => {
   const raw = adjustment?.date_requested || adjustment?.createdAt || null;
@@ -157,12 +158,25 @@ export const OWNER_reviewQuantityAdjustment = async (req, res) => {
         const countedQuantity = Number(adjustment.actualQuantity ?? previousQuantity);
         const difference = countedQuantity - previousQuantity;
 
-        product.quantity = countedQuantity;
-        product.expectedRemaining = countedQuantity;
-        product.physicalCount = countedQuantity;
-        product.variance = 0;
-        product.discrepancyStatus = "Balanced";
-        await product.save({ session });
+        await setProductQuantityViaBatches({
+          productId: product._id,
+          targetQuantity: countedQuantity,
+          session,
+          actorId: req.user.id,
+          batchPrefix: "QTY",
+          notes: "Approved quantity adjustment request",
+        });
+
+        const syncedProduct = await Product.findById(adjustment.productId).session(session);
+        if (!syncedProduct || syncedProduct.isArchived) {
+          throw new Error("Product not found");
+        }
+
+        syncedProduct.physicalCount = countedQuantity;
+        syncedProduct.expectedRemaining = Number(syncedProduct.quantity ?? 0);
+        syncedProduct.variance = countedQuantity - Number(syncedProduct.quantity ?? 0);
+        syncedProduct.discrepancyStatus = syncedProduct.variance === 0 ? "Balanced" : "With Variance";
+        await syncedProduct.save({ session });
 
         if (difference !== 0) {
           await createStockLog({

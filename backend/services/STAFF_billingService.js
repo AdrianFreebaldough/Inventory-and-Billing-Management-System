@@ -6,6 +6,7 @@ import STAFF_BillingTransaction from "../models/STAFF_billingTransaction.js";
 import { createStockLog } from "./Owner_StockLog.service.js";
 import { buildFefoAllocationPlan, classifyExpiryRisk, sortBatchesForFefo, toUiExpiryRiskKey } from "./fefoService.js";
 import { BATCH_MANUAL_STATUS } from "./batchLifecycleService.js";
+import { syncProductFromBatchTotals } from "./inventoryIntegrityService.js";
 
 class STAFF_BillingError extends Error {
   constructor(message, statusCode = 400) {
@@ -229,33 +230,19 @@ const STAFF_getTransactionForStaff = async (transactionId, staffId, session = nu
 };
 
 const STAFF_syncProductQuantityFromBatches = async ({ productId, session = null }) => {
-  const batchQuery = InventoryBatch.find({ product: productId })
-    .select("currentQuantity quantity")
-    .lean();
-
-  if (session) {
-    batchQuery.session(session);
+  try {
+    await syncProductFromBatchTotals({
+      productId,
+      session,
+      createDefaultBatchIfMissing: true,
+      warningContext: "staff-billing-sync",
+    });
+  } catch (error) {
+    if (String(error.message || "").includes("Product not found")) {
+      throw new STAFF_BillingError("Product not found while syncing stock", 404);
+    }
+    throw error;
   }
-
-  const batches = await batchQuery;
-  const liveTotal = batches.reduce((sum, batch) => sum + Number(batch.currentQuantity ?? batch.quantity ?? 0), 0);
-
-  const productQuery = Product.findById(productId);
-  if (session) {
-    productQuery.session(session);
-  }
-
-  const product = await productQuery;
-  if (!product) {
-    throw new STAFF_BillingError("Product not found while syncing stock", 404);
-  }
-
-  product.quantity = liveTotal;
-  if (Number.isFinite(Number(product.expectedRemaining))) {
-    product.expectedRemaining = liveTotal;
-  }
-
-  await product.save(session ? { session } : undefined);
 };
 
 const STAFF_getLiveBatchStateByProductIds = async (productIds, session = null) => {

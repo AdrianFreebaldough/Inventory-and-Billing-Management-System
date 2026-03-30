@@ -1,9 +1,11 @@
 import STAFF_StockRequest from "../models/STAFF_stockRequest.js";
 import Product from "../models/product.js";
+import InventoryBatch from "../models/InventoryBatch.js";
 import Notification from "../models/Notification.js";
 import STAFF_ActivityLog from "../models/STAFF_activityLog.js";
 import User from "../models/user.js";
 import { createStockLog } from "../services/Owner_StockLog.service.js";
+import { syncProductFromBatchTotals } from "../services/inventoryIntegrityService.js";
 
 // Generate unique request ID
 const generateRequestId = () => {
@@ -182,29 +184,57 @@ export const OWNER_approveStockRequest = async (req, res) => {
       const item = request.items[itemIndex];
 
       if (approval.status === "Approved" && approval.approvedQuantity > 0) {
-        // Update product quantity
+        // Add approved quantity as a batch record, then sync product stock from batch totals.
         const product = await Product.findById(item.productId);
         if (product) {
-          product.quantity += approval.approvedQuantity;
+          const approvedQuantity = Number(approval.approvedQuantity);
+
+          if (!Number.isFinite(approvedQuantity) || approvedQuantity <= 0) {
+            continue;
+          }
+
+          await InventoryBatch.create({
+            product: product._id,
+            batchNumber: approval.batchNumber || `RST-${Date.now()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`,
+            quantity: approvedQuantity,
+            currentQuantity: approvedQuantity,
+            initialQuantity: approvedQuantity,
+            expiryDate: approval.expirationDate ? new Date(approval.expirationDate) : null,
+            supplier: product.supplier || null,
+            createdBy: req.user.id,
+            notes: `Approved stock request ${request.requestId}`,
+          });
+
+          const syncResult = await syncProductFromBatchTotals({
+            productId: product._id,
+            createDefaultBatchIfMissing: true,
+            warningContext: "owner-stock-request-approve",
+          });
+
+          const productForMetadataUpdate = await Product.findById(product._id);
+          if (!productForMetadataUpdate) {
+            continue;
+          }
+
           if (approval.expirationDate) {
-            product.expiryDate = new Date(approval.expirationDate);
+            productForMetadataUpdate.expiryDate = new Date(approval.expirationDate);
           }
           if (approval.batchNumber) {
-            product.batchNumber = approval.batchNumber;
+            productForMetadataUpdate.batchNumber = approval.batchNumber;
           }
-          await product.save();
+          await productForMetadataUpdate.save();
 
           // Create stock log
           await createStockLog({
             productId: product._id,
             movementType: "RESTOCK",
-            quantityChange: approval.approvedQuantity,
+            quantityChange: approvedQuantity,
             performedBy: {
               userId: req.user.id,
               role: "owner",
             },
-            source: "RESTOCK_REQUEST",
-            notes: `Stock request ${request.requestId}`,
+            source: "SYSTEM",
+            notes: `Stock request ${request.requestId}; synced stock to ${syncResult.totalBatchQuantity}`,
           });
         }
 

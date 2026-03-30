@@ -12,6 +12,7 @@ import {
   BATCH_MANUAL_STATUS,
   getBatchEffectiveStatus,
 } from "./batchLifecycleService.js";
+import { syncProductFromBatchTotals } from "./inventoryIntegrityService.js";
 
 const DISPOSAL_STATUSES = new Set(["Pending", "Approved", "Disposed", "Rejected"]);
 
@@ -83,28 +84,14 @@ const generateReferenceId = async (session = null) => {
 };
 
 export const recalculateProductStock = async (productId, session = null) => {
-  const batchQuery = InventoryBatch.find({ product: productId }).select("currentQuantity quantity");
-  getQueryWithSession(batchQuery, session);
-  const batches = await batchQuery.lean();
+  const result = await syncProductFromBatchTotals({
+    productId,
+    session,
+    createDefaultBatchIfMissing: true,
+    warningContext: "disposal-recalculate",
+  });
 
-  const totalQuantity = batches.reduce((sum, batch) => sum + Number(batch.currentQuantity ?? batch.quantity ?? 0), 0);
-  const productQuery = Product.findById(productId);
-  getQueryWithSession(productQuery, session);
-  const product = await productQuery;
-  if (!product) {
-    throw new Error("Product not found");
-  }
-
-  product.quantity = totalQuantity;
-  product.expectedRemaining = totalQuantity;
-  if (!Number.isFinite(Number(product.physicalCount))) {
-    product.physicalCount = totalQuantity;
-  }
-  product.variance = Number(product.physicalCount || 0) - totalQuantity;
-  product.discrepancyStatus = product.variance === 0 ? "Balanced" : "With Variance";
-  await product.save(session ? { session } : undefined);
-
-  return product;
+  return result.product;
 };
 
 const mapDisposalLog = (log) => ({

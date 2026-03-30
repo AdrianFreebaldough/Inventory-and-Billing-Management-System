@@ -1391,7 +1391,7 @@ async function showItemDetails(item) {
   const btnCloseTop = getElement(modal, "#closeItemDetails");
   const btnCancel   = getElement(modal, "#closeDetails");
   const btnEditDiscrepancy = getElement(modal, "#detailsEditDiscrepancyBtn");
-  const btnMove     = getElement(modal, "#moveToArchive");
+  const btnRestock     = getElement(modal, "#restockItemBtn");
 
   const hideDetails = () => { modal.classList.add("hidden"); modal.style.display = ""; };
 
@@ -1411,18 +1411,10 @@ async function showItemDetails(item) {
       }
     };
   }
-  if (btnMove) {
-    const n = btnMove.cloneNode(true);
-    btnMove.parentNode.replaceChild(n, btnMove);
-    if (detailItem.archived) {
-      n.textContent = "Restore from Archive";
-      n.className = "w-full bg-emerald-600 text-white py-2 rounded text-sm font-semibold hover:bg-emerald-700 transition-colors";
-      n.onclick = (e) => { e?.stopPropagation?.(); showRestoreConfirm(detailItem); };
-    } else {
-      n.textContent = "Move to Archive";
-      n.className = "w-full bg-red-600 text-white py-2 rounded text-sm font-semibold hover:bg-red-700 transition-colors";
-      n.onclick = (e) => { e?.stopPropagation?.(); showArchiveConfirm(detailItem); };
-    }
+  if (btnRestock) {
+    const n = btnRestock.cloneNode(true);
+    btnRestock.parentNode.replaceChild(n, btnRestock);
+    n.onclick = (e) => { e?.stopPropagation?.(); showAdminRestockModal(detailItem); };
   }
   modal.classList.remove("hidden");
   modal.style.display = "flex";
@@ -2055,9 +2047,147 @@ function showRestoreConfirm(item) {
   });
 }
 
+/* ================= ADMIN RESTOCK MODAL ================= */
+function showAdminRestockModal(item) {
+  const detailsModal = document.getElementById("itemDetailsModal");
+  
+  const defaultBatchNumber = generateBatchNumber(item);
+  const defaultExpiryDate = (() => {
+    const plusMonth = new Date();
+    plusMonth.setMonth(plusMonth.getMonth() + 1);
+    return plusMonth.toISOString().split("T")[0];
+  })();
+
+  const content = `
+    <h3 class="text-lg font-semibold mb-1">Restock Item</h3>
+    <p class="text-sm text-gray-600 mb-4">Add stock to <span class="font-semibold text-gray-800">${escapeHtml(item.name)}</span></p>
+
+    <div class="space-y-4 text-sm">
+      <!-- Current Stock Info -->
+      <div class="bg-blue-50 border border-blue-200 rounded-lg p-3">
+        <p class="text-xs text-blue-600 font-semibold mb-2">CURRENT STOCK</p>
+        <div class="grid grid-cols-2 gap-3 text-sm">
+          <div>
+            <p class="text-blue-700 text-xs">Current Quantity</p>
+            <p class="font-semibold text-blue-900">${Number(item.currentQuantity ?? item.quantity ?? 0)} ${escapeHtml(item.unit || "pcs")}</p>
+          </div>
+          <div>
+            <p class="text-blue-700 text-xs">Minimum Stock</p>
+            <p class="font-semibold text-blue-900">${Number(item.minStock ?? 10)} ${escapeHtml(item.unit || "pcs")}</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Restock Quantity -->
+      <div>
+        <label class="block text-xs font-semibold text-gray-700 mb-1">Restock Quantity <span class="text-red-600">*</span></label>
+        <input id="adminRestockQuantity" type="number" min="1" placeholder="Enter quantity to add" class="w-full border border-gray-300 rounded px-3 py-2" />
+        <p id="restockQuantityError" class="text-red-600 text-xs mt-1 hidden">Quantity is required and must be positive.</p>
+      </div>
+
+      <!-- Batch Details Section -->
+      <div class="pt-2 border-t border-gray-200">
+        <p class="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-3">New Batch Details</p>
+        <div class="space-y-2">
+          <div>
+            <label class="block text-xs text-gray-700 mb-1 font-medium">Batch Number</label>
+            <input id="adminRestockBatchNumber" type="text" value="${defaultBatchNumber}" class="w-full border border-gray-300 rounded px-3 py-2" />
+          </div>
+          <div>
+            <label class="block text-xs text-gray-700 mb-1 font-medium">Expiration Date <span class="text-red-600">*</span></label>
+            <input id="adminRestockExpiryDate" type="date" value="${defaultExpiryDate}" class="w-full border border-gray-300 rounded px-3 py-2" />
+            <p id="expiryDateError" class="text-red-600 text-xs mt-1 hidden">Expiration date is required.</p>
+          </div>
+          <div>
+            <label class="block text-xs text-gray-700 mb-1 font-medium">Supplier (Optional)</label>
+            <input id="adminRestockSupplier" type="text" value="${escapeHtml(item.supplier || "")}" placeholder="Supplier name" class="w-full border border-gray-300 rounded px-3 py-2" />
+          </div>
+          <div>
+            <label class="block text-xs text-gray-700 mb-1 font-medium">Notes (Optional)</label>
+            <textarea id="adminRestockNotes" rows="2" placeholder="Add any notes..." class="w-full border border-gray-300 rounded px-3 py-2"></textarea>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="mt-5 flex gap-3 justify-end">
+      <button id="restockCancelBtn" class="border border-gray-300 py-2.5 px-4 rounded-lg bg-white text-sm font-semibold hover:bg-gray-50 transition-colors text-gray-700">Cancel</button>
+      <button id="restockConfirmBtn" class="bg-blue-600 text-white py-2.5 px-4 rounded-lg text-sm font-semibold hover:bg-blue-700 transition-colors">Add Stock</button>
+    </div>`;
+
+  const modal = createModal({ id: "adminRestockModal", content, width: "480px" });
+
+  const hide = () => {
+    modal.classList.add("hidden");
+    modal.style.display = "";
+    setTimeout(() => modal.remove(), 200);
+  };
+
+  getElement(modal, "#restockCancelBtn")?.addEventListener("click", hide);
+
+  getElement(modal, "#restockConfirmBtn")?.addEventListener("click", async () => {
+    const quantityInput = getElement(modal, "#adminRestockQuantity");
+    const expiryInput = getElement(modal, "#adminRestockExpiryDate");
+    const quantityErrorEl = getElement(modal, "#restockQuantityError");
+    const expiryErrorEl = getElement(modal, "#expiryDateError");
+    
+    let hasError = false;
+
+    // Clear previous errors
+    quantityErrorEl?.classList.add("hidden");
+    expiryErrorEl?.classList.add("hidden");
+
+    const quantity = quantityInput?.value ? parseInt(quantityInput.value, 10) : 0;
+
+    if (!quantityInput?.value || quantityInput.value === "" || !Number.isInteger(quantity) || quantity <= 0) {
+      quantityErrorEl?.classList.remove("hidden");
+      quantityInput?.focus();
+      hasError = true;
+    }
+
+    const expiryDate = expiryInput?.value || "";
+    if (!expiryDate) {
+      expiryErrorEl?.classList.remove("hidden");
+      expiryInput?.focus();
+      hasError = true;
+    }
+
+    if (hasError) return;
+
+    try {
+      const batchNumber = (getElement(modal, "#adminRestockBatchNumber")?.value || "").trim() || defaultBatchNumber;
+      const supplier = (getElement(modal, "#adminRestockSupplier")?.value || "").trim() || null;
+      const notes = (getElement(modal, "#adminRestockNotes")?.value || "").trim() || "";
+
+      await apiFetch(API.adjustStock(item.id), {
+        method: "PATCH",
+        body: JSON.stringify({
+          quantityChange: quantity,
+          batchNumber,
+          expirationDate: expiryDate,
+          supplier,
+          notes,
+          actorType: "owner",
+        }),
+      });
+
+      showToast(`Restocked successfully (${quantity} ${item.unit} added)`, "success");
+      hide();
+      if (detailsModal) { detailsModal.classList.add("hidden"); detailsModal.style.display = ""; }
+      await refreshInventory();
+    } catch (err) {
+      showToast(`Restock failed: ${err.message}`, "error");
+    }
+  });
+
+  modal.classList.remove("hidden");
+  modal.style.display = "flex";
+  if (detailsModal) { detailsModal.classList.add("hidden"); detailsModal.style.display = ""; }
+}
+
 /* ================= CLOSE ALL MODALS ================= */
 function closeAllModals() {
-  ["itemDetailsModal","reviewRestockModal","addItemModal","archiveConfirmModal","restoreConfirmModal","approveConfirmModal","denyConfirmModal","editDiscrepancyModal","ownerDirectDisposalModal"]
+  ["itemDetailsModal","reviewRestockModal","addItemModal","archiveConfirmModal","restoreConfirmModal","approveConfirmModal","denyConfirmModal","editDiscrepancyModal","ownerDirectDisposalModal","adminRestockModal"]
     .forEach(id => { const m = document.getElementById(id); if (m) m.classList.add("hidden"); });
 }
 

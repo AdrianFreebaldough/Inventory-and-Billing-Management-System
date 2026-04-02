@@ -1,4 +1,7 @@
-// Configuration for authentication (e.g., JWT secret)
-module.exports = {
-  jwtSecret: process.env.JWT_SECRET || 'your_jwt_secret',
+import env from "./env.js";
+
+const authConfig = {
+  jwtSecret: env.JWT_SECRET,
 };
+
+export default authConfig;

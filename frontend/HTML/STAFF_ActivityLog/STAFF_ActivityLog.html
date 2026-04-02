@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Staff - Activity Log</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="../../JS/utils/authSession.js"></script>
+  <script>
+    window.IBMSAuth?.protectPage({ requiredRole: "staff" });
+  </script>
+</head>
+<body class="bg-slate-100">
+  <div class="container mx-auto p-6">
+    <div class="rounded-lg bg-white p-6 shadow-md">
+      
+      <!-- Filter Section -->
+      <div class="mb-6 space-y-4">
+        <!-- Search Bar -->
+        <div class="flex items-center gap-3">
+          <input 
+            type="text" 
+            id="searchInput" 
+            placeholder="Search activity (action, description, module)..." 
+            class="flex-1 rounded-lg border border-slate-300 px-4 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+          />
+          <button id="refreshLogsBtn" class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700">
+            Refresh
+          </button>
+        </div>
+
+        <!-- Filters Row -->
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+          <!-- Date Filter -->
+          <div>
+            <label class="block text-xs font-medium text-slate-700 mb-1">Date Filter</label>
+            <select id="dateFilter" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500">
+              <option value="all">All Time</option>
+              <option value="today">Today</option>
+              <option value="yesterday">Yesterday</option>
+              <option value="last7days">Last 7 Days</option>
+              <option value="last30days">Last 30 Days</option>
+              <option value="custom">Custom Date Range</option>
+            </select>
+          </div>
+
+          <!-- Start Time -->
+          <div>
+            <label class="block text-xs font-medium text-slate-700 mb-1">Start Time</label>
+            <input 
+              type="time" 
+              id="startTime" 
+              class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            />
+          </div>
+
+          <!-- End Time -->
+          <div>
+            <label class="block text-xs font-medium text-slate-700 mb-1">End Time</label>
+            <input 
+              type="time" 
+              id="endTime" 
+              class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            />
+          </div>
+
+          <!-- Action Buttons -->
+          <div class="flex items-end gap-2">
+            <button id="applyFilterBtn" class="flex-1 rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700">
+              Apply
+            </button>
+            <button id="resetFilterBtn" class="flex-1 rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
+              Reset
+            </button>
+          </div>
+        </div>
+
+        <!-- Custom Date Range (Hidden by default) -->
+        <div id="customDateRange" class="hidden grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-medium text-slate-700 mb-1">From Date</label>
+            <input 
+              type="date" 
+              id="startDate" 
+              class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            />
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-700 mb-1">To Date</label>
+            <input 
+              type="date" 
+              id="endDate" 
+              class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            />
+          </div>
+        </div>
+      </div>
+
+      <!-- Summary and Pagination Controls -->
+      <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <p id="logSummary" class="text-sm text-slate-600">Loading activity logs...</p>
+        <label class="text-sm text-slate-600">
+          Show
+          <select id="logLimit" class="ml-2 rounded border border-slate-300 px-2 py-1">
+            <option value="10">10</option>
+            <option value="25">25</option>
+            <option value="50" selected>50</option>
+          </select>
+          entries
+        </label>
+      </div>
+
+      <!-- Activity Log Table -->
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead class="bg-slate-100 text-slate-700">
+            <tr>
+              <th class="px-4 py-2 text-left">Type</th>
+              <th class="px-4 py-2 text-left">Date/Time</th>
+              <th class="px-4 py-2 text-left">Action</th>
+              <th class="px-4 py-2 text-left">Description</th>
+              <th class="px-4 py-2 text-center">Status</th>
+            </tr>
+          </thead>
+          <tbody id="activityLogBody">
+            <tr>
+              <td colspan="5" class="py-6 text-center text-slate-500">Loading activity logs...</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Pagination -->
+      <div class="mt-4 flex items-center justify-end gap-2">
+        <button id="prevPageBtn" class="rounded border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50">Previous</button>
+        <span id="pageLabel" class="text-sm text-slate-600">Page 1 of 1</span>
+        <button id="nextPageBtn" class="rounded border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50">Next</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const API_BASE = "http://localhost:3000/api";
+    const TOKEN_KEYS = ["token", "authToken", "jwtToken", "ibmsToken"];
+    const token = TOKEN_KEYS.map((k) => localStorage.getItem(k)).find((v) => v && v.trim()) || "";
+
+    let page = 1;
+    let totalPages = 1;
+    let allLogs = []; // Store all fetched logs for client-side filtering
+    let filteredLogs = []; // Store filtered logs
+
+    const activityLogBody = document.getElementById("activityLogBody");
+    const pageLabel = document.getElementById("pageLabel");
+    const prevPageBtn = document.getElementById("prevPageBtn");
+    const nextPageBtn = document.getElementById("nextPageBtn");
+    const logSummary = document.getElementById("logSummary");
+    const logLimit = document.getElementById("logLimit");
+    const searchInput = document.getElementById("searchInput");
+    const dateFilter = document.getElementById("dateFilter");
+    const startTime = document.getElementById("startTime");
+    const endTime = document.getElementById("endTime");
+    const startDate = document.getElementById("startDate");
+    const endDate = document.getElementById("endDate");
+    const customDateRange = document.getElementById("customDateRange");
+    const applyFilterBtn = document.getElementById("applyFilterBtn");
+    const resetFilterBtn = document.getElementById("resetFilterBtn");
+
+    // Determine activity severity based on action type
+    function getActivitySeverity(actionType) {
+      const critical = ["billing-void", "archive-item"];
+      const warning = ["restock-request", "stock-request-sent", "quantity-adjustment-request", "add-item-request"];
+      const info = ["billing-create", "billing-complete", "expense-submitted", "restore-item"];
+
+      const normalized = String(actionType || "").toLowerCase();
+      
+      if (critical.some(c => normalized.includes(c))) return "CRITICAL";
+      if (warning.some(w => normalized.includes(w))) return "WARNING";
+      return "INFO";
+    }
+
+    // Get severity badge HTML
+    function getSeverityBadge(severity) {
+      const classes = {
+        INFO: "bg-blue-100 text-blue-700",
+        WARNING: "bg-yellow-100 text-yellow-700",
+        CRITICAL: "bg-red-100 text-red-700"
+      };
+      return `<span class="inline-block rounded px-2 py-1 text-xs font-semibold ${classes[severity]}">${severity}</span>`;
+    }
+
+    // Status pill class
+    function statusPillClass(status) {
+      const normalized = String(status || "").toLowerCase();
+      if (normalized === "completed" || normalized === "success") return "bg-green-100 text-green-800";
+      if (normalized === "pending" || normalized === "requested") return "bg-yellow-100 text-yellow-800";
+      if (normalized === "failed" || normalized === "error" || normalized === "rejected") return "bg-red-100 text-red-800";
+      if (normalized === "approved") return "bg-blue-100 text-blue-800";
+      return "bg-slate-100 text-slate-700";
+    }
+
+    function formatDateTime(isoDate) {
+      if (!isoDate) return "-";
+      return new Date(isoDate).toLocaleString("en-US", {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: true,
+      });
+    }
+
+    // Date filtering logic
+    function filterByDate(logs) {
+      const filterValue = dateFilter.value;
+      if (filterValue === "all") return logs;
+
+      const now = new Date();
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      
+      return logs.filter(log => {
+        const logDate = new Date(log.timestamp);
+        
+        switch(filterValue) {
+          case "today":
+            return logDate >= today;
+          case "yesterday":
+            const yesterday = new Date(today);
+            yesterday.setDate(yesterday.getDate() - 1);
+            return logDate >= yesterday && logDate < today;
+          case "last7days":
+            const last7 = new Date(today);
+            last7.setDate(last7.getDate() - 7);
+            return logDate >= last7;
+          case "last30days":
+            const last30 = new Date(today);
+            last30.setDate(last30.getDate() - 30);
+            return logDate >= last30;
+          case "custom":
+            if (!startDate.value || !endDate.value) return true;
+            const start = new Date(startDate.value);
+            const end = new Date(endDate.value);
+            end.setHours(23, 59, 59, 999);
+            return logDate >= start && logDate <= end;
+          default:
+            return true;
+        }
+      });
+    }
+
+    // Time filtering logic
+    function filterByTime(logs) {
+      if (!startTime.value && !endTime.value) return logs;
+
+      return logs.filter(log => {
+        const logDate = new Date(log.timestamp);
+        const logMinutes = logDate.getHours() * 60 + logDate.getMinutes();
+
+        let startMinutes = 0;
+        let endMinutes = 24 * 60;
+
+        if (startTime.value) {
+          const [h, m] = startTime.value.split(':');
+          startMinutes = parseInt(h) * 60 + parseInt(m);
+        }
+
+        if (endTime.value) {
+          const [h, m] = endTime.value.split(':');
+          endMinutes = parseInt(h) * 60 + parseInt(m);
+        }
+
+        return logMinutes >= startMinutes && logMinutes <= endMinutes;
+      });
+    }
+
+    // Search filtering logic
+    function filterBySearch(logs) {
+      const searchTerm = searchInput.value.toLowerCase().trim();
+      if (!searchTerm) return logs;
+
+      return logs.filter(log => {
+        const actionType = String(log.actionType || "").toLowerCase();
+        const description = String(log.description || "").toLowerCase();
+        
+        return actionType.includes(searchTerm) || description.includes(searchTerm);
+      });
+    }
+
+    // Apply all filters
+    function applyFilters() {
+      let filtered = [...allLogs];
+      filtered = filterByDate(filtered);
+      filtered = filterByTime(filtered);
+      filtered = filterBySearch(filtered);
+      filteredLogs = filtered;
+      page = 1; // Reset to first page
+      renderLogs();
+    }
+
+    // Render logs to table
+    function renderLogs() {
+      const limit = Number(logLimit.value || 50);
+      const start = (page - 1) * limit;
+      const end = start + limit;
+      const displayLogs = filteredLogs.slice(start, end);
+
+      totalPages = Math.ceil(filteredLogs.length / limit) || 1;
+      page = Math.min(page, totalPages);
+
+      logSummary.textContent = `Showing ${displayLogs.length} of ${filteredLogs.length} activities (${allLogs.length} total)`;
+      pageLabel.textContent = `Page ${page} of ${totalPages}`;
+      prevPageBtn.disabled = page <= 1;
+      nextPageBtn.disabled = page >= totalPages;
+
+      if (!displayLogs.length) {
+        activityLogBody.innerHTML = '<tr><td colspan="5" class="py-6 text-center text-slate-500">No activity records found.</td></tr>';
+        return;
+      }
+
+      activityLogBody.innerHTML = displayLogs.map((log) => {
+        const severity = getActivitySeverity(log.actionType);
+        return `
+          <tr class="border-b hover:bg-slate-50">
+            <td class="px-4 py-2">${getSeverityBadge(severity)}</td>
+            <td class="px-4 py-2">${formatDateTime(log.timestamp)}</td>
+            <td class="px-4 py-2 font-medium">${log.actionType || "-"}</td>
+            <td class="px-4 py-2">${log.description || "-"}</td>
+            <td class="px-4 py-2 text-center">
+              <span class="rounded px-2 py-1 text-xs font-medium ${statusPillClass(log.status)}">${log.status || "N/A"}</span>
+            </td>
+          </tr>
+        `;
+      }).join("");
+    }
+
+    // Load activity logs from API
+    async function loadActivityLogs() {
+      activityLogBody.innerHTML = '<tr><td colspan="5" class="py-6 text-center text-slate-500">Loading activity logs...</td></tr>';
+
+      try {
+        // Fetch all logs (with a high limit to get all data for client-side filtering)
+        const response = await fetch(`${API_BASE}/staff/activity-logs?page=1&limit=1000`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        const result = await response.json();
+
+        if (!response.ok) {
+          throw new Error(result.message || "Failed to load activity logs");
+        }
+
+        allLogs = result.data || [];
+        filteredLogs = [...allLogs];
+        page = 1;
+        renderLogs();
+      } catch (error) {
+        activityLogBody.innerHTML = `<tr><td colspan="5" class="py-6 text-center text-red-600">${error.message}</td></tr>`;
+      }
+    }
+
+    // Event Listeners
+    document.getElementById("refreshLogsBtn").addEventListener("click", () => {
+      loadActivityLogs();
+    });
+
+    logLimit.addEventListener("change", () => {
+      renderLogs();
+    });
+
+    prevPageBtn.addEventListener("click", () => {
+      if (page <= 1) return;
+      page -= 1;
+      renderLogs();
+    });
+
+    nextPageBtn.addEventListener("click", () => {
+      if (page >= totalPages) return;
+      page += 1;
+      renderLogs();
+    });
+
+    // Show/hide custom date range
+    dateFilter.addEventListener("change", () => {
+      if (dateFilter.value === "custom") {
+        customDateRange.classList.remove("hidden");
+      } else {
+        customDateRange.classList.add("hidden");
+      }
+    });
+
+    // Apply filter button
+    applyFilterBtn.addEventListener("click", () => {
+      applyFilters();
+    });
+
+    // Reset filter button
+    resetFilterBtn.addEventListener("click", () => {
+      searchInput.value = "";
+      dateFilter.value = "all";
+      startTime.value = "";
+      endTime.value = "";
+      startDate.value = "";
+      endDate.value = "";
+      customDateRange.classList.add("hidden");
+      filteredLogs = [...allLogs];
+      page = 1;
+      renderLogs();
+    });
+
+    // Real-time search
+    searchInput.addEventListener("input", () => {
+      applyFilters();
+    });
+
+    // Initialize
+    loadActivityLogs();
+  </script>
+</body>
+</html>

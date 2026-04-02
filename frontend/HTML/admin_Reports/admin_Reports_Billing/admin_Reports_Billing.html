@@ -1,0 +1,109 @@
+<!-- BILLING REPORTS CONTENT ONLY -->
+<div id="contentArea" class="p-0">
+    <!-- Stats Cards -->
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6" id="statsCardsContainer" role="region" aria-label="Billing Statistics">
+    </div>
+
+    <!-- Collection Trend Chart -->
+    <section class="bg-white rounded-lg p-6 border border-gray-100 shadow-md hover:shadow-lg transition-shadow duration-200 mb-6" aria-labelledby="collection-heading">
+        <h3 id="collection-heading" class="text-lg font-semibold text-gray-700 mb-6">Collection Trend</h3>
+        <div class="relative h-64 w-full">
+            <canvas id="collectionTrendChart" role="img" aria-label="Line chart showing collection trend"></canvas>
+        </div>
+    </section>
+
+    <!-- Discount Breakdown Chart -->
+    <section class="bg-white rounded-lg p-6 border border-gray-100 shadow-md hover:shadow-lg transition-shadow duration-200 mb-6" aria-labelledby="discount-heading">
+        <h3 id="discount-heading" class="text-lg font-semibold text-gray-700 mb-6">Discount Breakdown</h3>
+        <div class="relative h-64 w-full">
+            <canvas id="discountChart" role="img" aria-label="Pie chart showing discount breakdown"></canvas>
+        </div>
+    </section>
+
+    <!-- Revenue by Cashier Table -->
+    <section class="bg-white rounded-lg p-6 border border-gray-100 shadow-md hover:shadow-lg transition-shadow duration-200 mb-6" aria-labelledby="cashier-heading">
+        <h3 id="cashier-heading" class="text-lg font-semibold text-gray-700 mb-6">Revenue by Cashier</h3>
+        <div class="overflow-x-auto">
+            <table class="w-full">
+                <thead>
+                    <tr class="border-b border-gray-100">
+                        <th class="text-left py-3 px-2 text-sm font-medium text-gray-500">Staff</th>
+                        <th class="text-right py-3 px-2 text-sm font-medium text-gray-500">Net Collected</th>
+                        <th class="text-right py-3 px-2 text-sm font-medium text-gray-500">Transactions</th>
+                    </tr>
+                </thead>
+                <tbody id="cashier-table-body"></tbody>
+            </table>
+        </div>
+    </section>
+
+    <!-- Transaction Audit History - UPDATED LAYOUT -->
+    <section class="bg-white rounded-lg p-6 border border-gray-100 shadow-md hover:shadow-lg transition-shadow duration-200" aria-labelledby="audit-heading">
+        <!-- Title -->
+        <h3 id="audit-heading" class="text-lg font-semibold text-gray-800 mb-4">Transaction Audit History</h3>
+        <!-- Search and Filters Row - All in one horizontal line -->
+        <div class="flex flex-wrap items-center gap-3 mb-6">
+            <!-- Search Bar - fills remaining space -->
+            <div class="flex-1 min-w-0">
+                <div class="relative w-full">
+                    <i class="fas fa-search absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 text-sm"></i>
+                    <input 
+                        type="text" 
+                        id="search-input" 
+                        placeholder="Search by OR Number, Patient ID, or Staff..." 
+                        class="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                    >
+                </div>
+            </div>
+            
+            <!-- Sort Dropdown -->
+            <div class="flex items-center gap-2 bg-gray-50 px-3 py-2 rounded-lg border border-gray-200">
+                <i class="fas fa-sort text-gray-500 text-sm" aria-hidden="true"></i>
+                <label for="sort-select" class="sr-only">Sort By</label>
+                <select id="sort-select" class="bg-transparent text-sm text-gray-600 outline-none cursor-pointer min-w-[120px]">
+                    <option value="">Sort By</option>
+                    <option value="Highest Amount">Highest Amount</option>
+                    <option value="Lowest Amount">Lowest Amount</option>
+                    <option value="A-Z">A-Z</option>
+                    <option value="Latest">Latest</option>
+                </select>
+            </div>
+            
+            <!-- Filter Dropdown -->
+            <div class="flex items-center gap-2 bg-gray-50 px-3 py-2 rounded-lg border border-gray-200">
+                <i class="fas fa-filter text-gray-500 text-sm" aria-hidden="true"></i>
+                <label for="filter-select" class="sr-only">Filter By Type</label>
+                <select id="filter-select" class="bg-transparent text-sm text-gray-600 outline-none cursor-pointer min-w-[120px]">
+                    <option value="All Types">All Types</option>
+                    <option value="Paid">Paid</option>
+                    <option value="Voided">Voided</option>
+                    <option value="Senior Discount">Senior Discount</option>
+                    <option value="PWD Discount">PWD Discount</option>
+                </select>
+            </div>
+        </div>
+        <!-- Table -->
+        <div class="overflow-x-auto">
+            <div class="max-h-96 overflow-y-auto">
+                <table class="w-full text-sm">
+                    <thead class="sticky top-0 bg-white z-10">
+                        <tr class="text-left text-gray-500 border-b border-gray-200">
+                            <th class="pb-3 font-medium">Date/Time</th>
+                            <th class="pb-3 font-medium">OR Number</th>
+                            <th class="pb-3 font-medium">Patient ID</th>
+                            <th class="pb-3 font-medium text-right">Gross</th>
+                            <th class="pb-3 font-medium text-right">Discount</th>
+                            <th class="pb-3 font-medium text-right">Net Collected</th>
+                            <th class="pb-3 font-medium text-center">Status</th>
+                            <th class="pb-3 font-medium">Staff</th>
+                        </tr>
+                    </thead>
+                    <tbody class="text-gray-700" id="transaction-table-body"></tbody>
+                </table>
+            </div>
+        </div>
+        
+        <!-- Results count -->
+        <div class="mt-4 text-sm text-gray-500" id="results-count"></div>
+    </section>
+</div>

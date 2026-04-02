@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Log In - Inventory and Billing Management</title>
+    <link href="../../css/output.css" rel="stylesheet">
+
+</head>
+
+<body class="bg-gray-100 overflow-hidden">
+    <style>
+        input[type="password"]::-ms-reveal,
+        input[type="password"]::-ms-clear {
+        display: none;}
+    </style>
+
+
+    <!-- ================= LOGIN PAGE ================= -->
+    <div id="loginPage" class="fixed inset-0 grid grid-cols-1 md:grid-cols-2 h-screen">
+        
+        <div class="hidden md:block h-screen">
+            <img src="../../assets/login_left_bg.png" alt="Background" class="w-full h-full object-cover">
+        </div>
+
+        <div class="flex flex-col items-center justify-center bg-white p-8">
+
+            <img src="../../assets/company_logo.png" alt="Company Logo"
+                class="w-24 h-24 rounded-full object-cover mb-6 shadow-md" />
+
+            <h1 class="text-3xl font-bold text-gray-800 mb-8">Sign In</h1>
+
+            <form class="w-full max-w-sm space-y-5">
+
+                <div>
+                    <label class="block text-gray-700 text-sm font-medium mb-2">Username</label>
+                    <input id="loginUsername" type="text" placeholder="Enter your username"
+                        class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-600 focus:border-transparent"/>
+                    <p id="loginUsernameWarning" class="text-sm text-red-600 mt-1 hidden">
+                        Username is required.
+                    </p>
+                </div>
+
+                <div>
+                    <label class="block text-gray-700 text-sm font-medium mb-2">Password</label>
+                    <div class="relative">
+                        <input id="loginPassword" type="password" placeholder="Enter your password"
+                            class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-600 focus:border-transparent"/>
+                        
+                        <button type="button" class="absolute right-3 top-1/2 -translate-y-1/2 focus:outline-none bg-transparent border-0 p-0 eyeToggle"
+                            data-target="loginPassword">
+                            <img src="../../assets/eye-open.png" alt="Show password"
+                                class="eyeOpen w-5 h-4 grayscale">
+                            <img src="../../assets/eye-close.png" alt="Hide password"
+                                class="eyeClose hidden w-5 h-5">
+                        </button>
+                    </div>
+
+                    <p id="loginPasswordWarning" class="text-sm text-red-600 mt-1 hidden">
+                        Password is required.
+                    </p>
+                </div>
+
+                <button type="button" onclick="validateLogin()"
+                    class="w-full bg-teal-700 hover:bg-teal-800 text-white font-bold py-3 rounded-full transition duration-200">
+                    Log In
+                </button>
+            </form>
+
+            <button type="button" id="forgotPasswordBtn"
+                class="text-gray-700 text-sm mt-4 hover:underline hover:text-teal-700 transition border-none cursor-pointer">
+                Forgot password?
+            </button>
+
+        </div>
+    </div>
+
+
+    <!-- ================= RESET PASSWORD PAGE ================= -->
+    <div id="resetPasswordPage"
+        class="hidden fixed inset-0 grid grid-cols-1 md:grid-cols-2 h-screen">
+
+        <div class="hidden md:block h-screen">
+            <img src="../../assets/login_left_bg.png" alt="Background"
+                class="w-full h-full object-cover">
+        </div>
+
+        <div class="flex flex-col items-center justify-center bg-white p-8">
+
+            <img src="../../assets/company_logo.png"
+                class="w-24 h-24 rounded-full object-cover mb-6 shadow-md" />
+
+            <h1 class="text-3xl font-bold text-gray-800 mb-8">Forgot Password</h1>
+
+            <form class="w-full max-w-sm space-y-5">
+
+                <div>
+                    <label class="block text-gray-700 text-sm font-medium mb-2">Username</label>
+                    <input id="resetUsername" type="text" placeholder="Enter your username"
+                        class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-600 focus:border-transparent"/>
+
+                    <div class="flex items-center mt-1">
+                        <p id="resetUsernameWarning" class="text-sm text-red-600 hidden">
+                            Username is required.
+                        </p>
+
+                        <a href="#" class="text-teal-700 text-sm hover:underline ml-auto">
+                            Send PIN
+                        </a>
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-gray-700 text-sm font-medium mb-2">PIN</label>
+                    <input id="pinInput" type="text" placeholder="Enter PIN"
+                        class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-600 focus:border-transparent"/>
+
+                    <p id="pinWarning" class="text-sm text-red-600 mt-1 hidden">
+                        Input should only be numbers.
+                    </p>
+                </div>
+
+                <button type="button" onclick="verifyReset()"
+                    class="w-full bg-teal-700 hover:bg-teal-800 text-white font-bold py-3 rounded-full transition duration-200">
+                    Verify
+                </button>
+            </form>
+
+            <button type="button" id="rememberPasswordBtn"
+                class="text-gray-700 text-sm mt-4 hover:underline hover:text-teal-700 transition border-none cursor-pointer">
+                Back to Login
+            </button>
+
+        </div>
+    </div>
+
+
+    <!-- ================= UPDATE PASSWORD PAGE ================= -->
+    <div id="updatePasswordPage"
+        class="hidden fixed inset-0 grid grid-cols-1 md:grid-cols-2 h-screen">
+
+        <div class="hidden md:block h-screen">
+            <img src="../../assets/login_left_bg.png" class="w-full h-full object-cover">
+        </div>
+
+        <div class="flex flex-col items-center justify-center bg-white p-8">
+
+            <img src="../../assets/company_logo.png"
+                class="w-24 h-24 rounded-full object-cover mb-6 shadow-md" />
+
+            <h1 class="text-3xl font-bold text-gray-800 mb-8">Reset Password</h1>
+
+            <form class="w-full max-w-sm space-y-5">
+
+                <div>
+                    <label class="block text-gray-700 text-sm font-medium mb-2">New Password</label>
+                    <div class="relative">
+                        <input id="newPassword" type="password"
+                            placeholder="Enter your new password"
+                            class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-600 focus:border-transparent"/>
+
+                        <button type="button"
+                            class="absolute right-3 top-1/2 -translate-y-1/2 focus:outline-none bg-transparent border-0 p-0 eyeToggle"
+                            data-target="newPassword">
+                            <img src="../../assets/eye-open.png" class="eyeOpen w-5 h-4 grayscale">
+                            <img src="../../assets/eye-close.png" class="eyeClose hidden w-5 h-5">
+                        </button>
+                    </div>
+
+                    <p id="passwordMsg" class="text-sm mt-2 text-red-600 hidden"></p>
+                </div>
+
+                <div>
+                    <label class="block text-gray-700 text-sm font-medium mb-2">Confirm Password</label>
+                    <div class="relative">
+                        <input id="confirmPassword" type="password" placeholder="Confirm your new password"
+                            class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-600 focus:border-transparent"/>
+
+                        <button type="button"
+                            class="absolute right-3 top-1/2 -translate-y-1/2 focus:outline-none bg-transparent border-0 p-0 eyeToggle"
+                            data-target="confirmPassword">
+                            <img src="../../assets/eye-open.png" class="eyeOpen w-5 h-4 grayscale">
+                            <img src="../../assets/eye-close.png" class="eyeClose hidden w-5 h-5">
+                        </button>
+                    </div>
+
+                    <p id="confirmMsg" class="text-sm mt-1 hidden"></p>
+                </div>
+
+                <button id="updatePasswordBtn" type="submit" disabled
+                    class="w-full bg-teal-700 hover:bg-teal-800 text-white font-bold py-3 rounded-full transition duration-200 opacity-50 cursor-not-allowed">
+                    Update Password
+                </button>
+            </form>
+
+            <button type="button" id="updateBackBtn"
+                class="text-gray-700 text-sm mt-4 hover:underline hover:text-teal-700 transition border-none cursor-pointer">
+                Back to Login
+            </button>
+        </div>
+    </div>
+
+</body>
+    <script src="../../JS/loginPage/loginPage.js?v=20260301"></script>
+</html>

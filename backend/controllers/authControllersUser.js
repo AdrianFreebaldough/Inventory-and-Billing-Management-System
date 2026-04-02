@@ -1,18 +1,29 @@
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import User from "../models/user.js";
+import env from "../config/env.js";
+import logger from "../utils/logger.js";
+
+const AUTH_EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+const AUTH_normalizeEmail = (email) => String(email || "").trim().toLowerCase();
 
 /* ================= LOGIN ================= */
 export const login = async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const email = AUTH_normalizeEmail(req.body?.email);
+    const password = String(req.body?.password || "");
 
     if (!email || !password) {
       return res.status(400).json({ message: "email and password are required" });
     }
 
+    if (!AUTH_EMAIL_REGEX.test(email)) {
+      return res.status(400).json({ message: "Invalid email format" });
+    }
+
     // 1. Find user in IBMS DB
-    const user = await User.findOne({ email: String(email).trim().toLowerCase() });
+    const user = await User.findOne({ email });
 
     if (!user || !user.isActive) {
       return res.status(401).json({ message: "Invalid credentials" });
@@ -32,7 +43,7 @@ export const login = async (req, res) => {
         name: user.name,
         email: user.email,
       },
-      process.env.JWT_SECRET,
+      env.JWT_SECRET,
       { expiresIn: "1d" }
     );
 
@@ -46,20 +57,30 @@ export const login = async (req, res) => {
       },
     });
   } catch (error) {
-  console.error("LOGIN ERROR 👉", error);
-  res.status(500).json({ message: "Server error during login" });
-}
+    logger.error("Login failed", { errorMessage: error.message });
+    res.status(500).json({ message: "Server error during login" });
+  }
 };
 
 /* ================= CREATE USER (SAVE TO IBMS) ================= */
 // Owner-only (protected by middleware)
 export const createUser = async (req, res) => {
   try {
-    const { email, password, role } = req.body;
+    const email = AUTH_normalizeEmail(req.body?.email);
+    const password = String(req.body?.password || "");
+    const role = req.body?.role;
     const normalizedRole = String(role || "").trim().toLowerCase();
 
     if (!email || !password || !normalizedRole) {
       return res.status(400).json({ message: "All fields are required" });
+    }
+
+    if (!AUTH_EMAIL_REGEX.test(email)) {
+      return res.status(400).json({ message: "Invalid email format" });
+    }
+
+    if (password.length < 8) {
+      return res.status(400).json({ message: "Password must be at least 8 characters" });
     }
 
     if (!["owner", "staff"].includes(normalizedRole)) {
@@ -68,7 +89,7 @@ export const createUser = async (req, res) => {
 
     // Prevent duplicate users
     const existingUser = await User.findOne({
-      email: String(email).trim().toLowerCase(),
+      email,
     });
 
     if (existingUser) {
@@ -80,7 +101,7 @@ export const createUser = async (req, res) => {
 
     // Save to IBMS database
     const user = await User.create({
-      email: String(email).trim().toLowerCase(),
+      email,
       password: hashedPassword,
       role: normalizedRole,
       isActive: true,
@@ -95,7 +116,7 @@ export const createUser = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Create user error:", error);
+    logger.error("Create user failed", { errorMessage: error.message });
     res.status(500).json({ message: "Failed to create user" });
   }
 };

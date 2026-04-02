@@ -218,10 +218,10 @@
   </section>
 </div>
 
-<div id="disposalDetailsModal" class="fixed inset-0 hidden items-center justify-center bg-black/45 p-4 z-[10001]">
-  <div class="relative w-full max-w-2xl rounded-2xl bg-white p-6 shadow-xl">
+<div id="disposalDetailsModal" class="fixed inset-0 hidden items-start justify-center overflow-y-auto bg-black/45 px-4 py-6 sm:items-center sm:p-6 z-[10001]">
+  <div class="relative flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl bg-white p-6 shadow-xl">
     <button id="closeDisposalDetailsModal" class="absolute right-4 top-4 text-2xl text-slate-400 hover:text-slate-700">&times;</button>
     <h3 class="text-xl font-semibold text-slate-900">Disposal Details</h3>
-    <div id="disposalDetailsBody" class="mt-5 grid grid-cols-1 gap-3 md:grid-cols-2 text-sm"></div>
+    <div id="disposalDetailsBody" class="mt-5 grid grid-cols-1 gap-3 overflow-y-auto pr-1 text-sm md:grid-cols-2 sm:pr-2"></div>
   </div>
 </div>

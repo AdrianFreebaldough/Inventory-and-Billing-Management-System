@@ -255,7 +255,7 @@ const renderDetails = (record) => {
       ([label, value]) => `
         <div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
           <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">${escapeHtml(label)}</p>
-          <p class="mt-1 text-sm font-medium text-slate-900">${escapeHtml(value)}</p>
+          <p class="mt-1 break-words text-sm font-medium text-slate-900">${escapeHtml(value)}</p>
         </div>`
     )
     .join("");

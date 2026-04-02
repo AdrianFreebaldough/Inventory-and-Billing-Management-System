@@ -4,7 +4,9 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "dev": "tailwindcss -i ./frontend/css/input.css -o ./frontend/css/style.css --watch",
+    "dev": "tailwindcss -i ./frontend/css/input.css -o ./frontend/css/output.css --watch",
+    "build:css": "tailwindcss -i ./frontend/css/input.css -o ./frontend/css/output.css --minify",
+    "build": "npm run build:css",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {

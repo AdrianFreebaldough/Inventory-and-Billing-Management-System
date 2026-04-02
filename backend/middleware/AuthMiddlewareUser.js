@@ -1,5 +1,6 @@
 import jwt from "jsonwebtoken";
 import mongoose from "mongoose";
+import env from "../config/env.js";
 
 
 /* ================= AUTH ================= */
@@ -18,7 +19,7 @@ export const protect = (req, res, next) => {
   }
 
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const decoded = jwt.verify(token, env.JWT_SECRET);
 
     const candidateId = decoded?.id || decoded?._id || decoded?.userId || "";
     if (!mongoose.Types.ObjectId.isValid(candidateId)) {
@@ -35,8 +36,8 @@ export const protect = (req, res, next) => {
     };
 
     next();
-  } catch {
-    return res.status(401).json({ message: "Token invalid" });
+  } catch (error) {
+    return res.status(401).json({ message: error?.name === "TokenExpiredError" ? "Token expired" : "Token invalid" });
   }
 };
 

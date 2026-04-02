@@ -201,5 +201,32 @@
     </div>
 
 </body>
-    <script src="../../js/loginPage/loginPage.js?v=20260301"></script>
+    <script>
+        (function loadLoginScript() {
+            const candidates = [
+                "../../js/loginPage/loginPage.js?v=20260301",
+                "../../JS/loginPage/loginPage.js?v=20260301"
+            ];
+
+            let current = 0;
+
+            const appendScript = () => {
+                if (current >= candidates.length) {
+                    console.error("Unable to load login script from all known paths.");
+                    return;
+                }
+
+                const script = document.createElement("script");
+                script.src = candidates[current];
+                script.defer = true;
+                script.onerror = () => {
+                    current += 1;
+                    appendScript();
+                };
+                document.body.appendChild(script);
+            };
+
+            appendScript();
+        })();
+    </script>
 </html>

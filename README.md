@@ -1,8 +1,20 @@
-cd Inventory-and-Billing-Management-System then cd frontend
+cd Inventory-and-Billing-Management-System
 
-always run this before mag code 
+for Tailwind in watch mode (local development):
 
-    npx tailwindcss -i ./frontend/css/input.css -o ./frontend/css/output.css --watch
+    npm run dev
+
+for a production CSS build:
+
+    npm run build
+
+if you are working from the frontend folder directly:
+
+    npm run dev
+
+and for production there:
+
+    npm run build
 
 server for backend "npx nodemon server.js"
 

@@ -60,7 +60,6 @@ function resetPasswordToggles() {
   });
 }
 
-
   // =========================
   // PIN Validation
   // =========================
@@ -284,6 +283,21 @@ function verifyReset() {
   }
 }
 
+function resolveDashboardRedirect(role) {
+  const path = window.location.pathname || "/";
+  const isRootLogin = path === "/" || /\/index\.html$/i.test(path);
+
+  if (isRootLogin) {
+    return role === "owner"
+      ? "/HTML/admin_dashboard/admin_dashboard.html"
+      : "/HTML/staff_dashboard/staff_dashboard.html";
+  }
+
+  return role === "owner"
+    ? "../admin_dashboard/admin_dashboard.html"
+    : "../staff_dashboard/staff_dashboard.html";
+}
+
 function validateLogin() {
   const $ = (id) => document.getElementById(id);
 
@@ -330,12 +344,12 @@ function validateLogin() {
       const role = payload?.user?.role;
 
       if (role === "owner") {
-        window.location.href = "../admin_dashboard/admin_dashboard.html";
+        window.location.href = resolveDashboardRedirect("owner");
         return;
       }
 
       if (role === "staff") {
-        window.location.href = "../staff_dashboard/staff_dashboard.html";
+        window.location.href = resolveDashboardRedirect("staff");
         return;
       }
 

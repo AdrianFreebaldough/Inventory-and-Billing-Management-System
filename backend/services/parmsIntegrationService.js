@@ -277,7 +277,7 @@ const isRetryableSyncError = (error) => {
   }
 
   if (statusCode === 404) {
-    return true;
+    return Boolean(env.PARMS_SYNC_RETRY_404);
   }
 
   return false;

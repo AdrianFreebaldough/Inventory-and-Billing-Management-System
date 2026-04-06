@@ -65,6 +65,7 @@ const env = {
   PARMS_SYNC_CURRENCY: String(process.env.PARMS_SYNC_CURRENCY || "PHP").trim().toUpperCase(),
   PARMS_IBMS_TOKEN: String(process.env.PARMS_IBMS_TOKEN || "").trim(),
   PARMS_SYNC_SIGNING_SECRET: String(process.env.PARMS_SYNC_SIGNING_SECRET || "").trim(),
+  PARMS_SYNC_RETRY_404: normalizeBoolean(process.env.PARMS_SYNC_RETRY_404, false),
   PARMS_SYNC_WORKER_ENABLED: normalizeBoolean(process.env.PARMS_SYNC_WORKER_ENABLED, true),
   PARMS_SYNC_WORKER_INTERVAL_MS: Number(process.env.PARMS_SYNC_WORKER_INTERVAL_MS || 15000),
   CORS_ORIGINS,

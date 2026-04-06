@@ -950,7 +950,13 @@ document.addEventListener("DOMContentLoaded", () => {
     .map(k => localStorage.getItem(k))
     .find(v => v && v.trim()) || "";
   if (notifToken) {
-    const notificationWidget = new NotificationWidget("http://localhost:3000/api", notifToken);
+    const configuredBase = String(window.IBMS_API_BASE_URL || "").trim().replace(/\/+$/, "");
+    const localHost = String(window.location.hostname || "").toLowerCase();
+    const notificationApiBase = configuredBase
+      ? (configuredBase.endsWith("/api") ? configuredBase : `${configuredBase}/api`)
+      : ((localHost === "localhost" || localHost === "127.0.0.1") ? "http://localhost:3000/api" : "/api");
+
+    const notificationWidget = new NotificationWidget(notificationApiBase, notifToken);
     window.notificationWidget = notificationWidget;
     notificationWidget.init();
   }

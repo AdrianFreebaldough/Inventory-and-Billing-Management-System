@@ -83,7 +83,21 @@
 	</div>
 
 	<script>
-		const API_BASE = 'http://localhost:3000/api';
+		const resolveApiBase = () => {
+			const configuredBase = String(window.IBMS_API_BASE_URL || '').trim().replace(/\/+$/, '');
+			if (configuredBase) {
+				return configuredBase.endsWith('/api') ? configuredBase : `${configuredBase}/api`;
+			}
+
+			const host = String(window.location.hostname || '').toLowerCase();
+			if (host === 'localhost' || host === '127.0.0.1') {
+				return 'http://localhost:3000/api';
+			}
+
+			return '/api';
+		};
+
+		const API_BASE = resolveApiBase();
 		const TOKEN_KEYS = ['token', 'authToken', 'jwtToken', 'ibmsToken'];
 		const token = TOKEN_KEYS.map(k => localStorage.getItem(k)).find(v => v && v.trim()) || '';
 

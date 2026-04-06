@@ -87,11 +87,16 @@
 					<div class="shrink-0 border-b border-slate-300 bg-black px-3 py-2 text-[11px] text-slate-200">
 						<p class="uppercase tracking-wider">Transaction ID: <span id="txnId" class="font-semibold text-white"></span></p>
 						<div id="patientInfoSection" class="mt-2">
-							<label for="patientIdInput" class="block text-[10px] uppercase tracking-wider text-slate-300">Patient ID</label>
-							<input id="patientIdInput" type="text" placeholder="Enter patient ID..." class="mt-1 w-full border border-slate-600 bg-slate-900 px-2 py-1 text-xs text-white outline-none focus:border-cyan-500" />
-							<p id="patientIdHint" class="mt-1 text-[10px] text-slate-400">Patient name auto-fills when a valid Patient ID is entered.</p>
-							<label for="patientNameInput" class="mt-2 block text-[10px] uppercase tracking-wider text-slate-300">Patient Name</label>
-							<input id="patientNameInput" type="text" readonly placeholder="Auto-filled from patient record" class="mt-1 w-full border border-slate-600 bg-slate-900 px-2 py-1 text-xs text-white outline-none focus:border-cyan-500" />
+								<label for="patientNameInput" class="block text-[10px] uppercase tracking-wider text-slate-300">Patient Name</label>
+								<input id="patientNameInput" type="text" placeholder="Type patient name..." class="mt-1 w-full border border-slate-600 bg-slate-900 px-2 py-1 text-xs text-white outline-none focus:border-cyan-500" />
+								<p id="patientIdHint" class="mt-1 text-[10px] text-slate-400">Patient ID auto-fills after patient name is resolved.</p>
+								<label for="patientIdInput" class="mt-2 block text-[10px] uppercase tracking-wider text-slate-300">Patient ID</label>
+								<input id="patientIdInput" type="text" readonly placeholder="Auto-filled from patient record" class="mt-1 w-full border border-slate-600 bg-slate-900 px-2 py-1 text-xs text-white outline-none focus:border-cyan-500" />
+								<div id="pendingBalancesSection" class="mt-2 rounded border border-slate-700 bg-slate-950/60 p-2">
+									<p class="text-[10px] uppercase tracking-wider text-slate-300">PARMS Pending Balances</p>
+									<div id="pendingBalancesList" class="mt-1 max-h-20 overflow-y-auto space-y-1 text-[10px] text-slate-200">No pending balances.</div>
+									<p class="mt-1 text-[10px] text-slate-300">Pending Total: <span id="pendingBalancesTotal" class="font-semibold text-amber-300">₱0.00</span></p>
+								</div>
 							<p class="mt-1">Status: <span id="txnStatus" class="font-semibold text-rose-400"></span></p>
 						</div>
 					</div>

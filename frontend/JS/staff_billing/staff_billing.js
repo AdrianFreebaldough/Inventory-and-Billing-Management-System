@@ -46,6 +46,8 @@ const state = {
 	discountRate: 0,
 	patientId: "",
 	patientName: "",
+	pendingBalances: [],
+	pendingBalanceTotal: 0,
 	activeView: "sale",
 	transactionLog: [],
 	activeTransactionId: null,
@@ -78,7 +80,10 @@ const totalDueElement = document.getElementById("totalDueValue");
 const txnIdElement = document.getElementById("txnId");
 const txnStatusElement = document.getElementById("txnStatus");
 const patientIdInput = document.getElementById("patientIdInput");
+const patientNameInput = document.getElementById("patientNameInput");
 const patientIdHint = document.getElementById("patientIdHint");
+const pendingBalancesList = document.getElementById("pendingBalancesList");
+const pendingBalancesTotal = document.getElementById("pendingBalancesTotal");
 const proceedButton = document.getElementById("proceedBtn");
 const patientInfoSection = document.getElementById("patientInfoSection");
 
@@ -253,15 +258,54 @@ function generatePatientId() {
 	return `PAT-${suffix}`;
 }
 
-async function fetchPatientNameById(patientId) {
-	if (!patientId || !patientId.trim()) return "";
+function normalizePendingBalanceLines(lines = []) {
+	if (!Array.isArray(lines)) return [];
+
+	return lines
+		.map((line, index) => {
+			const amount = Number(line?.amount || 0);
+			if (!Number.isFinite(amount) || amount <= 0) return null;
+			const sourceType = String(line?.sourceType || "other").trim().toLowerCase();
+			const normalizedSourceType = ["laboratory", "prescription"].includes(sourceType) ? sourceType : "other";
+			return {
+				sourceType: normalizedSourceType,
+				referenceId: String(line?.referenceId || `pending-${index + 1}`),
+				description: String(line?.description || "Pending balance").trim(),
+				amount: Number(amount.toFixed(2)),
+			};
+		})
+		.filter(Boolean);
+}
+
+function setPendingBalances(lines = []) {
+	const normalizedLines = normalizePendingBalanceLines(lines);
+	state.pendingBalances = normalizedLines;
+	state.pendingBalanceTotal = Number(
+		normalizedLines.reduce((sum, line) => sum + Number(line.amount || 0), 0).toFixed(2)
+	);
+}
+
+async function resolvePatientByName(patientName) {
+	if (!patientName || !patientName.trim()) {
+		return null;
+	}
+
 	try {
-		const encodedPatientId = encodeURIComponent(patientId.trim());
-		const result = await apiFetch(`/api/patients/${encodedPatientId}`, { method: "GET" });
+		const result = await apiFetch(`/api/patients/search?name=${encodeURIComponent(patientName.trim())}`, {
+			method: "GET",
+		});
 		const payload = result?.data || result;
-		return payload?.patientName ? String(payload.patientName).trim() : "";
+		if (!payload?.patientId || !payload?.patientName) {
+			return null;
+		}
+
+		return {
+			patientId: String(payload.patientId).trim(),
+			patientName: String(payload.patientName).trim(),
+			pendingBalances: normalizePendingBalanceLines(payload.pendingBalances || []),
+		};
 	} catch {
-		return "";
+		return null;
 	}
 }
 
@@ -473,9 +517,10 @@ function computeSaleTotals() {
 	const discount = subtotal * state.discountRate;
 	const discountedSubtotal = Math.max(subtotal - discount, 0);
 	const vat = discountedSubtotal * VAT_RATE;
+	const pendingTotal = Number(state.pendingBalanceTotal || 0);
 	// Prices are VAT-inclusive; keep VAT as display-only and do not add it again.
-	const totalDue = discountedSubtotal;
-	return { selected, itemCount, subtotal, discount, vat, totalDue };
+	const totalDue = discountedSubtotal + pendingTotal;
+	return { selected, itemCount, subtotal, discount, vat, pendingTotal, totalDue };
 }
 
 /* ===== Rendering ===== */
@@ -488,21 +533,52 @@ function setProceedButtonEnabled(enabled) {
 }
 
 function updatePaymentLockStatus() {
-	const { itemCount } = computeSaleTotals();
+	const { itemCount, pendingTotal } = computeSaleTotals();
+	const hasBillableLines = itemCount > 0 || pendingTotal > 0;
 	if (!state.patientId) {
-		txnStatusElement.textContent = "WAITING FOR PATIENT ID";
+		txnStatusElement.textContent = "WAITING FOR PATIENT NAME";
 		txnStatusElement.className = "font-semibold text-amber-300";
-		patientIdHint.textContent = "Patient ID auto-generates when first item is added.";
+		patientIdHint.textContent = "Type patient name to resolve patient ID and PARMS balances.";
 		patientIdHint.className = "mt-1 text-[10px] text-slate-400";
 		setProceedButtonEnabled(false);
 		return;
 	}
 
-	txnStatusElement.textContent = itemCount > 0 ? "READY FOR PAYMENT" : "WAITING FOR ITEMS";
-	txnStatusElement.className = itemCount > 0 ? "font-semibold text-emerald-400" : "font-semibold text-amber-300";
-	patientIdHint.textContent = itemCount > 0 ? "Patient ID ready. You can proceed to payment." : "Patient ID ready. Add items to continue.";
-	patientIdHint.className = itemCount > 0 ? "mt-1 text-[10px] text-emerald-300" : "mt-1 text-[10px] text-slate-400";
-	setProceedButtonEnabled(itemCount > 0 && Boolean(state.patientId));
+	txnStatusElement.textContent = hasBillableLines ? "READY FOR PAYMENT" : "WAITING FOR BILLABLE LINES";
+	txnStatusElement.className = hasBillableLines ? "font-semibold text-emerald-400" : "font-semibold text-amber-300";
+	patientIdHint.textContent = hasBillableLines
+		? "Patient resolved. You can proceed to payment."
+		: "Patient resolved. Add items or include pending balances to continue.";
+	patientIdHint.className = hasBillableLines ? "mt-1 text-[10px] text-emerald-300" : "mt-1 text-[10px] text-slate-400";
+	setProceedButtonEnabled(hasBillableLines && Boolean(state.patientId));
+}
+
+function renderPendingBalancesPanel() {
+	if (!pendingBalancesList || !pendingBalancesTotal) return;
+
+	if (!state.pendingBalances.length) {
+		pendingBalancesList.innerHTML = '<p class="text-[10px] text-slate-400">No pending balances.</p>';
+		pendingBalancesTotal.textContent = formatPeso(0);
+		return;
+	}
+
+	pendingBalancesList.innerHTML = state.pendingBalances
+		.map((line) => {
+			const sourceLabel = line.sourceType === "laboratory"
+				? "Lab"
+				: line.sourceType === "prescription"
+					? "Prescription"
+					: "Other";
+			return `
+				<div class="flex items-center justify-between gap-2">
+					<span class="truncate text-slate-200" title="${line.description}">${sourceLabel}: ${line.description}</span>
+					<span class="shrink-0 text-amber-300">${formatPeso(line.amount)}</span>
+				</div>
+			`;
+		})
+		.join("");
+
+	pendingBalancesTotal.textContent = formatPeso(state.pendingBalanceTotal);
 }
 
 function renderItemRows() {
@@ -621,14 +697,17 @@ function commitQuantityInput(inputEl) {
 }
 
 function renderSummaryPanel() {
-	const { selected, itemCount, subtotal, discount, vat, totalDue } = computeSaleTotals();
+	const { selected, itemCount, subtotal, discount, vat, pendingTotal, totalDue } = computeSaleTotals();
 	if (!selected.length) {
-		selectedItemsPanel.innerHTML = "No items selected.";
+		selectedItemsPanel.innerHTML = state.pendingBalances.length
+			? `<div class="text-xs text-slate-500">No inventory items selected.</div>`
+			: "No items selected.";
 		itemsCountElement.textContent = "0";
 		subtotalElement.textContent = formatPeso(0);
 		discountElement.textContent = formatPeso(0);
 		vatElement.textContent = formatPeso(0);
-		totalDueElement.textContent = formatPeso(0);
+		totalDueElement.textContent = formatPeso(pendingTotal);
+		renderPendingBalancesPanel();
 		renderInlinePayment();
 		return;
 	}
@@ -653,11 +732,26 @@ function renderSummaryPanel() {
 		})
 		.join("");
 
+	if (state.pendingBalances.length > 0) {
+		selectedItemsPanel.innerHTML += `
+			<div class="mt-2 border-t border-amber-200 pt-2 text-xs text-amber-800">
+				<p class="mb-1 font-semibold uppercase tracking-wide">PARMS Pending Balances</p>
+				${state.pendingBalances
+					.map((line) => `<div class="flex items-center justify-between"><span>${line.description}</span><span>${formatPeso(line.amount)}</span></div>`)
+					.join("")}
+				<div class="mt-1 flex items-center justify-between border-t border-amber-300 pt-1 font-semibold">
+					<span>Pending Total</span><span>${formatPeso(pendingTotal)}</span>
+				</div>
+			</div>
+		`;
+	}
+
 	itemsCountElement.textContent = String(itemCount);
 	subtotalElement.textContent = formatPeso(subtotal);
 	discountElement.textContent = formatPeso(discount);
 	vatElement.textContent = formatPeso(vat);
 	totalDueElement.textContent = formatPeso(totalDue);
+	renderPendingBalancesPanel();
 	renderInlinePayment();
 }
 
@@ -824,8 +918,7 @@ function renderActiveView() {
 function refreshUi() {
 	txnIdElement.textContent = state.activeTransactionId ? String(state.activeTransactionId).slice(-8).toUpperCase() : "NEW";
 	patientIdInput.value = state.patientId;
-	const patientNameInputEl = document.getElementById("patientNameInput");
-	if (patientNameInputEl) patientNameInputEl.value = state.patientName;
+	if (patientNameInput) patientNameInput.value = state.patientName;
 	renderCategoryFilterOptions();
 	renderItemRows();
 	renderSummaryPanel();
@@ -853,9 +946,10 @@ function setQuantity(itemId, nextQty) {
 	state.quantities[itemId] = boundedQty;
 
 	const { itemCount } = computeSaleTotals();
-	if (itemCount === 0) {
+	if (itemCount === 0 && state.pendingBalanceTotal <= 0) {
 		state.patientId = "";
 		state.patientName = "";
+		setPendingBalances([]);
 	}
 	refreshUi();
 }
@@ -874,6 +968,7 @@ function resetActiveSale() {
 	state.discountRate = 0;
 	state.patientId = "";
 	state.patientName = "";
+	setPendingBalances([]);
 	state.activeTransactionId = null;
 	searchInput.value = "";
 	state.searchTerm = "";
@@ -891,7 +986,7 @@ function resetActiveSale() {
 
 async function handleProceedToPayment() {
 	const totals = computeSaleTotals();
-	if (!state.patientId || totals.itemCount === 0) return;
+	if (!state.patientId || (totals.itemCount === 0 && totals.pendingTotal <= 0)) return;
 
 	showLoading("Creating transaction...");
 
@@ -908,6 +1003,7 @@ async function handleProceedToPayment() {
 			patientName: state.patientName,
 			items,
 			discountRate: state.discountRate,
+			pendingBalances: state.pendingBalances,
 		});
 
 		state.activeTransactionId = result.transactionId;
@@ -981,6 +1077,8 @@ async function handleCompleteSale() {
 			patientId: state.patientId,
 			patientName: state.patientName,
 			selected: totalsBeforeReset.selected,
+			pendingBalances: [...state.pendingBalances],
+			pendingBalanceTotal: totalsBeforeReset.pendingTotal,
 			subtotal: totalsBeforeReset.subtotal,
 			discount: totalsBeforeReset.discount,
 			vat: totalsBeforeReset.vat,
@@ -1011,6 +1109,12 @@ function showSuccessModal() {
 	successItems.innerHTML = state.lastCompletedSale.selected
 		.map((item) => `<p>${item.name} (${item.qty}) - ${formatPeso(item.qty * item.price)}</p>`)
 		.join("");
+
+	if (state.lastCompletedSale.pendingBalances?.length) {
+		successItems.innerHTML += state.lastCompletedSale.pendingBalances
+			.map((line) => `<p>Pending - ${line.description} - ${formatPeso(line.amount)}</p>`)
+			.join("");
+	}
 	successSubtotal.textContent = formatPeso(state.lastCompletedSale.subtotal);
 	successDiscount.textContent = formatPeso(state.lastCompletedSale.discount);
 	successVat.textContent = formatPeso(state.lastCompletedSale.vat);
@@ -1029,6 +1133,8 @@ function holdCurrentTransaction() {
 		heldId: generateHeldId(),
 		patientId: state.patientId,
 		patientName: state.patientName,
+		pendingBalances: [...state.pendingBalances],
+		pendingBalanceTotal: state.pendingBalanceTotal,
 		items: totals.selected,
 		itemCount: totals.itemCount,
 		subtotal: totals.subtotal,
@@ -1054,6 +1160,7 @@ function resumeHeldTransaction(heldId) {
 	});
 	state.patientId = held.patientId;
 	state.patientName = held.patientName || "";
+	setPendingBalances(held.pendingBalances || []);
 	state.heldTransactions.splice(index, 1);
 	closeAllModals();
 	refreshUi();
@@ -1190,25 +1297,36 @@ function attachEvents() {
 		renderItemRows();
 	});
 
-	patientIdInput?.addEventListener("input", (event) => {
-		const patientIdValue = String(event.target.value || "").trim();
-		state.patientId = patientIdValue;
-		state.patientName = "";
+	patientNameInput?.addEventListener("input", (event) => {
+		const patientNameValue = String(event.target.value || "").trim();
+		state.patientName = patientNameValue;
+		state.patientId = "";
+		setPendingBalances([]);
 		updatePaymentLockStatus();
 
 		if (patientLookupDebounceTimer) {
 			clearTimeout(patientLookupDebounceTimer);
 		}
 
-		if (!patientIdValue) {
+		if (!patientNameValue) {
 			refreshUi();
 			return;
 		}
 
 		patientLookupDebounceTimer = setTimeout(async () => {
-			const lookedUpName = await fetchPatientNameById(patientIdValue);
-			if (state.patientId !== patientIdValue) return;
-			state.patientName = lookedUpName || "";
+			const patientRecord = await resolvePatientByName(patientNameValue);
+			if (state.patientName !== patientNameValue) return;
+
+			if (!patientRecord) {
+				state.patientId = "";
+				setPendingBalances([]);
+				refreshUi();
+				return;
+			}
+
+			state.patientId = patientRecord.patientId;
+			state.patientName = patientRecord.patientName;
+			setPendingBalances(patientRecord.pendingBalances || []);
 			refreshUi();
 		}, 350);
 	});

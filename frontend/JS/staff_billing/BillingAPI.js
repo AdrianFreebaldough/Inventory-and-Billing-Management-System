@@ -27,10 +27,10 @@ export const fetchBillingProducts = async (category = null) => {
  * @param {number} [params.discountRate=0] - Discount rate (0-1)
  * @returns {Promise<Object>} Created transaction data
  */
-export const createTransaction = async ({ patientId, patientName = "", items, discountRate = 0 }) => {
+export const createTransaction = async ({ patientId, patientName = "", items, discountRate = 0, pendingBalances = [] }) => {
   const response = await apiFetch(`${BILLING_BASE}/create`, {
     method: "POST",
-    body: JSON.stringify({ patientId, patientName, items, discountRate }),
+    body: JSON.stringify({ patientId, patientName, items, discountRate, pendingBalances }),
   });
   return response.data;
 };

@@ -7,6 +7,8 @@ import { createStockLog } from "./Owner_StockLog.service.js";
 import { buildFefoAllocationPlan, classifyExpiryRisk, sortBatchesForFefo, toUiExpiryRiskKey } from "./fefoService.js";
 import { BATCH_MANUAL_STATUS } from "./batchLifecycleService.js";
 import { syncProductFromBatchTotals } from "./inventoryIntegrityService.js";
+import { queueCompletedTransactionSync } from "./parmsIntegrationService.js";
+import { markIntentPaidFromTransaction, resolveOpenIntentForPatient } from "./parmsBillingIntentService.js";
 
 class STAFF_BillingError extends Error {
   constructor(message, statusCode = 400) {
@@ -19,25 +21,6 @@ class STAFF_BillingError extends Error {
 // Centralized currency rounding keeps stored totals stable and predictable.
 const STAFF_roundCurrency = (value) => Number(Number(value).toFixed(2));
 
-// Generate patient name (temporary generator until patient module is integrated)
-const STAFF_generatePatientName = () => {
-  const firstNames = [
-    "Juan", "Maria", "Pedro", "Ana", "Jose", "Rosa", "Carlos", "Luz",
-    "Miguel", "Elena", "Roberto", "Sofia", "Fernando", "Carmen", "Antonio",
-    "Isabel", "Manuel", "Teresa", "Ricardo", "Patricia", "Rafael", "Gloria"
-  ];
-  const lastNames = [
-    "Dela Cruz", "Santos", "Reyes", "Garcia", "Ramos", "Mendoza", "Torres",
-    "Gonzales", "Lopez", "Flores", "Villanueva", "Castro", "Rivera", "Cruz",
-    "Bautista", "Fernandez", "Aquino", "Santiago", "Morales", "Pascual"
-  ];
-  
-  const firstName = firstNames[Math.floor(Math.random() * firstNames.length)];
-  const lastName = lastNames[Math.floor(Math.random() * lastNames.length)];
-  
-  return `${firstName} ${lastName}`;
-};
-
 const STAFF_makeReceiptNumber = () => {
   const now = new Date();
   const yyyy = now.getFullYear();
@@ -46,6 +29,33 @@ const STAFF_makeReceiptNumber = () => {
   const timePart = `${now.getHours()}${now.getMinutes()}${now.getSeconds()}${now.getMilliseconds()}`;
   const randomPart = Math.floor(1000 + Math.random() * 9000);
   return `RCPT-${yyyy}${mm}${dd}-${timePart}-${randomPart}`;
+};
+
+const STAFF_normalizePendingBalanceLines = (pendingBalancesPayload = []) => {
+  if (!Array.isArray(pendingBalancesPayload)) return [];
+
+  const normalized = [];
+
+  pendingBalancesPayload.forEach((line, index) => {
+    const amount = Number(line?.amount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      return;
+    }
+
+    const sourceType = String(line?.sourceType || "other").trim().toLowerCase();
+    const normalizedSourceType = ["laboratory", "prescription"].includes(sourceType)
+      ? sourceType
+      : "other";
+
+    normalized.push({
+      sourceType: normalizedSourceType,
+      referenceId: String(line?.referenceId || line?.lineId || `pending-${index + 1}`).trim(),
+      description: String(line?.description || "Pending balance").trim(),
+      amount: STAFF_roundCurrency(amount),
+    });
+  });
+
+  return normalized;
 };
 
 const STAFF_logBillingActivity = async ({
@@ -393,41 +403,77 @@ const STAFF_allocateItemFromBatches = async ({ item, session, referenceDate }) =
   return plan.allocations;
 };
 
-export const STAFF_createBillingTransaction = async ({ staffId, items, patientId, patientName, discountRate = 0 }) => {
+export const STAFF_createBillingTransaction = async ({
+  staffId,
+  items,
+  patientId,
+  patientName,
+  discountRate = 0,
+  pendingBalances = [],
+}) => {
   if (!patientId || typeof patientId !== "string" || !patientId.trim()) {
     throw new STAFF_BillingError("Patient ID is required", 400);
   }
 
-  // Generate patient name if not provided
-  const finalPatientName = patientName && patientName.trim() 
-    ? patientName.trim() 
-    : STAFF_generatePatientName();
+  const finalPatientName = String(patientName || "").trim();
+  if (!finalPatientName) {
+    throw new STAFF_BillingError("Patient name is required", 400);
+  }
 
   const parsedDiscountRate = Number(discountRate);
   if (!Number.isFinite(parsedDiscountRate) || parsedDiscountRate < 0 || parsedDiscountRate > 1) {
     throw new STAFF_BillingError("Discount rate must be a number between 0 and 1", 400);
   }
 
-  const snapshot = await STAFF_buildItemsSnapshot(items);
+  const hasInventoryItems = Array.isArray(items) && items.length > 0;
+  const snapshot = hasInventoryItems
+    ? await STAFF_buildItemsSnapshot(items)
+    : { items: [], totalAmount: 0 };
+
+  const normalizedPendingBalances = STAFF_normalizePendingBalanceLines(pendingBalances);
+  const pendingBalanceTotal = STAFF_roundCurrency(
+    normalizedPendingBalances.reduce((sum, line) => sum + Number(line.amount || 0), 0)
+  );
+
+  if (!hasInventoryItems && pendingBalanceTotal <= 0) {
+    throw new STAFF_BillingError("At least one billable line is required", 400);
+  }
   
   // IMPORTANT: Prices in DB already include 12% VAT
   // We use REVERSE VAT calculation to show breakdown
   const subtotal = snapshot.totalAmount;
   const discountAmount = STAFF_roundCurrency(subtotal * parsedDiscountRate);
-  const totalAmount = STAFF_roundCurrency(subtotal - discountAmount);
+  const discountedInventoryTotal = STAFF_roundCurrency(subtotal - discountAmount);
+  const totalAmount = STAFF_roundCurrency(discountedInventoryTotal + pendingBalanceTotal);
   
   // Reverse VAT calculation: Total = Net + VAT
   // Total = Net * 1.12
   // Net = Total / 1.12
   // VAT = Total - Net
-  const netAmount = STAFF_roundCurrency(totalAmount / 1.12);
-  const vatIncluded = STAFF_roundCurrency(totalAmount - netAmount);
+  const inventoryNetAmount = STAFF_roundCurrency(discountedInventoryTotal / 1.12);
+  const vatIncluded = STAFF_roundCurrency(discountedInventoryTotal - inventoryNetAmount);
+  const netAmount = STAFF_roundCurrency(inventoryNetAmount + pendingBalanceTotal);
+
+  let linkedIntent = null;
+  try {
+    linkedIntent = await resolveOpenIntentForPatient({
+      patientId: patientId.trim(),
+    });
+  } catch {
+    linkedIntent = null;
+  }
 
   const transaction = await STAFF_BillingTransaction.create({
     staffId,
     patientId: patientId.trim(),
     patientName: finalPatientName,
+    parmsIntentId: linkedIntent?.intentId || null,
+    parmsEncounterId: linkedIntent?.encounterId || null,
+    parmsInvoiceReference: linkedIntent?.ibmsReference || null,
+    parmsInvoiceNumber: linkedIntent?.ibmsInvoiceNumber || null,
     items: snapshot.items,
+    parmsPendingBalances: normalizedPendingBalances,
+    parmsPendingTotal: pendingBalanceTotal,
     subtotal,
     discountRate: parsedDiscountRate,
     discountAmount,
@@ -469,7 +515,7 @@ export const STAFF_completeBillingTransaction = async ({ transactionId, staffId,
     throw new STAFF_BillingError("cashReceived must be a valid non-negative number", 400);
   }
 
-  return STAFF_executeWithOptionalTransaction(async (session) => {
+  const completedTransaction = await STAFF_executeWithOptionalTransaction(async (session) => {
     // Recheck status and stock in checkout step to block double-submit and race conditions.
     const transaction = await STAFF_getTransactionForStaff(transactionId, staffId, session);
     const now = new Date();
@@ -550,6 +596,13 @@ export const STAFF_completeBillingTransaction = async ({ transactionId, staffId,
           expiryRisk: allocation.expiryRisk,
         })),
       })),
+      pendingBalances: (transaction.parmsPendingBalances || []).map((line) => ({
+        sourceType: line.sourceType,
+        referenceId: line.referenceId,
+        description: line.description,
+        amount: line.amount,
+      })),
+      pendingBalanceTotal: STAFF_roundCurrency(transaction.parmsPendingTotal || 0),
       subtotal: transaction.subtotal,
       discountRate: transaction.discountRate,
       discountAmount: transaction.discountAmount,
@@ -569,7 +622,39 @@ export const STAFF_completeBillingTransaction = async ({ transactionId, staffId,
     transaction.completedAt = completedAt;
     transaction.receiptSnapshot = receiptSnapshot;
 
+    if (!transaction.parmsIntentId || !transaction.parmsInvoiceReference || !transaction.parmsInvoiceNumber) {
+      try {
+        const linkedIntent = await resolveOpenIntentForPatient({
+          patientId: transaction.patientId,
+          session,
+        });
+
+        if (linkedIntent) {
+          transaction.parmsIntentId = transaction.parmsIntentId || linkedIntent.intentId;
+          transaction.parmsEncounterId = transaction.parmsEncounterId || linkedIntent.encounterId;
+          transaction.parmsInvoiceReference = transaction.parmsInvoiceReference || linkedIntent.ibmsReference;
+          transaction.parmsInvoiceNumber = transaction.parmsInvoiceNumber || linkedIntent.ibmsInvoiceNumber;
+        }
+      } catch {
+        // Intent lookup failures should not block cashier completion.
+      }
+    }
+
+    if (!transaction.parmsInvoiceNumber) {
+      transaction.parmsInvoiceNumber = receiptSnapshot.receiptNumber;
+    }
+
+    if (!transaction.parmsInvoiceReference) {
+      transaction.parmsInvoiceReference = receiptSnapshot.receiptNumber;
+    }
+
     await transaction.save({ session });
+
+    try {
+      await markIntentPaidFromTransaction({ transaction, session });
+    } catch {
+      // Intent update failures should not block cashier completion.
+    }
 
     await STAFF_logBillingActivity({
       staffId,
@@ -581,6 +666,12 @@ export const STAFF_completeBillingTransaction = async ({ transactionId, staffId,
 
     return transaction;
   });
+
+  queueCompletedTransactionSync(completedTransaction._id).catch(() => {
+    // Keep cashier flow non-blocking; sync is retried asynchronously.
+  });
+
+  return completedTransaction;
 };
 
 export const STAFF_getBillingHistory = async ({ staffId }) => {

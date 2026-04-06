@@ -65,6 +65,32 @@ const STAFF_billingItemSchema = new mongoose.Schema(
   { _id: false }
 );
 
+const STAFF_parmsPendingBalanceSchema = new mongoose.Schema(
+  {
+    sourceType: {
+      type: String,
+      enum: ["laboratory", "prescription", "other"],
+      default: "other",
+    },
+    referenceId: {
+      type: String,
+      default: null,
+      trim: true,
+    },
+    description: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+    amount: {
+      type: Number,
+      required: true,
+      min: 0,
+    },
+  },
+  { _id: false }
+);
+
 const STAFF_receiptSnapshotSchema = new mongoose.Schema(
   {
     receiptNumber: {
@@ -97,8 +123,16 @@ const STAFF_receiptSnapshotSchema = new mongoose.Schema(
     },
     items: {
       type: [STAFF_billingItemSchema],
-      required: true,
-      validate: [(items) => items.length > 0, "Receipt must have at least one item"],
+      default: [],
+    },
+    pendingBalances: {
+      type: [STAFF_parmsPendingBalanceSchema],
+      default: [],
+    },
+    pendingBalanceTotal: {
+      type: Number,
+      default: 0,
+      min: 0,
     },
     subtotal: {
       type: Number,
@@ -168,10 +202,75 @@ const STAFF_billingTransactionSchema = new mongoose.Schema(
       required: true,
       trim: true,
     },
+    parmsIntentId: {
+      type: String,
+      default: null,
+      trim: true,
+      index: true,
+    },
+    parmsEncounterId: {
+      type: String,
+      default: null,
+      trim: true,
+    },
+    parmsInvoiceReference: {
+      type: String,
+      default: null,
+      trim: true,
+      index: true,
+    },
+    parmsInvoiceNumber: {
+      type: String,
+      default: null,
+      trim: true,
+    },
     items: {
       type: [STAFF_billingItemSchema],
-      required: true,
-      validate: [(items) => items.length > 0, "At least one item is required"],
+      default: [],
+    },
+    parmsPendingBalances: {
+      type: [STAFF_parmsPendingBalanceSchema],
+      default: [],
+    },
+    parmsPendingTotal: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    parmsSyncStatus: {
+      type: String,
+      enum: ["NOT_QUEUED", "PENDING", "SYNCING", "SYNCED", "FAILED"],
+      default: "NOT_QUEUED",
+      index: true,
+    },
+    parmsSyncAttempts: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    parmsLastSyncAt: {
+      type: Date,
+      default: null,
+    },
+    parmsLastSyncError: {
+      type: String,
+      default: null,
+      trim: true,
+    },
+    parmsLastSyncCorrelationId: {
+      type: String,
+      default: null,
+      trim: true,
+    },
+    parmsLastSyncEventId: {
+      type: String,
+      default: null,
+      trim: true,
+    },
+    parmsNextRetryAt: {
+      type: Date,
+      default: null,
+      index: true,
     },
     subtotal: {
       type: Number,
@@ -281,6 +380,8 @@ const STAFF_billingTransactionSchema = new mongoose.Schema(
 
 STAFF_billingTransactionSchema.index({ staffId: 1, createdAt: -1 });
 STAFF_billingTransactionSchema.index({ staffId: 1, status: 1, completedAt: -1 });
+STAFF_billingTransactionSchema.index({ parmsSyncStatus: 1, completedAt: -1 });
+STAFF_billingTransactionSchema.index({ parmsSyncStatus: 1, parmsNextRetryAt: 1 });
 STAFF_billingTransactionSchema.index({ "receiptSnapshot.receiptNumber": 1 }, { unique: true, sparse: true });
 
 export default mongoose.model("STAFF_BillingTransaction", STAFF_billingTransactionSchema);

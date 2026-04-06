@@ -68,6 +68,8 @@ const env = {
   PARMS_SYNC_RETRY_404: normalizeBoolean(process.env.PARMS_SYNC_RETRY_404, false),
   PARMS_SYNC_WORKER_ENABLED: normalizeBoolean(process.env.PARMS_SYNC_WORKER_ENABLED, true),
   PARMS_SYNC_WORKER_INTERVAL_MS: Number(process.env.PARMS_SYNC_WORKER_INTERVAL_MS || 15000),
+  ALLOW_VERCEL_PREVIEW_ORIGINS: normalizeBoolean(process.env.ALLOW_VERCEL_PREVIEW_ORIGINS, true),
+  VERCEL_ORIGIN_SUFFIX: String(process.env.VERCEL_ORIGIN_SUFFIX || ".vercel.app").trim().toLowerCase(),
   CORS_ORIGINS,
   ENABLE_CRON,
   isTest,

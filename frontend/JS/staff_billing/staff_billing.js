@@ -264,14 +264,17 @@ function normalizePendingBalanceLines(lines = []) {
 	return lines
 		.map((line, index) => {
 			const amount = Number(line?.amount || 0);
-			if (!Number.isFinite(amount) || amount <= 0) return null;
+			if (!Number.isFinite(amount) || amount < 0) return null;
 			const sourceType = String(line?.sourceType || "other").trim().toLowerCase();
 			const normalizedSourceType = ["laboratory", "prescription"].includes(sourceType) ? sourceType : "other";
+			const sourceLabel = String(line?.sourceLabel || "").trim();
 			return {
 				sourceType: normalizedSourceType,
+				sourceLabel: sourceLabel || null,
 				referenceId: String(line?.referenceId || `pending-${index + 1}`),
 				description: String(line?.description || "Pending balance").trim(),
 				amount: Number(amount.toFixed(2)),
+				isBillable: amount > 0,
 			};
 		})
 		.filter(Boolean);
@@ -283,6 +286,28 @@ function setPendingBalances(lines = []) {
 	state.pendingBalanceTotal = Number(
 		normalizedLines.reduce((sum, line) => sum + Number(line.amount || 0), 0).toFixed(2)
 	);
+}
+
+function getPendingLineTypeLabel(line) {
+	const sourceType = String(line?.sourceType || "other").trim().toLowerCase();
+	if (sourceType === "prescription") return "Prescription";
+	if (sourceType === "laboratory") return "Laboratory";
+	return "Service Type";
+}
+
+function getPendingLineDetails(line) {
+	const sourceType = String(line?.sourceType || "other").trim().toLowerCase();
+	const sourceLabel = String(line?.sourceLabel || "").trim();
+	const description = String(line?.description || "").trim();
+
+	if (sourceType === "other") {
+		if (sourceLabel && description && sourceLabel.toLowerCase() !== description.toLowerCase()) {
+			return `${sourceLabel} - ${description}`;
+		}
+		return sourceLabel || description || "N/A";
+	}
+
+	return description || sourceLabel || "N/A";
 }
 
 async function resolvePatientByName(patientName) {
@@ -535,6 +560,7 @@ function setProceedButtonEnabled(enabled) {
 function updatePaymentLockStatus() {
 	const { itemCount, pendingTotal } = computeSaleTotals();
 	const hasBillableLines = itemCount > 0 || pendingTotal > 0;
+	const hasReferenceOnlyLines = !hasBillableLines && state.pendingBalances.length > 0;
 	if (!state.patientId) {
 		txnStatusElement.textContent = "WAITING FOR PATIENT NAME";
 		txnStatusElement.className = "font-semibold text-amber-300";
@@ -548,7 +574,9 @@ function updatePaymentLockStatus() {
 	txnStatusElement.className = hasBillableLines ? "font-semibold text-emerald-400" : "font-semibold text-amber-300";
 	patientIdHint.textContent = hasBillableLines
 		? "Patient resolved. You can proceed to payment."
-		: "Patient resolved. Add items or include pending balances to continue.";
+		: hasReferenceOnlyLines
+			? "Patient resolved. PARMS lines loaded for reference, but no billable amount is available yet."
+			: "Patient resolved. Add items or include pending balances to continue.";
 	patientIdHint.className = hasBillableLines ? "mt-1 text-[10px] text-emerald-300" : "mt-1 text-[10px] text-slate-400";
 	setProceedButtonEnabled(hasBillableLines && Boolean(state.patientId));
 }
@@ -564,15 +592,14 @@ function renderPendingBalancesPanel() {
 
 	pendingBalancesList.innerHTML = state.pendingBalances
 		.map((line) => {
-			const sourceLabel = line.sourceType === "laboratory"
-				? "Lab"
-				: line.sourceType === "prescription"
-					? "Prescription"
-					: "Other";
+			const lineAmount = Number(line?.amount || 0);
+			const amountClass = lineAmount > 0 ? "text-amber-300" : "text-slate-400";
+			const typeLabel = getPendingLineTypeLabel(line);
+			const details = getPendingLineDetails(line);
 			return `
 				<div class="flex items-center justify-between gap-2">
-					<span class="truncate text-slate-200" title="${line.description}">${sourceLabel}: ${line.description}</span>
-					<span class="shrink-0 text-amber-300">${formatPeso(line.amount)}</span>
+					<span class="truncate text-slate-200" title="${details}">${typeLabel}: ${details}</span>
+					<span class="shrink-0 ${amountClass}">${formatPeso(lineAmount)}</span>
 				</div>
 			`;
 		})
@@ -737,7 +764,11 @@ function renderSummaryPanel() {
 			<div class="mt-2 border-t border-amber-200 pt-2 text-xs text-amber-800">
 				<p class="mb-1 font-semibold uppercase tracking-wide">PARMS Pending Balances</p>
 				${state.pendingBalances
-					.map((line) => `<div class="flex items-center justify-between"><span>${line.description}</span><span>${formatPeso(line.amount)}</span></div>`)
+					.map((line) => {
+						const typeLabel = getPendingLineTypeLabel(line);
+						const details = getPendingLineDetails(line);
+						return `<div class="flex items-center justify-between"><span>${typeLabel}: ${details}</span><span>${formatPeso(line.amount)}</span></div>`;
+					})
 					.join("")}
 				<div class="mt-1 flex items-center justify-between border-t border-amber-300 pt-1 font-semibold">
 					<span>Pending Total</span><span>${formatPeso(pendingTotal)}</span>

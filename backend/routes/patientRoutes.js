@@ -12,8 +12,198 @@ import {
 
 const router = express.Router();
 const strictLookupEnabled = () => Boolean(env.PARMS_STRICT_PATIENT_LOOKUP);
+const OPEN_PAYMENT_STATUS = new Set(["pending", "processing"]);
+const OPEN_INVOICE_STATUS = new Set(["draft", "queued", "submitted", "pending", "processing"]);
 
 const escapeRegex = (value) => String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const toDisplayLabel = (value, fallback = "Other") => {
+  const normalized = String(value || "").trim();
+  if (!normalized) return fallback;
+
+  return normalized
+    .replace(/[_-]+/g, " ")
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((token) => token.charAt(0).toUpperCase() + token.slice(1).toLowerCase())
+    .join(" ");
+};
+
+const toCurrencyAmount = (value) => {
+  const numeric = Number(value || 0);
+  if (!Number.isFinite(numeric) || numeric <= 0) return 0;
+  return Number((numeric / 100).toFixed(2));
+};
+
+const normalizePendingLine = (line = {}, index = 0) => {
+  const sourceType = String(line?.sourceType || "other").trim().toLowerCase();
+  const normalizedSourceType = ["laboratory", "prescription"].includes(sourceType)
+    ? sourceType
+    : "other";
+
+  const defaultLabel = normalizedSourceType === "laboratory"
+    ? "Laboratory"
+    : normalizedSourceType === "prescription"
+      ? "Prescription"
+      : "Other";
+  const sourceLabel = toDisplayLabel(line?.sourceLabel, defaultLabel);
+
+  const amount = Number(line?.amount || 0);
+  if (!Number.isFinite(amount) || amount < 0) {
+    return null;
+  }
+
+  const referenceId = String(line?.referenceId || line?.lineId || `pending-${index + 1}`).trim();
+  const description = String(line?.description || "Pending balance").trim() || "Pending balance";
+
+  return {
+    sourceType: normalizedSourceType,
+    sourceLabel,
+    referenceId,
+    description,
+    amount: Number(amount.toFixed(2)),
+  };
+};
+
+const mergePendingLines = (baseLines = [], intentLines = []) => {
+  const merged = [];
+  const seen = new Set();
+
+  for (const candidate of [...baseLines, ...intentLines]) {
+    const normalized = normalizePendingLine(candidate, merged.length);
+    if (!normalized) continue;
+
+    const dedupeKey = [
+      normalized.sourceType,
+      String(normalized.referenceId || "").toLowerCase(),
+      String(normalized.description || "").toLowerCase(),
+    ].join("::");
+
+    if (seen.has(dedupeKey)) continue;
+    seen.add(dedupeKey);
+    merged.push(normalized);
+  }
+
+  return merged;
+};
+
+const buildPatientSelectors = (patientId) => {
+  const escaped = escapeRegex(patientId);
+  return [
+    { "patient.parmsPatientId": { $regex: `^${escaped}$`, $options: "i" } },
+    { "patient.externalPatientCode": { $regex: `^${escaped}$`, $options: "i" } },
+  ];
+};
+
+const isIntentOpen = (intent) => {
+  const paymentStatus = String(intent?.paymentStatus || "").toLowerCase();
+  const invoiceStatus = String(intent?.invoiceStatus || "").toLowerCase();
+  return OPEN_PAYMENT_STATUS.has(paymentStatus) && OPEN_INVOICE_STATUS.has(invoiceStatus);
+};
+
+const findIntentContextByPatientId = async (patientId) => {
+  const normalizedPatientId = String(patientId || "").trim();
+  if (!normalizedPatientId) return null;
+
+  const selector = { $or: buildPatientSelectors(normalizedPatientId) };
+
+  const projection = [
+    "intentId",
+    "paymentStatus",
+    "invoiceStatus",
+    "serviceLines",
+    "prescriptionLines",
+    "updatedAt",
+    "createdAt",
+  ].join(" ");
+
+  const openIntent = await PARMS_BillingIntent.findOne({
+    ...selector,
+    paymentStatus: { $in: [...OPEN_PAYMENT_STATUS] },
+    invoiceStatus: { $in: [...OPEN_INVOICE_STATUS] },
+  })
+    .sort({ submittedAt: 1, createdAt: 1 })
+    .select(projection)
+    .lean();
+
+  if (openIntent) {
+    return {
+      intent: openIntent,
+      isOpen: true,
+    };
+  }
+
+  const latestIntent = await PARMS_BillingIntent.findOne(selector)
+    .sort({ updatedAt: -1, createdAt: -1 })
+    .select(projection)
+    .lean();
+
+  if (!latestIntent) return null;
+
+  return {
+    intent: latestIntent,
+    isOpen: isIntentOpen(latestIntent),
+  };
+};
+
+const buildIntentPendingLines = (intentContext) => {
+  const intent = intentContext?.intent;
+  if (!intent) return [];
+
+  const amountForLine = (minorUnits) => {
+    const resolved = toCurrencyAmount(minorUnits);
+    if (!intentContext.isOpen) return 0;
+    return resolved;
+  };
+
+  const serviceLines = (Array.isArray(intent.serviceLines) ? intent.serviceLines : []).map((line, index) => {
+    const rawServiceType = String(line?.serviceType || "").trim();
+    const normalizedServiceType = rawServiceType.toLowerCase();
+    const sourceType = normalizedServiceType.includes("lab") ? "laboratory" : "other";
+    const sourceLabel = toDisplayLabel(rawServiceType, sourceType === "laboratory" ? "Laboratory" : "Service");
+    const metadataDescription = typeof line?.metadata?.description === "string" ? line.metadata.description.trim() : "";
+    const serviceTypeDescription = toDisplayLabel(rawServiceType, "");
+    const parmsServiceCode = String(line?.parmsServiceCode || "").trim();
+    const serviceLabel = serviceTypeDescription || metadataDescription || parmsServiceCode || "Service line";
+
+    return {
+      sourceType,
+      sourceLabel,
+      referenceId: String(line?.lineId || `svc-${index + 1}`).trim(),
+      description: serviceLabel,
+      amount: amountForLine(line?.totalMinor),
+    };
+  });
+
+  const prescriptionLines = (Array.isArray(intent.prescriptionLines) ? intent.prescriptionLines : []).map((line, index) => {
+    const medicationName = String(line?.medicationName || line?.genericName || "Prescription").trim();
+    const dosage = String(line?.dosage || "").trim();
+    const frequency = String(line?.frequency || "").trim();
+    const descriptor = [medicationName, dosage, frequency].filter(Boolean).join(" - ");
+
+    return {
+      sourceType: "prescription",
+      sourceLabel: "Prescription",
+      referenceId: String(line?.rxId || `rx-${index + 1}`).trim(),
+      description: descriptor || "Prescription",
+      amount: amountForLine(line?.totalMinor),
+    };
+  });
+
+  return mergePendingLines(serviceLines, prescriptionLines);
+};
+
+const toIntentMeta = (intentContext) => {
+  if (!intentContext?.intent) return null;
+
+  return {
+    intentId: intentContext.intent.intentId || null,
+    paymentStatus: intentContext.intent.paymentStatus || null,
+    invoiceStatus: intentContext.intent.invoiceStatus || null,
+    isOpen: Boolean(intentContext.isOpen),
+    updatedAt: intentContext.intent.updatedAt || intentContext.intent.createdAt || null,
+  };
+};
 
 const sumPendingBalances = (pendingBalances = []) => {
   return Number(
@@ -165,15 +355,19 @@ router.get("/search", protect, async (req, res) => {
       }
     }
 
-    const pendingBalanceTotal = sumPendingBalances(pendingBalances);
+    const intentContext = await findIntentContextByPatientId(selected.patientId);
+    const intentLines = buildIntentPendingLines(intentContext);
+    const mergedPendingBalances = mergePendingLines(pendingBalances, intentLines);
+    const pendingBalanceTotal = sumPendingBalances(mergedPendingBalances);
 
     return res.status(200).json({
       data: {
         patientId: selected.patientId,
         patientName: selected.patientName,
         matches,
-        pendingBalances,
+        pendingBalances: mergedPendingBalances,
         pendingBalanceTotal,
+        parmsIntent: toIntentMeta(intentContext),
       },
     });
   } catch (error) {
@@ -204,11 +398,16 @@ router.get("/:patientId/balances", protect, async (req, res) => {
       }
     }
 
+    const intentContext = await findIntentContextByPatientId(patientId);
+    const intentLines = buildIntentPendingLines(intentContext);
+    const mergedPendingBalances = mergePendingLines(pendingBalances, intentLines);
+
     return res.status(200).json({
       data: {
         patientId,
-        pendingBalances,
-        pendingBalanceTotal: sumPendingBalances(pendingBalances),
+        pendingBalances: mergedPendingBalances,
+        pendingBalanceTotal: sumPendingBalances(mergedPendingBalances),
+        parmsIntent: toIntentMeta(intentContext),
       },
     });
   } catch (error) {
@@ -265,12 +464,17 @@ router.get("/:patientId", protect, async (req, res) => {
       }
     }
 
+    const intentContext = await findIntentContextByPatientId(patient.patientId);
+    const intentLines = buildIntentPendingLines(intentContext);
+    const mergedPendingBalances = mergePendingLines(pendingBalances, intentLines);
+
     return res.status(200).json({
       data: {
         patientId: patient.patientId,
         patientName: patient.patientName,
-        pendingBalances,
-        pendingBalanceTotal: sumPendingBalances(pendingBalances),
+        pendingBalances: mergedPendingBalances,
+        pendingBalanceTotal: sumPendingBalances(mergedPendingBalances),
+        parmsIntent: toIntentMeta(intentContext),
       },
     });
   } catch (error) {

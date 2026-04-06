@@ -132,6 +132,7 @@ export const STAFF_createTransaction = async (req, res) => {
       patientId: req.body.patientId,
       patientName: req.body.patientName,
       discountRate: req.body.discountRate,
+      pendingBalances: req.body.pendingBalances,
     });
 
     return res.status(201).json({
@@ -150,6 +151,8 @@ export const STAFF_createTransaction = async (req, res) => {
         vatIncluded: transaction.vatIncluded,
         netAmount: transaction.netAmount,
         totalAmount: transaction.totalAmount,
+        pendingBalances: transaction.parmsPendingBalances || [],
+        pendingBalanceTotal: transaction.parmsPendingTotal || 0,
         status: transaction.status,
         createdAt: transaction.createdAt,
       },
@@ -189,10 +192,13 @@ export const STAFF_completeTransaction = async (req, res) => {
         transactionId: transaction._id,
         status: transaction.status,
         totalAmount: transaction.totalAmount,
+        pendingBalanceTotal: transaction.parmsPendingTotal || 0,
         cashReceived: transaction.cashReceived,
         change: transaction.change,
         completedAt: transaction.completedAt,
         receiptNumber: transaction.receiptSnapshot?.receiptNumber,
+        parmsSyncStatus: transaction.parmsSyncStatus,
+        parmsSyncAttempts: transaction.parmsSyncAttempts,
         batchUsage: (transaction.items || []).map((item) => ({
           productId: item.productId,
           name: item.name,
@@ -230,11 +236,14 @@ export const STAFF_getHistory = async (req, res) => {
         vatRate: transaction.vatRate,
         vatAmount: transaction.vatAmount,
         totalAmount: transaction.totalAmount,
+        pendingBalanceTotal: transaction.parmsPendingTotal || 0,
         cashReceived: transaction.cashReceived,
         change: transaction.change,
         status: transaction.status,
         voidedAt: transaction.voidedAt,
         voidReason: transaction.voidReason,
+        parmsSyncStatus: transaction.parmsSyncStatus,
+        parmsSyncAttempts: transaction.parmsSyncAttempts,
         receiptSnapshot: transaction.receiptSnapshot,
       })),
     });

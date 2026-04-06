@@ -51,6 +51,25 @@ const authLimiter = rateLimit({
   message: { message: "Too many authentication attempts. Please try again later." },
 });
 
+const isAllowedVercelOrigin = (origin) => {
+  if (!env.ALLOW_VERCEL_PREVIEW_ORIGINS) {
+    return false;
+  }
+
+  const normalizedOrigin = String(origin || "").trim().toLowerCase();
+  if (!normalizedOrigin.startsWith("https://")) {
+    return false;
+  }
+
+  try {
+    const parsed = new URL(normalizedOrigin);
+    const hostname = String(parsed.hostname || "").toLowerCase();
+    return hostname.endsWith(env.VERCEL_ORIGIN_SUFFIX);
+  } catch {
+    return false;
+  }
+};
+
 const corsOptions = {
   origin(origin, callback) {
     if (!origin) {
@@ -62,6 +81,10 @@ const corsOptions = {
     }
 
     if (env.CORS_ORIGINS.includes(origin)) {
+      return callback(null, true);
+    }
+
+    if (isAllowedVercelOrigin(origin)) {
       return callback(null, true);
     }
 

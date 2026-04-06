@@ -9,6 +9,10 @@
       "dest": "/HTML/loginPage/loginPage.html"
     },
     {
+      "src": "/api/(.*)",
+      "dest": "https://ibms-backend.vercel.app/api/$1"
+    },
+    {
       "handle": "filesystem"
     }
   ]

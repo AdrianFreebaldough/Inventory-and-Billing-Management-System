@@ -8,6 +8,10 @@ export const upsertPARMSBillingIntent = async (req, res) => {
 		const idempotencyKey = String(req.headers["x-idempotency-key"] || "").trim();
 		const correlationId = String(req.headers["x-correlation-id"] || "").trim();
 
+		if (!idempotencyKey) {
+			return res.status(400).json({ message: "X-Idempotency-Key header is required" });
+		}
+
 		const result = await upsertBillingIntentFromPARMS({
 			payload: req.body,
 			idempotencyKey,

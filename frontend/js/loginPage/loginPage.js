@@ -298,6 +298,23 @@ function resolveDashboardRedirect(role) {
     : "../staff_dashboard/staff_dashboard.html";
 }
 
+function resolveApiBaseUrl() {
+  const configuredBase = String(window.IBMS_API_BASE_URL || "")
+    .trim()
+    .replace(/\/+$/, "");
+
+  if (configuredBase) {
+    return configuredBase;
+  }
+
+  const host = String(window.location.hostname || "").toLowerCase();
+  if (host === "localhost" || host === "127.0.0.1") {
+    return "http://localhost:3000";
+  }
+
+  return "";
+}
+
 function validateLogin() {
   const $ = (id) => document.getElementById(id);
 
@@ -314,7 +331,7 @@ function validateLogin() {
     return;
   }
 
-  const API_BASE_URL = window.IBMS_API_BASE_URL || "http://localhost:3000";
+  const API_BASE_URL = resolveApiBaseUrl();
 
   fetch(`${API_BASE_URL}/api/auth/login`, {
     method: "POST",

@@ -4,6 +4,12 @@ import Product from "../models/product.js";
 import InventoryRequest from "../models/InventoryRequest.js";
 
 const CATEGORY_MAP = {
+  service: "Services",
+  services: "Services",
+  consultation: "Services",
+  consultations: "Services",
+  laboratory: "Services",
+  "lab test": "Services",
   antibiotic: "Antibiotic",
   antibiotics: "Antibiotic",
   medicine: "Medicine",

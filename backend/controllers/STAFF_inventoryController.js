@@ -104,6 +104,23 @@ const STAFF_normalizeCategory = (value) => {
     .join(" ");
 };
 
+const STAFF_isInventoryServiceCategory = (value) => {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (!normalized) return false;
+
+  return (
+    normalized.includes("service") ||
+    normalized.includes("consult") ||
+    normalized.includes("follow") ||
+    normalized.includes("checkup") ||
+    normalized.includes("visit") ||
+    normalized === "lab test" ||
+    normalized.includes("laboratory") ||
+    normalized === "vaccination" ||
+    normalized === "immunization"
+  );
+};
+
 const STAFF_pickFirstNonEmpty = (...values) => {
   for (const value of values) {
     if (value === null || value === undefined) continue;
@@ -361,7 +378,11 @@ export const STAFF_getInventory = async (req, res) => {
       .select("name category status quantity unit unitPrice minStock supplier description expiryDate batchNumber isArchived createdAt genericName brandName dosageForm strength medicineName")
       .lean();
 
-    const itemsWithBatches = await STAFF_attachBatchDataToItems(items);
+    const nonServiceItems = items.filter(
+      (item) => !STAFF_isInventoryServiceCategory(item.category)
+    );
+
+    const itemsWithBatches = await STAFF_attachBatchDataToItems(nonServiceItems);
     const enrichedItems = await STAFF_enrichMissingFieldsFromApprovedRequests(itemsWithBatches);
     const data = enrichedItems.map(STAFF_buildItemPayload);
 
@@ -387,6 +408,10 @@ export const STAFF_getInventory = async (req, res) => {
         .lean();
 
       pendingRequests.forEach((pr) => {
+        if (STAFF_isInventoryServiceCategory(pr.category)) {
+          return;
+        }
+
         filteredData.push({
           itemId: pr._id,
           itemName: pr.itemName,
@@ -456,12 +481,22 @@ export const STAFF_createAddItemRequest = async (req, res) => {
   try {
     const { itemName, category, initialQuantity, unitPrice, unit, minStock, description, expiryDate, batchNumber, genericName, brandName, dosageForm, strength, medicineName, supplier } = req.body;
 
+    const normalizedItemName = String(itemName || "").trim();
+    const normalizedCategory = STAFF_normalizeCategory(category);
+    const normalizedMedicineName = String(medicineName || "").trim();
+
     const parsedQuantity = STAFF_parsePositiveNumber(initialQuantity);
     const parsedUnitPrice = Number(unitPrice ?? 0);
     const parsedMinStock = Number(minStock ?? 10);
-    if (!itemName || !category || parsedQuantity === null) {
+    if (!normalizedItemName || !normalizedCategory || parsedQuantity === null) {
       return res.status(400).json({
         message: "itemName, category, and positive initialQuantity are required",
+      });
+    }
+
+    if (!normalizedMedicineName) {
+      return res.status(400).json({
+        message: "medicineName is required",
       });
     }
 
@@ -481,8 +516,8 @@ export const STAFF_createAddItemRequest = async (req, res) => {
       requestType: "ADD_ITEM",
       requestedBy: req.user.id,
       date_requested: new Date(),
-      itemName: String(itemName).trim(),
-      category: STAFF_normalizeCategory(category),
+      itemName: normalizedItemName,
+      category: normalizedCategory,
       initialQuantity: parsedQuantity,
       unitPrice: parsedUnitPrice,
       unit: unit ? String(unit).trim() : "pcs",
@@ -494,7 +529,7 @@ export const STAFF_createAddItemRequest = async (req, res) => {
       brandName: brandName ? String(brandName).trim() : null,
       dosageForm: dosageForm ? String(dosageForm).trim() : null,
       strength: strength ? String(strength).trim() : null,
-      medicineName: medicineName ? String(medicineName).trim() : null,
+      medicineName: normalizedMedicineName,
       supplier: supplier ? String(supplier).trim() : null,
       status: "pending",
     });

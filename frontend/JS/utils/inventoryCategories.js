@@ -15,6 +15,12 @@ export const ALL_CATEGORIES_LABEL = "All Categories";
 export const FILTER_PLACEHOLDER_LABEL = "Filter by category";
 
 const CATEGORY_ALIAS_MAP = {
+  service: "Services",
+  services: "Services",
+  consultation: "Services",
+  consultations: "Services",
+  laboratory: "Services",
+  "lab test": "Services",
   antibiotic: "Antibiotic",
   antibiotics: "Antibiotic",
   medicine: "Medicine",

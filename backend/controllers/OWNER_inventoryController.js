@@ -116,6 +116,23 @@ const OWNER_buildCategoryFilterRegex = (value) => {
   return new RegExp(pattern, "i");
 };
 
+const OWNER_isInventoryServiceCategory = (value) => {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (!normalized) return false;
+
+  return (
+    normalized.includes("service") ||
+    normalized.includes("consult") ||
+    normalized.includes("follow") ||
+    normalized.includes("checkup") ||
+    normalized.includes("visit") ||
+    normalized === "lab test" ||
+    normalized.includes("laboratory") ||
+    normalized === "vaccination" ||
+    normalized === "immunization"
+  );
+};
+
 const OWNER_buildLegacyBatch = (product) => {
   if (!product || Number(product.quantity ?? 0) <= 0) {
     return null;
@@ -375,7 +392,11 @@ export const OWNER_getActiveInventory = async (req, res) => {
       .sort({ name: 1 })
       .lean();
 
-    const productsWithBatches = await OWNER_attachBatchDataToProducts(products);
+    const nonServiceProducts = products.filter(
+      (product) => !OWNER_isInventoryServiceCategory(product.category)
+    );
+
+    const productsWithBatches = await OWNER_attachBatchDataToProducts(nonServiceProducts);
     const enrichedWithRequestFields = await OWNER_enrichMissingFieldsFromApprovedRequests(productsWithBatches);
     const enrichedProducts = enrichedWithRequestFields.map(OWNER_enrichProductWithExpiration);
 

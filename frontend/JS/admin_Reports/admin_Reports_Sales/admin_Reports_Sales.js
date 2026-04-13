@@ -530,7 +530,7 @@ function getTopServicesChartOptions() {
     plugins: {
       title: {
         display: true,
-        text: "Top Items by Revenue",
+        text: "Top Services by Revenue",
         font: { size: 16, weight: "bold" },
         padding: { top: 10, bottom: 20 },
       },

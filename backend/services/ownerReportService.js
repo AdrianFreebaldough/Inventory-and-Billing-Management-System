@@ -51,6 +51,15 @@ const normalizeCategoryBucket = (rawCategory) => {
   const value = String(rawCategory || "").trim().toLowerCase();
 
   if (!value) return "Medications";
+  if (
+    value.includes("service") ||
+    value.includes("consult") ||
+    value.includes("follow") ||
+    value.includes("checkup") ||
+    value.includes("visit")
+  ) {
+    return "Services";
+  }
   if (value.includes("vaccine") || value.includes("immun")) return "Vaccines";
   if (value.includes("diagnostic") || value.includes("kit") || value.includes("test")) {
     return "Diagnostic Kits";
@@ -65,6 +74,40 @@ const normalizeCategoryBucket = (rawCategory) => {
   }
 
   return "Medications";
+};
+
+const SALES_SERVICE_CATEGORY_ALIASES = new Set([
+  "service",
+  "services",
+  "consultation",
+  "follow-up",
+  "follow up",
+  "routine checkup",
+  "general consultation",
+  "lab test",
+  "laboratory",
+  "vaccination",
+  "immunization",
+]);
+
+const SALES_SERVICE_NAME_PATTERN = /(consult|checkup|follow[\s-]?up|lab\s*test|urinalysis|blood\s*test|vaccination|immunization)/i;
+
+const isSalesServiceEntry = ({ rawCategory, itemName }) => {
+  const categoryValue = String(rawCategory || "").trim().toLowerCase();
+  const itemLabel = String(itemName || "").trim();
+
+  if (SALES_SERVICE_CATEGORY_ALIASES.has(categoryValue)) return true;
+  if (
+    categoryValue.includes("service") ||
+    categoryValue.includes("consult") ||
+    categoryValue.includes("checkup") ||
+    categoryValue.includes("follow") ||
+    categoryValue.includes("lab test")
+  ) {
+    return true;
+  }
+
+  return SALES_SERVICE_NAME_PATTERN.test(itemLabel);
 };
 
 const resolvePeriodConfig = (period) => {
@@ -267,17 +310,21 @@ export const getSalesReportData = async ({ period }) => {
   const productCategoryMap = new Map(products.map((product) => [String(product._id), product.category || "Uncategorized"]));
 
   const itemBreakdownMap = new Map();
+  let servicesRevenue = 0;
   let productsRevenue = 0;
 
   for (const item of allItems) {
-    const key = `${String(item.productId || "")}|${String(item.name || "Unknown")}`;
     const amount = Number(item.lineTotal || 0);
     const quantity = Number(item.quantity || 0);
-    const subCategory = productCategoryMap.get(String(item.productId || "")) || "Uncategorized";
+    const rawCategory = String(productCategoryMap.get(String(item.productId || "")) || "").trim();
+    const isService = isSalesServiceEntry({ rawCategory, itemName: item.name || "" });
+    const category = isService ? "Services" : "Products";
+    const subCategory = rawCategory || "Uncategorized";
+    const key = `${String(item.productId || "")}|${String(item.name || "Unknown")}|${category}`;
 
     if (!itemBreakdownMap.has(key)) {
       itemBreakdownMap.set(key, {
-        category: "Products",
+        category,
         subCategory,
         item: item.name || "Unknown",
         timesAvailed: 0,
@@ -288,7 +335,11 @@ export const getSalesReportData = async ({ period }) => {
     const aggregate = itemBreakdownMap.get(key);
     aggregate.timesAvailed += quantity;
     aggregate.totalRevenue += amount;
-    productsRevenue += amount;
+    if (isService) {
+      servicesRevenue += amount;
+    } else {
+      productsRevenue += amount;
+    }
   }
 
   const table = [...itemBreakdownMap.values()]
@@ -299,7 +350,7 @@ export const getSalesReportData = async ({ period }) => {
     }))
     .sort((a, b) => b.totalRevenue - a.totalRevenue);
 
-  const topServicesRows = table.slice(0, 5);
+  const topServicesRows = table.filter((row) => row.category === "Services").slice(0, 5);
   const totalRevenue = Number(transactions.reduce((sum, row) => sum + Number(row.totalAmount || 0), 0).toFixed(2));
   const totalTransactions = transactions.length;
   const averageTransaction = totalTransactions ? Number((totalRevenue / totalTransactions).toFixed(2)) : 0;
@@ -316,7 +367,7 @@ export const getSalesReportData = async ({ period }) => {
     },
     servicesChart: {
       labels: ["Services", "Products"],
-      data: [0, Number(productsRevenue.toFixed(2))],
+      data: [Number(servicesRevenue.toFixed(2)), Number(productsRevenue.toFixed(2))],
     },
     topServicesChart: {
       labels: topServicesRows.map((row) => row.item),
@@ -391,6 +442,7 @@ export const getInventoryReportData = async ({ period }) => {
 
   for (const product of products) {
     const categoryBucket = normalizeCategoryBucket(product.category);
+    if (categoryBucket === "Services") continue;
     const categoryKey = toCategoryKey(categoryBucket);
     const productStatus = String(product.status || "").toLowerCase();
     totalItems += Number(product.quantity || 0);
@@ -422,6 +474,11 @@ export const getInventoryReportData = async ({ period }) => {
     const items = Array.isArray(transaction.items) ? transaction.items : [];
 
     for (const item of items) {
+      const bucket = normalizeCategoryBucket(productCategoryMap.get(String(item.productId || "")));
+      if (bucket === "Services") {
+        continue;
+      }
+
       const quantity = Number(item.quantity || 0);
       const amount = Number(item.lineTotal || 0);
       const key = `${String(item.productId || "")}|${String(item.name || "Unknown")}`;
@@ -442,7 +499,6 @@ export const getInventoryReportData = async ({ period }) => {
         continue;
       }
 
-      const bucket = normalizeCategoryBucket(productCategoryMap.get(String(item.productId || "")));
       const bucketKey = toCategoryKey(bucket);
       usageSeries[bucketKey][index] += quantity;
     }

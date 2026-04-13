@@ -21,6 +21,23 @@ const getRequestTimestamp = (request) => {
   return Number.isFinite(parsed) ? parsed : 0;
 };
 
+const isInventoryServiceCategory = (value) => {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (!normalized) return false;
+
+  return (
+    normalized.includes("service") ||
+    normalized.includes("consult") ||
+    normalized.includes("follow") ||
+    normalized.includes("checkup") ||
+    normalized.includes("visit") ||
+    normalized === "lab test" ||
+    normalized.includes("laboratory") ||
+    normalized === "vaccination" ||
+    normalized === "immunization"
+  );
+};
+
 /* ================================================================
    1.  GET /api/owner/dashboard/summary
        Dashboard summary metrics (single request)
@@ -34,7 +51,7 @@ export const getDashboardSummary = async (_req, res) => {
       todaysRevenueAgg,
       activeStaffCount,
       pendingInventoryRequests,
-      lowStockItems,
+      lowStockCandidates,
     ] = await Promise.all([
       /* Total revenue – all completed transactions */
       STAFF_BillingTransaction.aggregate([
@@ -55,11 +72,17 @@ export const getDashboardSummary = async (_req, res) => {
       InventoryRequest.countDocuments({ status: "pending" }),
 
       /* Low / out-of-stock items (uses model-driven status, NOT hardcoded threshold) */
-      Product.countDocuments({
+      Product.find({
         status: { $in: ["low", "out"] },
         isArchived: { $ne: true },
-      }),
+      })
+        .select("category")
+        .lean(),
     ]);
+
+    const lowStockItems = lowStockCandidates.filter(
+      (item) => !isInventoryServiceCategory(item.category)
+    ).length;
 
     res.json({
       totalRevenue:             totalRevenueAgg[0]?.total  || 0,
@@ -177,7 +200,7 @@ export const getLowStockItems = async (_req, res) => {
       .select("name category quantity minStock status unit")
       .lean();
 
-    res.json(products);
+    res.json(products.filter((product) => !isInventoryServiceCategory(product.category)));
   } catch (error) {
     console.error("getLowStockItems error:", error);
     res.status(500).json({ message: error.message });

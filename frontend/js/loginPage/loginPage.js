@@ -1,4 +1,55 @@
-document.addEventListener("DOMContentLoaded", () => {
+function resetPasswordToggles() {
+  document.querySelectorAll(".eyeToggle").forEach(btn => {
+    const input = document.getElementById(btn.dataset.target);
+    if (!input) return;
+
+    const eyeOpen = btn.querySelector(".eyeOpen");
+    const eyeClose = btn.querySelector(".eyeClose");
+
+    input.type = "password";
+    input.value = "";
+
+    if (eyeOpen && eyeClose) {
+      eyeOpen.classList.remove("hidden");
+      eyeClose.classList.add("hidden");
+    }
+  });
+}
+
+let eyeToggleHandlerBound = false;
+
+function bindEyeToggleHandler() {
+  if (eyeToggleHandlerBound) return;
+
+  document.addEventListener("click", (event) => {
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+
+    const btn = target.closest(".eyeToggle");
+    if (!btn) return;
+
+    const targetId = String(btn.dataset.target || "").trim();
+    if (!targetId) return;
+
+    const input = document.getElementById(targetId);
+    if (!(input instanceof HTMLInputElement)) return;
+
+    const eyeOpen = btn.querySelector(".eyeOpen");
+    const eyeClose = btn.querySelector(".eyeClose");
+    const isPassword = input.type === "password";
+
+    input.type = isPassword ? "text" : "password";
+
+    if (eyeOpen && eyeClose) {
+      eyeOpen.classList.toggle("hidden", isPassword);
+      eyeClose.classList.toggle("hidden", !isPassword);
+    }
+  });
+
+  eyeToggleHandlerBound = true;
+}
+
+function initializeLoginPage() {
 
   // =========================
   // Utility Shortcuts
@@ -19,46 +70,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // =========================
   // Eye Toggle
   // =========================
-document.querySelectorAll(".eyeToggle").forEach(btn => {
-  btn.addEventListener("click", function () {
-    const input = document.getElementById(this.dataset.target);
-    if (!input) return;
-
-    const eyeOpen = this.querySelector(".eyeOpen");
-    const eyeClose = this.querySelector(".eyeClose");
-
-    const isPassword = input.type === "password";
-
-    // Toggle input visibility
-    input.type = isPassword ? "text" : "password";
-
-    // Toggle icons properly
-    eyeOpen.classList.toggle("hidden", isPassword);
-    eyeClose.classList.toggle("hidden", !isPassword);
-  });
-});
-
-function resetPasswordToggles() {
-  document.querySelectorAll(".eyeToggle").forEach(btn => {
-    const input = document.getElementById(btn.dataset.target);
-    if (!input) return;
-
-    const eyeOpen = btn.querySelector(".eyeOpen");
-    const eyeClose = btn.querySelector(".eyeClose");
-
-    // Reset input type
-    input.type = "password";
-
-    // Optional: clear value (if you want it cleared)
-    input.value = "";
-
-    // Reset icons
-    if (eyeOpen && eyeClose) {
-      eyeOpen.classList.remove("hidden");
-      eyeClose.classList.add("hidden");
-    }
-  });
-}
+  bindEyeToggleHandler();
 
   // =========================
   // PIN Validation
@@ -204,7 +216,13 @@ function resetPasswordToggles() {
     showLoginPage();
   });
 
-});
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", initializeLoginPage, { once: true });
+} else {
+  initializeLoginPage();
+}
 
 
 // =========================

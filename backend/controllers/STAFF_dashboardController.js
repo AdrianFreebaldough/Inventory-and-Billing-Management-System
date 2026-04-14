@@ -23,6 +23,23 @@ const STAFF_getTodayRange = () => {
   return { start, end };
 };
 
+const STAFF_isInventoryServiceCategory = (value) => {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (!normalized) return false;
+
+  return (
+    normalized.includes("service") ||
+    normalized.includes("consult") ||
+    normalized.includes("follow") ||
+    normalized.includes("checkup") ||
+    normalized.includes("visit") ||
+    normalized === "lab test" ||
+    normalized.includes("laboratory") ||
+    normalized === "vaccination" ||
+    normalized === "immunization"
+  );
+};
+
 export const STAFF_getDashboardSummary = async (req, res) => {
   try {
     const { start, end } = STAFF_getTodayRange();
@@ -120,10 +137,14 @@ export const STAFF_getInventoryAlerts = async (req, res) => {
     })
       .sort({ status: 1, quantity: 1, name: 1 })
       .limit(limit)
-      .select("name status quantity")
+      .select("name status quantity category")
       .lean();
 
-    const data = products.map((product) => ({
+    const filteredProducts = products.filter(
+      (product) => !STAFF_isInventoryServiceCategory(product.category)
+    );
+
+    const data = filteredProducts.map((product) => ({
       itemName: product.name,
       stockStatus: product.status,
       remainingQuantity: product.quantity,

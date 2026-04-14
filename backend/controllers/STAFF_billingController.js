@@ -56,6 +56,12 @@ const STAFF_normalizeCategoryValue = (value) => {
   if (!normalized) return "";
 
   const canonicalMap = {
+    service: "Services",
+    services: "Services",
+    consultation: "Services",
+    consultations: "Services",
+    laboratory: "Services",
+    "lab test": "Services",
     antibiotic: "Antibiotic",
     antibiotics: "Antibiotic",
     medicine: "Medicine",
@@ -96,6 +102,12 @@ const STAFF_buildCategoryFilterRegex = (value) => {
   if (!normalized) return null;
 
   const aliases = {
+    service: "service",
+    services: "service",
+    consultation: "service",
+    consultations: "service",
+    laboratory: "service",
+    "lab test": "service",
     antibiotic: "antibiotic",
     antibiotics: "antibiotic",
     medicine: "medicine",
@@ -124,6 +136,80 @@ const STAFF_buildCategoryFilterRegex = (value) => {
   return new RegExp(pattern, "i");
 };
 
+const STAFF_isServiceCategoryValue = (value) => {
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/&/g, "and")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+
+  if (!normalized) return false;
+  if (["service", "services", "consultation", "consultations", "laboratory", "lab test"].includes(normalized)) {
+    return true;
+  }
+
+  return normalized.includes("service") || normalized.includes("consult") || normalized.includes("lab");
+};
+
+const STAFF_deriveServiceClassification = ({ name, category }) => {
+  const rawName = String(name || "").trim();
+  const normalizedName = rawName.toLowerCase();
+  const normalizedCategory = String(category || "")
+    .trim()
+    .toLowerCase()
+    .replace(/&/g, "and")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+
+  const isLabByName = normalizedName.startsWith("lab test");
+  const isLabByCategory = normalizedCategory === "lab test";
+
+  if (isLabByName || isLabByCategory) {
+    const subtypeLabel = rawName.toLowerCase().startsWith("lab test -")
+      ? rawName.slice("Lab Test -".length).trim()
+      : rawName;
+
+    let subclassification = null;
+    const normalizedSubtype = subtypeLabel.toLowerCase();
+    if (normalizedSubtype) {
+      if (normalizedSubtype.includes("cbc") || normalizedSubtype.includes("blood")) {
+        subclassification = "Blood Test";
+      } else if (normalizedSubtype.includes("urinalysis") || normalizedSubtype.includes("urine")) {
+        subclassification = "Urine Test";
+      } else {
+        subclassification = "Laboratory";
+      }
+    }
+
+    return {
+      category: "Lab Test",
+      subclassification,
+    };
+  }
+
+  if (normalizedName.includes("follow-up") || normalizedName.includes("follow up")) {
+    return { category: "Consultation", subclassification: "Follow-up" };
+  }
+
+  if (normalizedName.includes("routine checkup")) {
+    return { category: "Consultation", subclassification: "Routine Checkup" };
+  }
+
+  if (normalizedName.includes("consultation")) {
+    return { category: "Consultation", subclassification: "General Consultation" };
+  }
+
+  if (normalizedName.includes("vaccin") || normalizedCategory.includes("vaccin")) {
+    return { category: "Vaccination", subclassification: null };
+  }
+
+  return {
+    category: "Services",
+    subclassification: null,
+  };
+};
+
 export const STAFF_createTransaction = async (req, res) => {
   try {
     const transaction = await STAFF_createBillingTransaction({
@@ -133,6 +219,7 @@ export const STAFF_createTransaction = async (req, res) => {
       patientName: req.body.patientName,
       discountRate: req.body.discountRate,
       pendingBalances: req.body.pendingBalances,
+      parmsIntentId: req.body.parmsIntentId,
     });
 
     return res.status(201).json({
@@ -228,6 +315,7 @@ export const STAFF_getHistory = async (req, res) => {
         transactionId: transaction._id,
         staffId: transaction.staffId,
         patientId: transaction.patientId,
+        patientName: transaction.patientName || transaction.editedPatientName || transaction.receiptSnapshot?.patientName || "",
         dateTime: transaction.completedAt || transaction.createdAt,
         items: transaction.items,
         subtotal: transaction.subtotal,
@@ -294,7 +382,7 @@ export const STAFF_getReceipt = async (req, res) => {
 
 export const STAFF_getBillingProducts = async (req, res) => {
   try {
-    const { category } = req.query;
+    const { category, type } = req.query;
 
     const filter = {
       isArchived: { $ne: true },
@@ -360,6 +448,13 @@ export const STAFF_getBillingProducts = async (req, res) => {
 
     const data = products.map((product) => {
       const fallback = fallbackMap.get(String(product._id));
+      const isService = STAFF_isServiceCategoryValue(product.category);
+      const serviceClassification = isService
+        ? STAFF_deriveServiceClassification({
+          name: product.name,
+          category: product.category,
+        })
+        : null;
       const productBatches = batchesByProduct.get(String(product._id)) || [];
       const effectiveStatuses = productBatches.map((batch) => getBatchEffectiveStatus(batch));
       const eligibleBatches = productBatches.filter((batch) => {
@@ -409,8 +504,12 @@ export const STAFF_getBillingProducts = async (req, res) => {
 
       return {
         id: product._id,
+        type: isService ? "service" : "item",
         name: product.name,
-        category: STAFF_normalizeCategoryValue(product.category),
+        category: isService
+          ? serviceClassification?.category || "Services"
+          : STAFF_normalizeCategoryValue(product.category),
+        subclassification: isService ? (serviceClassification?.subclassification || null) : null,
         genericName: product.genericName || fallback?.genericName || null,
         brandName: product.brandName || fallback?.brandName || null,
         medicineName: product.medicineName || fallback?.medicineName || null,
@@ -434,9 +533,19 @@ export const STAFF_getBillingProducts = async (req, res) => {
       };
     });
 
+    const requestedType = String(type || "").trim().toLowerCase();
+    const typedData = ["item", "service"].includes(requestedType)
+      ? data.filter((row) => row.type === requestedType)
+      : data;
+    const filteredData = typedData.filter((service) => (
+      service.type !== "service" ||
+      service.category !== "Lab Test" ||
+      service.subclassification !== null
+    ));
+
     return res.status(200).json({
-      count: data.length,
-      data,
+      count: filteredData.length,
+      data: filteredData,
     });
   } catch (error) {
     return STAFF_handleBillingError(res, error);

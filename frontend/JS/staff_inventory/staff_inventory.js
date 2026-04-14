@@ -1802,7 +1802,7 @@ function showAddItemModal() {
                 await apiFetch(API.ADD_ITEM_REQUEST, {
                     method: "POST",
                     body: JSON.stringify({
-                        itemName: medicineName || generic,
+                        itemName: medicineName,
                         medicineName: medicineName,
                         genericName: generic,
                         brandName: brand,

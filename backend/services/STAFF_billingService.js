@@ -7,7 +7,7 @@ import { createStockLog } from "./Owner_StockLog.service.js";
 import { buildFefoAllocationPlan, classifyExpiryRisk, sortBatchesForFefo, toUiExpiryRiskKey } from "./fefoService.js";
 import { BATCH_MANUAL_STATUS } from "./batchLifecycleService.js";
 import { syncProductFromBatchTotals } from "./inventoryIntegrityService.js";
-import { queueCompletedTransactionSync } from "./parmsIntegrationService.js";
+import { syncCompletedTransactionReceiptToPARMS } from "./parmsIntegrationService.js";
 import { markIntentPaidFromTransaction, resolveOpenIntentForPatient } from "./parmsBillingIntentService.js";
 
 class STAFF_BillingError extends Error {
@@ -31,14 +31,57 @@ const STAFF_makeReceiptNumber = () => {
   return `RCPT-${yyyy}${mm}${dd}-${timePart}-${randomPart}`;
 };
 
-const STAFF_normalizePendingBalanceLines = (pendingBalancesPayload = []) => {
-  if (!Array.isArray(pendingBalancesPayload)) return [];
+const STAFF_normalizeLookup = (value) => String(value || "")
+  .trim()
+  .toLowerCase()
+  .replace(/[^a-z0-9]+/g, " ")
+  .trim();
 
-  const normalized = [];
+const STAFF_requiredServiceResolvedInCart = ({ line, itemSnapshot = [] }) => {
+  const normalizedLinkedProductId = String(line?.linkedProductId || "").trim();
+  if (normalizedLinkedProductId) {
+    return itemSnapshot.some((item) => String(item?.productId || "") === normalizedLinkedProductId && Number(item?.quantity || 0) > 0);
+  }
+
+  const normalizedDescription = STAFF_normalizeLookup(line?.description);
+  const normalizedSourceLabel = STAFF_normalizeLookup(line?.sourceLabel);
+  const normalizedServiceCode = STAFF_normalizeLookup(line?.serviceCode);
+
+  return itemSnapshot.some((item) => {
+    if (!item) return false;
+    const normalizedItemName = STAFF_normalizeLookup(item.name);
+    if (!normalizedItemName) return false;
+
+    if (normalizedDescription && (normalizedItemName === normalizedDescription || normalizedItemName.includes(normalizedDescription) || normalizedDescription.includes(normalizedItemName))) {
+      return true;
+    }
+
+    if (normalizedSourceLabel && (normalizedItemName === normalizedSourceLabel || normalizedItemName.includes(normalizedSourceLabel) || normalizedSourceLabel.includes(normalizedItemName))) {
+      return true;
+    }
+
+    if (normalizedServiceCode && (normalizedItemName === normalizedServiceCode || normalizedItemName.includes(normalizedServiceCode))) {
+      return true;
+    }
+
+    return false;
+  });
+};
+
+const STAFF_normalizePendingBalanceLines = ({ pendingBalancesPayload = [], itemSnapshot = [] }) => {
+  if (!Array.isArray(pendingBalancesPayload)) {
+    return {
+      lines: [],
+      total: 0,
+    };
+  }
+
+  const normalizedReferenceLines = [];
+  const unresolvedRequiredServices = [];
 
   pendingBalancesPayload.forEach((line, index) => {
     const amount = Number(line?.amount);
-    if (!Number.isFinite(amount) || amount <= 0) {
+    if (!Number.isFinite(amount) || amount < 0) {
       return;
     }
 
@@ -46,16 +89,66 @@ const STAFF_normalizePendingBalanceLines = (pendingBalancesPayload = []) => {
     const normalizedSourceType = ["laboratory", "prescription"].includes(sourceType)
       ? sourceType
       : "other";
+    const origin = String(line?.origin || "parms").trim().toLowerCase() === "intent" ? "intent" : "parms";
 
-    normalized.push({
+    const rawObligationKind = String(line?.obligationKind || "").trim().toLowerCase();
+    const hasPositiveAmount = amount > 0;
+    const obligationKind = ["required_service", "optional_prescription", "reference"].includes(rawObligationKind)
+      ? rawObligationKind
+      : (origin === "parms"
+        ? (normalizedSourceType === "prescription" ? "optional_prescription" : "required_service")
+        : (normalizedSourceType === "prescription"
+          ? (hasPositiveAmount ? "optional_prescription" : "reference")
+          : (hasPositiveAmount ? "required_service" : "reference")));
+
+    const description = String(line?.description || "Pending balance").trim() || "Pending balance";
+    const resolution = String(line?.resolution || "").trim().toLowerCase();
+
+    if (obligationKind === "required_service") {
+      const isResolvedInCart = STAFF_requiredServiceResolvedInCart({
+        line,
+        itemSnapshot,
+      });
+
+      if (!isResolvedInCart) {
+        unresolvedRequiredServices.push(description);
+      }
+      return;
+    }
+
+    if (obligationKind === "optional_prescription") {
+      // Prescription lines are optional for clinic purchase.
+      return;
+    }
+
+    if (amount <= 0) {
+      return;
+    }
+
+    normalizedReferenceLines.push({
       sourceType: normalizedSourceType,
       referenceId: String(line?.referenceId || line?.lineId || `pending-${index + 1}`).trim(),
-      description: String(line?.description || "Pending balance").trim(),
+      description,
       amount: STAFF_roundCurrency(amount),
     });
   });
 
-  return normalized;
+  if (unresolvedRequiredServices.length) {
+    const unresolvedLabels = unresolvedRequiredServices.slice(0, 3).join(", ");
+    throw new STAFF_BillingError(
+      `Required PARMS service lines must be added to cart before payment${unresolvedLabels ? `: ${unresolvedLabels}` : ""}`,
+      400
+    );
+  }
+
+  const total = STAFF_roundCurrency(
+    normalizedReferenceLines.reduce((sum, line) => sum + Number(line.amount || 0), 0)
+  );
+
+  return {
+    lines: normalizedReferenceLines,
+    total,
+  };
 };
 
 const STAFF_logBillingActivity = async ({
@@ -410,6 +503,7 @@ export const STAFF_createBillingTransaction = async ({
   patientName,
   discountRate = 0,
   pendingBalances = [],
+  parmsIntentId = null,
 }) => {
   if (!patientId || typeof patientId !== "string" || !patientId.trim()) {
     throw new STAFF_BillingError("Patient ID is required", 400);
@@ -430,10 +524,12 @@ export const STAFF_createBillingTransaction = async ({
     ? await STAFF_buildItemsSnapshot(items)
     : { items: [], totalAmount: 0 };
 
-  const normalizedPendingBalances = STAFF_normalizePendingBalanceLines(pendingBalances);
-  const pendingBalanceTotal = STAFF_roundCurrency(
-    normalizedPendingBalances.reduce((sum, line) => sum + Number(line.amount || 0), 0)
-  );
+  const normalizedPending = STAFF_normalizePendingBalanceLines({
+    pendingBalancesPayload: pendingBalances,
+    itemSnapshot: snapshot.items,
+  });
+  const normalizedPendingBalances = normalizedPending.lines;
+  const pendingBalanceTotal = normalizedPending.total;
 
   if (!hasInventoryItems && pendingBalanceTotal <= 0) {
     throw new STAFF_BillingError("At least one billable line is required", 400);
@@ -455,6 +551,7 @@ export const STAFF_createBillingTransaction = async ({
   const netAmount = STAFF_roundCurrency(inventoryNetAmount + pendingBalanceTotal);
 
   let linkedIntent = null;
+  const requestedIntentId = String(parmsIntentId || "").trim() || null;
   try {
     linkedIntent = await resolveOpenIntentForPatient({
       patientId: patientId.trim(),
@@ -463,11 +560,13 @@ export const STAFF_createBillingTransaction = async ({
     linkedIntent = null;
   }
 
+  const resolvedIntentId = linkedIntent?.intentId || requestedIntentId;
+
   const transaction = await STAFF_BillingTransaction.create({
     staffId,
     patientId: patientId.trim(),
     patientName: finalPatientName,
-    parmsIntentId: linkedIntent?.intentId || null,
+    parmsIntentId: resolvedIntentId || null,
     parmsEncounterId: linkedIntent?.encounterId || null,
     parmsInvoiceReference: linkedIntent?.ibmsReference || null,
     parmsInvoiceNumber: linkedIntent?.ibmsInvoiceNumber || null,
@@ -667,8 +766,8 @@ export const STAFF_completeBillingTransaction = async ({ transactionId, staffId,
     return transaction;
   });
 
-  queueCompletedTransactionSync(completedTransaction._id).catch(() => {
-    // Keep cashier flow non-blocking; sync is retried asynchronously.
+  syncCompletedTransactionReceiptToPARMS(completedTransaction._id).catch(() => {
+    // Keep cashier flow non-blocking; failed attempts are retried by the worker.
   });
 
   return completedTransaction;

@@ -41,17 +41,31 @@ const normalizePendingLine = (line = {}, index = 0) => {
     ? sourceType
     : "other";
 
+  const origin = String(line?.origin || "parms").trim().toLowerCase() === "intent"
+    ? "intent"
+    : "parms";
+
+  const amount = Number(line?.amount || 0);
+  if (!Number.isFinite(amount) || amount < 0) {
+    return null;
+  }
+
+  const hasPositiveAmount = amount > 0;
+  const rawObligationKind = String(line?.obligationKind || "").trim().toLowerCase();
+  const obligationKind = ["required_service", "optional_prescription", "reference"].includes(rawObligationKind)
+    ? rawObligationKind
+    : (origin === "parms"
+      ? (normalizedSourceType === "prescription" ? "optional_prescription" : "required_service")
+      : (normalizedSourceType === "prescription"
+        ? (hasPositiveAmount ? "optional_prescription" : "reference")
+        : (hasPositiveAmount ? "required_service" : "reference")));
+
   const defaultLabel = normalizedSourceType === "laboratory"
     ? "Laboratory"
     : normalizedSourceType === "prescription"
       ? "Prescription"
       : "Other";
   const sourceLabel = toDisplayLabel(line?.sourceLabel, defaultLabel);
-
-  const amount = Number(line?.amount || 0);
-  if (!Number.isFinite(amount) || amount < 0) {
-    return null;
-  }
 
   const referenceId = String(line?.referenceId || line?.lineId || `pending-${index + 1}`).trim();
   const description = String(line?.description || "Pending balance").trim() || "Pending balance";
@@ -61,6 +75,9 @@ const normalizePendingLine = (line = {}, index = 0) => {
     sourceLabel,
     referenceId,
     description,
+    origin,
+    obligationKind,
+    serviceCode: String(line?.serviceCode || line?.parmsServiceCode || "").trim() || null,
     amount: Number(amount.toFixed(2)),
   };
 };
@@ -68,6 +85,12 @@ const normalizePendingLine = (line = {}, index = 0) => {
 const mergePendingLines = (baseLines = [], intentLines = []) => {
   const merged = [];
   const seen = new Set();
+  const indexByKey = new Map();
+  const obligationPriority = {
+    reference: 0,
+    optional_prescription: 1,
+    required_service: 2,
+  };
 
   for (const candidate of [...baseLines, ...intentLines]) {
     const normalized = normalizePendingLine(candidate, merged.length);
@@ -79,8 +102,29 @@ const mergePendingLines = (baseLines = [], intentLines = []) => {
       String(normalized.description || "").toLowerCase(),
     ].join("::");
 
-    if (seen.has(dedupeKey)) continue;
+    if (seen.has(dedupeKey)) {
+      const existingIndex = indexByKey.get(dedupeKey);
+      if (existingIndex === undefined) continue;
+
+      const existing = merged[existingIndex];
+      const existingPriority = obligationPriority[String(existing?.obligationKind || "reference")] ?? 0;
+      const normalizedPriority = obligationPriority[String(normalized?.obligationKind || "reference")] ?? 0;
+      const shouldPromoteIntent =
+        existing?.origin !== "intent" &&
+        normalized.origin === "intent" &&
+        normalizedPriority >= existingPriority;
+      if (!shouldPromoteIntent) continue;
+
+      merged[existingIndex] = {
+        ...existing,
+        ...normalized,
+        amount: Math.max(Number(existing?.amount || 0), Number(normalized?.amount || 0)),
+      };
+      continue;
+    }
+
     seen.add(dedupeKey);
+    indexByKey.set(dedupeKey, merged.length);
     merged.push(normalized);
   }
 
@@ -150,28 +194,36 @@ const buildIntentPendingLines = (intentContext) => {
   const intent = intentContext?.intent;
   if (!intent) return [];
 
-  const amountForLine = (minorUnits) => {
-    const resolved = toCurrencyAmount(minorUnits);
-    if (!intentContext.isOpen) return 0;
-    return resolved;
-  };
+  // Closed intents should not surface actionable obligations in billing lookup.
+  if (!intentContext?.isOpen) {
+    return [];
+  }
+
+  const amountForLine = (minorUnits) => toCurrencyAmount(minorUnits);
 
   const serviceLines = (Array.isArray(intent.serviceLines) ? intent.serviceLines : []).map((line, index) => {
     const rawServiceType = String(line?.serviceType || "").trim();
     const normalizedServiceType = rawServiceType.toLowerCase();
     const sourceType = normalizedServiceType.includes("lab") ? "laboratory" : "other";
     const sourceLabel = toDisplayLabel(rawServiceType, sourceType === "laboratory" ? "Laboratory" : "Service");
+    const metadataTestName = typeof line?.metadata?.test_name === "string" ? line.metadata.test_name.trim() : "";
     const metadataDescription = typeof line?.metadata?.description === "string" ? line.metadata.description.trim() : "";
     const serviceTypeDescription = toDisplayLabel(rawServiceType, "");
     const parmsServiceCode = String(line?.parmsServiceCode || "").trim();
-    const serviceLabel = serviceTypeDescription || metadataDescription || parmsServiceCode || "Service line";
+    const serviceLabel = sourceType === "laboratory"
+      ? (metadataTestName || metadataDescription || serviceTypeDescription || parmsServiceCode || "Laboratory service")
+      : (serviceTypeDescription || metadataDescription || parmsServiceCode || "Service line");
+    const amount = amountForLine(line?.totalMinor);
 
     return {
       sourceType,
       sourceLabel,
       referenceId: String(line?.lineId || `svc-${index + 1}`).trim(),
       description: serviceLabel,
-      amount: amountForLine(line?.totalMinor),
+      origin: "intent",
+      obligationKind: "required_service",
+      serviceCode: parmsServiceCode || null,
+      amount,
     };
   });
 
@@ -180,13 +232,17 @@ const buildIntentPendingLines = (intentContext) => {
     const dosage = String(line?.dosage || "").trim();
     const frequency = String(line?.frequency || "").trim();
     const descriptor = [medicationName, dosage, frequency].filter(Boolean).join(" - ");
+    const amount = amountForLine(line?.totalMinor);
 
     return {
       sourceType: "prescription",
       sourceLabel: "Prescription",
       referenceId: String(line?.rxId || `rx-${index + 1}`).trim(),
       description: descriptor || "Prescription",
-      amount: amountForLine(line?.totalMinor),
+      origin: "intent",
+      obligationKind: "optional_prescription",
+      serviceCode: null,
+      amount,
     };
   });
 

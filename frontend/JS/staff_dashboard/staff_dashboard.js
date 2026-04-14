@@ -206,6 +206,16 @@ document.addEventListener("DOMContentLoaded", () => {
     }, REFRESH_INTERVAL_MS);
   }
 
+  function bindDashboardRefreshButton() {
+    const refreshBtn = document.getElementById("refreshDashboardBtn");
+    if (!refreshBtn) return;
+
+    refreshBtn.onclick = async () => {
+      if (currentStaffRoute !== "dashboard") return;
+      await loadDashboard();
+    };
+  }
+
   /* ─────────────────────────────────────────────
      loadDashboard  (async, API-driven)
      ───────────────────────────────────────────── */
@@ -299,7 +309,7 @@ document.addEventListener("DOMContentLoaded", () => {
     `;
 
     /* Wire refresh button */
-    document.getElementById("refreshDashboardBtn")?.addEventListener("click", () => refreshDashboardData());
+    bindDashboardRefreshButton();
 
     /* Fetch & render */
     await refreshDashboardData();

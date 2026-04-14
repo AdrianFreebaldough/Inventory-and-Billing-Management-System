@@ -131,11 +131,36 @@ const normalizePendingLine = (entry, fallbackIndex = 0) => {
     : "other";
 
   const amount = normalizeAmount(entry);
+  const metadata = entry?.metadata && typeof entry.metadata === "object" ? entry.metadata : {};
+
+  const metadataTestName = String(metadata?.test_name || metadata?.testName || "").trim();
+  const metadataDescription = String(metadata?.description || "").trim();
+  const sourceLabel = String(entry?.sourceLabel || entry?.serviceType || entry?.type || "").trim();
+
+  const descriptionCandidates = normalizedSourceType === "laboratory"
+    ? [
+      metadataTestName,
+      String(entry?.description || "").trim(),
+      String(entry?.name || "").trim(),
+      String(entry?.label || "").trim(),
+      metadataDescription,
+    ]
+    : [
+      String(entry?.description || "").trim(),
+      String(entry?.name || "").trim(),
+      String(entry?.label || "").trim(),
+      metadataDescription,
+      metadataTestName,
+    ];
+
+  const description = descriptionCandidates.find((value) => Boolean(value)) || "Pending balance";
 
   return {
     sourceType: normalizedSourceType,
     referenceId: String(entry?.referenceId || entry?.lineId || entry?.id || `line-${fallbackIndex + 1}`),
-    description: String(entry?.description || entry?.name || entry?.label || "Pending balance").trim(),
+    sourceLabel,
+    serviceCode: String(entry?.serviceCode || entry?.parmsServiceCode || "").trim() || null,
+    description,
     amount: Number(amount.toFixed(2)),
   };
 };
@@ -204,6 +229,49 @@ const toMinorUnits = (amount) => {
   return Math.round(parsed * 100);
 };
 
+const buildReceiptPayload = (transaction) => {
+  const snapshot = transaction?.receiptSnapshot;
+  if (!snapshot) return null;
+
+  return {
+    receiptNumber: snapshot.receiptNumber || null,
+    clinicName: snapshot.clinic?.name || null,
+    transactionDateTime: snapshot.transactionDateTime
+      ? new Date(snapshot.transactionDateTime).toISOString()
+      : null,
+    patientId: snapshot.patientId || transaction.patientId || null,
+    patientName: snapshot.patientName || transaction.patientName || null,
+    staffId: snapshot.staffId ? String(snapshot.staffId) : String(transaction.staffId || ""),
+    subtotalMinor: toMinorUnits(snapshot.subtotal),
+    discountMinor: toMinorUnits(snapshot.discountAmount),
+    vatMinor: toMinorUnits(snapshot.vatAmount),
+    totalAmountMinor: toMinorUnits(snapshot.totalAmount),
+    cashReceivedMinor: toMinorUnits(snapshot.cashReceived),
+    changeMinor: toMinorUnits(snapshot.change),
+    pendingBalanceTotalMinor: toMinorUnits(snapshot.pendingBalanceTotal),
+    items: (snapshot.items || []).map((item) => ({
+      productId: item.productId ? String(item.productId) : null,
+      name: item.name || null,
+      quantity: Number(item.quantity || 0),
+      unitPriceMinor: toMinorUnits(item.unitPrice),
+      lineTotalMinor: toMinorUnits(item.lineTotal),
+      batchAllocations: (item.batchAllocations || []).map((allocation) => ({
+        batchId: allocation.batchId ? String(allocation.batchId) : null,
+        batchNumber: allocation.batchNumber || null,
+        quantity: Number(allocation.quantity || 0),
+        expiryDate: allocation.expiryDate ? new Date(allocation.expiryDate).toISOString() : null,
+        expiryRisk: allocation.expiryRisk || null,
+      })),
+    })),
+    pendingBalances: (snapshot.pendingBalances || []).map((line) => ({
+      sourceType: line.sourceType || null,
+      referenceId: line.referenceId || null,
+      description: line.description || null,
+      amountMinor: toMinorUnits(line.amount),
+    })),
+  };
+};
+
 const buildSyncPayload = (transaction) => {
   const paidAtIso = transaction.completedAt
     ? new Date(transaction.completedAt).toISOString()
@@ -216,11 +284,15 @@ const buildSyncPayload = (transaction) => {
   const externalBillingId = String(transaction.parmsIntentId || transaction._id);
   const invoiceNumber = transaction.parmsInvoiceNumber || transaction.receiptSnapshot?.receiptNumber || null;
   const ibmsReference = transaction.parmsInvoiceReference || transaction.receiptSnapshot?.receiptNumber || String(transaction._id);
+  const receiptNumber = transaction.receiptSnapshot?.receiptNumber || invoiceNumber || null;
+  const receipt = buildReceiptPayload(transaction);
 
   return {
     billingId: externalBillingId,
+    intentId: transaction.parmsIntentId || null,
     invoiceNumber,
     ibmsReference,
+    receiptNumber,
     status: "paid",
     ibmsStatus: "synced",
     errorMessage: null,
@@ -230,6 +302,8 @@ const buildSyncPayload = (transaction) => {
     amountPaidMinor: totalAmountMinor,
     balanceDueMinor: 0,
     currency: env.PARMS_SYNC_CURRENCY || "PHP",
+    receipt,
+    receiptSnapshot: transaction.receiptSnapshot || null,
   };
 };
 
@@ -290,11 +364,17 @@ const markSyncAsFailed = async ({ transaction, attempt, error }) => {
     isRetryableSyncError(error);
   const nextRetryAt = canRetry ? new Date(Date.now() + getRetryDelay(attempt + 1)) : null;
 
-  transaction.parmsSyncStatus = "FAILED";
-  transaction.parmsSyncAttempts = attempt;
-  transaction.parmsLastSyncError = String(error.message || "PARMS sync failed").slice(0, 800);
-  transaction.parmsNextRetryAt = nextRetryAt;
-  await transaction.save();
+  await STAFF_BillingTransaction.updateOne(
+    { _id: transaction._id },
+    {
+      $set: {
+        parmsSyncStatus: "FAILED",
+        parmsSyncAttempts: attempt,
+        parmsLastSyncError: String(error.message || "PARMS sync failed").slice(0, 800),
+        parmsNextRetryAt: nextRetryAt,
+      },
+    }
+  );
 
   logger.warn("PARMS sync attempt failed", {
     transactionId: String(transaction._id),
@@ -320,21 +400,33 @@ const executeTransactionSyncAttempt = async (transactionId, attempt = 1) => {
   }
 
   if (attempt > MAX_SYNC_ATTEMPTS) {
-    transaction.parmsSyncStatus = "FAILED";
-    transaction.parmsLastSyncError = "Max PARMS sync attempts reached";
-    transaction.parmsNextRetryAt = null;
-    await transaction.save();
+    await STAFF_BillingTransaction.updateOne(
+      { _id: transaction._id },
+      {
+        $set: {
+          parmsSyncStatus: "FAILED",
+          parmsLastSyncError: "Max PARMS sync attempts reached",
+          parmsNextRetryAt: null,
+        },
+      }
+    );
     return false;
   }
 
   const correlationId = `ibms-sync-${transaction._id}-${Date.now()}`;
-  const eventId = transaction.parmsLastSyncEventId || `evt-${crypto.randomUUID()}`;
+  const eventId = `evt-${crypto.randomUUID()}`;
 
-  transaction.parmsSyncStatus = "SYNCING";
-  transaction.parmsSyncAttempts = Math.max(Number(transaction.parmsSyncAttempts || 0), attempt - 1);
-  transaction.parmsLastSyncCorrelationId = correlationId;
-  transaction.parmsLastSyncEventId = eventId;
-  await transaction.save();
+  await STAFF_BillingTransaction.updateOne(
+    { _id: transaction._id },
+    {
+      $set: {
+        parmsSyncStatus: "SYNCING",
+        parmsSyncAttempts: Math.max(Number(transaction.parmsSyncAttempts || 0), attempt - 1),
+        parmsLastSyncCorrelationId: correlationId,
+        parmsLastSyncEventId: eventId,
+      },
+    }
+  );
 
   try {
     if (!hasParmsConfig()) {
@@ -357,12 +449,18 @@ const executeTransactionSyncAttempt = async (transactionId, attempt = 1) => {
       rawBody: payloadString,
     });
 
-    transaction.parmsSyncStatus = "SYNCED";
-    transaction.parmsSyncAttempts = attempt;
-    transaction.parmsLastSyncAt = new Date();
-    transaction.parmsLastSyncError = null;
-    transaction.parmsNextRetryAt = null;
-    await transaction.save();
+    await STAFF_BillingTransaction.updateOne(
+      { _id: transaction._id },
+      {
+        $set: {
+          parmsSyncStatus: "SYNCED",
+          parmsSyncAttempts: attempt,
+          parmsLastSyncAt: new Date(),
+          parmsLastSyncError: null,
+          parmsNextRetryAt: null,
+        },
+      }
+    );
 
     return true;
   } catch (error) {
@@ -372,6 +470,10 @@ const executeTransactionSyncAttempt = async (transactionId, attempt = 1) => {
 };
 
 const shouldProcessRecord = (record, now, staleSyncCutoff) => {
+  if (!record.parmsSyncStatus || record.parmsSyncStatus === "NOT_QUEUED") {
+    return true;
+  }
+
   if (record.parmsSyncStatus === "PENDING") {
     return !record.parmsNextRetryAt || record.parmsNextRetryAt <= now;
   }
@@ -397,7 +499,11 @@ export const runParmsSyncSweep = async ({ limit = 25 } = {}) => {
 
   const candidates = await STAFF_BillingTransaction.find({
     status: "COMPLETED",
-    parmsSyncStatus: { $in: ["PENDING", "FAILED", "SYNCING"] },
+    $or: [
+      { parmsSyncStatus: { $in: ["PENDING", "FAILED", "SYNCING", "NOT_QUEUED"] } },
+      { parmsSyncStatus: { $exists: false } },
+      { parmsSyncStatus: null },
+    ],
   })
     .sort({ completedAt: 1, updatedAt: 1 })
     .limit(limit)
@@ -430,15 +536,47 @@ export const runParmsSyncSweep = async ({ limit = 25 } = {}) => {
 };
 
 export const queueCompletedTransactionSync = async (transactionId) => {
-  const transaction = await STAFF_BillingTransaction.findById(transactionId);
+  const transaction = await STAFF_BillingTransaction.findById(transactionId)
+    .select("_id parmsSyncStatus");
   if (!transaction) return;
 
   if (transaction.parmsSyncStatus === "SYNCED") return;
 
-  transaction.parmsSyncStatus = "PENDING";
-  transaction.parmsLastSyncError = null;
-  transaction.parmsNextRetryAt = new Date();
-  await transaction.save();
+  await STAFF_BillingTransaction.updateOne(
+    { _id: transaction._id },
+    {
+      $set: {
+        parmsSyncStatus: "PENDING",
+        parmsLastSyncError: null,
+        parmsNextRetryAt: new Date(),
+      },
+    }
+  );
+};
+
+export const syncCompletedTransactionReceiptToPARMS = async (transactionId) => {
+  const transaction = await STAFF_BillingTransaction.findById(transactionId)
+    .select("_id status parmsSyncStatus parmsSyncAttempts");
+
+  if (!transaction || transaction.status !== "COMPLETED") {
+    return false;
+  }
+
+  if (transaction.parmsSyncStatus !== "SYNCED") {
+    await STAFF_BillingTransaction.updateOne(
+      { _id: transaction._id },
+      {
+        $set: {
+          parmsSyncStatus: "PENDING",
+          parmsLastSyncError: null,
+          parmsNextRetryAt: new Date(),
+        },
+      }
+    );
+  }
+
+  const nextAttempt = Math.max(1, Number(transaction.parmsSyncAttempts || 0) + 1);
+  return executeTransactionSyncAttempt(transaction._id, nextAttempt);
 };
 
 export const startParmsSyncWorker = () => {

@@ -27,10 +27,17 @@ export const fetchBillingProducts = async (category = null) => {
  * @param {number} [params.discountRate=0] - Discount rate (0-1)
  * @returns {Promise<Object>} Created transaction data
  */
-export const createTransaction = async ({ patientId, patientName = "", items, discountRate = 0, pendingBalances = [] }) => {
+export const createTransaction = async ({
+  patientId,
+  patientName = "",
+  items,
+  discountRate = 0,
+  pendingBalances = [],
+  parmsIntentId = null,
+}) => {
   const response = await apiFetch(`${BILLING_BASE}/create`, {
     method: "POST",
-    body: JSON.stringify({ patientId, patientName, items, discountRate, pendingBalances }),
+    body: JSON.stringify({ patientId, patientName, items, discountRate, pendingBalances, parmsIntentId }),
   });
   return response.data;
 };
@@ -103,6 +110,7 @@ export const fetchReceipt = async (transactionId) => {
 /**
  * @typedef {Object} BillingProduct
  * @property {string} id - MongoDB ObjectId
+ * @property {"item"|"service"} type - Product dataset type for POS segmentation
  * @property {string} name - Product name
  * @property {string|null} genericName - Generic medicine name
  * @property {string|null} brandName - Brand name

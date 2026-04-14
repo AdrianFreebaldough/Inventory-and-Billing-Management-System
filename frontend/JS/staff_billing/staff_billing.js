@@ -26,6 +26,8 @@ const BILLING_MODE_RETURN_KEY = "lastStaffRoute";
 const VAT_RATE = 0.12;
 const CLINIC_NAME = "IBMS Clinic";
 const PRODUCT_REFRESH_INTERVAL_MS = 60000;
+const CART_ITEM_HIDE_PATIENT_INFO_THRESHOLD = 5;
+const CART_ITEM_AUTO_SCROLL_THRESHOLD = 2;
 const UNSALEABLE_INVENTORY_STATUSES = new Set([
 	"expired",
 	"pending disposal",
@@ -69,6 +71,7 @@ const state = {
 	currentModal: null,
 	lastCompletedSale: null,
 	pendingVoidTransactionId: null,
+	lastAutoScrolledCartLineCount: 0,
 	isLoading: false,
 };
 
@@ -84,6 +87,7 @@ const itemsTabBtn = document.getElementById("itemsTabBtn");
 const servicesTabBtn = document.getElementById("servicesTabBtn");
 const searchInput = document.getElementById("searchInput");
 const selectedItemsPanel = document.getElementById("selectedItems");
+const cartTopSection = document.getElementById("cartTopSection");
 const posView = document.getElementById("posView");
 const historyView = document.getElementById("historyView");
 const historyTableBody = document.getElementById("historyTableBody");
@@ -1311,8 +1315,26 @@ function commitQuantityInput(inputEl) {
 	setQuantity(idValue, committedQty);
 }
 
+function updatePatientInfoVisibility(selectedLineCount = getSelectedItems().length) {
+	if (!patientInfoSection) return;
+	const hideForDenseCart = selectedLineCount >= CART_ITEM_HIDE_PATIENT_INFO_THRESHOLD;
+	patientInfoSection.classList.toggle("hidden", state.checkoutMode || hideForDenseCart);
+}
+
+function updateCartTopAutoScroll(selectedLineCount = 0) {
+	if (!cartTopSection) return;
+	const hasReachedThreshold = selectedLineCount >= CART_ITEM_AUTO_SCROLL_THRESHOLD;
+	const lineCountChanged = selectedLineCount !== state.lastAutoScrolledCartLineCount;
+	if (hasReachedThreshold && lineCountChanged) {
+		cartTopSection.scrollTop = cartTopSection.scrollHeight;
+	}
+	state.lastAutoScrolledCartLineCount = selectedLineCount;
+}
+
 function renderSummaryPanel() {
 	const { selected, itemCount, subtotal, discount, vat, pendingTotal, totalDue } = computeSaleTotals();
+	updatePatientInfoVisibility(selected.length);
+	updateCartTopAutoScroll(selected.length);
 	if (!selected.length) {
 		selectedItemsPanel.innerHTML = state.pendingBalances.length
 			? `<div class="text-xs text-slate-500">No inventory items selected.</div>`
@@ -1365,10 +1387,7 @@ function setCheckoutMode(enabled) {
 			btn.classList.add("border-slate-300", "bg-white", "text-slate-700");
 		});
 	}
-	// Toggle patient info visibility based on payment mode
-	if (patientInfoSection) {
-		patientInfoSection.classList.toggle("hidden", state.checkoutMode);
-	}
+	updatePatientInfoVisibility();
 	renderInlinePayment();
 }
 
@@ -1599,9 +1618,13 @@ function resetActiveSale() {
 	if (cashTenderedInlineInput) {
 		cashTenderedInlineInput.value = "";
 	}
+	state.lastAutoScrolledCartLineCount = 0;
 	// Ensure patient info is visible after transaction completes
 	if (patientInfoSection) {
 		patientInfoSection.classList.remove("hidden");
+	}
+	if (cartTopSection) {
+		cartTopSection.scrollTop = 0;
 	}
 }
 

@@ -767,7 +767,7 @@ function updateFilterButtonStyles(containerSelector, activeStatus) {
     const status = btn.dataset.status;
     const cfg = getFilterConfig(status);
     const active = status === activeStatus;
-    let cls = "status-filter px-4 py-1 rounded-full border text-sm shadow-sm transition-all cursor-pointer ";
+    let cls = "status-filter px-3 py-0.5 rounded-full border text-xs shadow-sm transition-all cursor-pointer ";
     cls += active
       ? `${cfg.activeBg} ${cfg.activeText} ${cfg.activeBorder}`
       : `bg-white text-gray-700 border-gray-300 ${cfg.hoverBg} ${cfg.hoverBorder} ${cfg.hoverText}`;
@@ -2281,11 +2281,13 @@ export async function initAdminInventory() {
     if (showLowStockOnly) return;
     showArchivedItems = !showArchivedItems;
     if (showArchivedItems) {
-      archivedBtn.classList.remove("bg-white", "text-red-600");
-      archivedBtn.classList.add("bg-red-600", "text-white");
+      archivedBtn.classList.remove("bg-white", "text-red-600", "border-red-600", "hover:bg-red-50");
+      archivedBtn.classList.add("bg-green-600", "text-white", "border-green-600", "hover:bg-green-700");
+      archivedBtn.textContent = "Active Items";
     } else {
-      archivedBtn.classList.remove("bg-red-600", "text-white");
-      archivedBtn.classList.add("bg-white", "text-red-600");
+      archivedBtn.classList.remove("bg-green-600", "text-white", "border-green-600", "hover:bg-green-700");
+      archivedBtn.classList.add("bg-white", "text-red-600", "border-red-600", "hover:bg-red-50");
+      archivedBtn.textContent = "Archived Items";
     }
     currentInventoryPage = 1;
     await refreshInventory();

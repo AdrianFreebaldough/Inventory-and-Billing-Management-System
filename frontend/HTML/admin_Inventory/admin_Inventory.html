@@ -48,31 +48,19 @@
         </div>
 
         <!-- STATUS FILTERS -->
-        <div class="flex gap-2 flex-wrap" id="statusFiltersContainer">
-            <button class="status-filter" data-status="all">
-                All
-            </button>
-            <button class="status-filter" data-status="in-stock">
-                In Stock
-            </button>
-          <button class="status-filter" data-status="safe">
-            Safe
-          </button>
-          <button class="status-filter" data-status="near-expiry">
-            Near-Expiry
-          </button>
-          <button class="status-filter" data-status="at-risk">
-            At-Risk
-          </button>
-            <button class="status-filter" data-status="pending">
-                Pending
-            </button>
-            <button class="status-filter" data-status="low-stock">
-                Low Stock
-            </button>
-            <button class="status-filter" data-status="out-of-stock">
-                Out of Stock
-            </button>
+        <div class="space-y-1" id="statusFiltersContainer">
+          <div class="flex gap-1 flex-wrap">
+            <button class="status-filter" data-status="all">All</button>
+            <button class="status-filter" data-status="in-stock">In Stock</button>
+            <button class="status-filter" data-status="pending">Pending</button>
+            <button class="status-filter" data-status="low-stock">Low Stock</button>
+            <button class="status-filter" data-status="out-of-stock">Out of Stock</button>
+          </div>
+          <div class="flex gap-1 flex-wrap">
+            <button class="status-filter" data-status="safe">Safe</button>
+            <button class="status-filter" data-status="near-expiry">Near-Expiry</button>
+            <button class="status-filter" data-status="at-risk">At-Risk</button>
+          </div>
         </div>
 
         <div class="flex items-center gap-3 text-xs text-gray-600" id="expiryRiskLegend">
@@ -84,9 +72,9 @@
 
         <!-- LOW STOCK TOGGLE -->
         <div class="flex items-center gap-3">
-          <button id="lowStockToggle" class="flex items-center gap-2 border border-red-300 bg-red-50 hover:bg-red-100 rounded-full px-4 py-2 cursor-pointer shadow-sm transition-colors duration-300">
-            <img src="../../assets/inventory_lowstock_alert.png" alt="Low Stock Alert" class="w-5 h-5">
-            <span class="text-sm text-red-600 font-medium">Show Low Stock Only</span>
+          <button id="lowStockToggle" class="flex items-center gap-1.5 border border-red-300 bg-red-50 hover:bg-red-100 rounded-full px-3 py-1.5 cursor-pointer shadow-sm transition-colors duration-300">
+            <img src="../../assets/inventory_lowstock_alert.png" alt="Low Stock Alert" class="w-4 h-4">
+            <span class="text-xs text-red-600 font-medium">Show Low Stock Only</span>
           </button>
         </div>
       </div><!-- Close toolbar -->

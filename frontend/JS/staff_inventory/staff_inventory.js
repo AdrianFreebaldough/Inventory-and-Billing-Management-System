@@ -596,7 +596,7 @@ function updateFilterButtonStyles(containerSelector, activeStatus) {
         const status = btn.dataset.status;
         const config = getFilterConfig(status);
         const isActive = status === activeStatus;
-        let classes = 'status-filter px-4 py-1 rounded-full border text-sm shadow-sm transition-all cursor-pointer ';
+        let classes = 'status-filter px-3 py-0.5 rounded-full border text-xs shadow-sm transition-all cursor-pointer ';
         if (isActive) {
             classes += `${config.activeBg} ${config.activeText} ${config.activeBorder}`;
         } else {
@@ -1920,13 +1920,15 @@ export async function initInventory() {
         if (showLowStockOnly) return;
         showArchivedItems = !showArchivedItems;
         if (showArchivedItems) {
-            archivedBtn.classList.remove("bg-white", "text-red-600");
-            archivedBtn.classList.add("bg-red-600", "text-white");
+            archivedBtn.classList.remove("bg-white", "text-red-600", "border-red-600", "hover:bg-red-50");
+            archivedBtn.classList.add("bg-green-600", "text-white", "border-green-600", "hover:bg-green-700");
+            archivedBtn.textContent = "Active Items";
             const lowStockToggleLocal = document.getElementById("lowStockToggle");
             if (lowStockToggleLocal) { lowStockToggleLocal.classList.add("opacity-50", "cursor-not-allowed"); lowStockToggleLocal.disabled = true; }
         } else {
-            archivedBtn.classList.remove("bg-red-600", "text-white");
-            archivedBtn.classList.add("bg-white", "text-red-600");
+            archivedBtn.classList.remove("bg-green-600", "text-white", "border-green-600", "hover:bg-green-700");
+            archivedBtn.classList.add("bg-white", "text-red-600", "border-red-600", "hover:bg-red-50");
+            archivedBtn.textContent = "Archived Items";
             const lowStockToggleLocal = document.getElementById("lowStockToggle");
             if (lowStockToggleLocal) { lowStockToggleLocal.classList.remove("opacity-50", "cursor-not-allowed"); lowStockToggleLocal.disabled = false; }
         }

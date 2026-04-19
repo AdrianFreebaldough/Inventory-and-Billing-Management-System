@@ -24,7 +24,7 @@ import {
 
 const BILLING_MODE_RETURN_KEY = "lastStaffRoute";
 const VAT_RATE = 0.12;
-const CLINIC_NAME = "IBMS Clinic";
+const CLINIC_NAME = "ZCMMF";
 const PRODUCT_REFRESH_INTERVAL_MS = 60000;
 const CART_ITEM_HIDE_PATIENT_INFO_THRESHOLD = 5;
 const CART_ITEM_AUTO_SCROLL_THRESHOLD = 2;
@@ -43,6 +43,29 @@ const SERVICE_CATEGORY_KEYS = new Set([
 	"lab test",
 ]);
 const PRESCRIPTION_DECISIONS = new Set(["bought_in_clinic", "not_bought_in_clinic"]);
+
+function isLikelyIdValue(value) {
+	const normalized = String(value || "").trim();
+	if (!normalized) return true;
+	if (!/[A-Za-z]/.test(normalized)) return true;
+	if (/^[a-f0-9-]{16,}$/i.test(normalized)) return true;
+	return false;
+}
+
+async function fetchPatientNameById(patientId) {
+	const normalizedPatientId = String(patientId || "").trim();
+	if (!normalizedPatientId) return "";
+
+	try {
+		const result = await apiFetch(`/api/patients/${encodeURIComponent(normalizedPatientId)}`, {
+			method: "GET",
+		});
+		const payload = result?.data || result;
+		return String(payload?.patientName || "").trim();
+	} catch {
+		return "";
+	}
+}
 
 let patientLookupDebounceTimer = null;
 let productRefreshTimer = null;
@@ -621,9 +644,22 @@ async function resolvePatientByName(patientName) {
 			return null;
 		}
 
+		const normalizedPatientId = String(payload.patientId).trim();
+		let normalizedPatientName = String(payload.patientName).trim();
+		if (
+			!normalizedPatientName
+			|| normalizedPatientName.toLowerCase() === normalizedPatientId.toLowerCase()
+			|| isLikelyIdValue(normalizedPatientName)
+		) {
+			const fetchedPatientName = await fetchPatientNameById(normalizedPatientId);
+			if (fetchedPatientName) {
+				normalizedPatientName = fetchedPatientName;
+			}
+		}
+
 		return {
-			patientId: String(payload.patientId).trim(),
-			patientName: String(payload.patientName).trim(),
+			patientId: normalizedPatientId,
+			patientName: normalizedPatientName || String(patientName || "").trim(),
 			pendingBalances: normalizePendingBalanceLines(payload.pendingBalances || []),
 			parmsIntent: payload.parmsIntent || null,
 		};
@@ -1499,7 +1535,7 @@ function renderHeldModalList() {
 				<div class="border border-slate-200 bg-slate-50 p-3">
 					<div class="flex items-center justify-between gap-3">
 						<div>
-							<p class="font-semibold text-slate-900">${entry.heldId}</p>
+							<p class="font-semibold text-slate-900">${entry.patientName || "Unknown Patient"}</p>
 							<p class="text-[11px] text-slate-600">${entry.itemCount} item(s) • ${formatPeso(entry.totalDue)}</p>
 						</div>
 						<button type="button" data-resume-id="${entry.heldId}" class="min-w-20 border border-emerald-600 bg-emerald-500 px-3 py-1.5 text-[11px] font-semibold text-white hover:bg-emerald-400">
@@ -1759,7 +1795,7 @@ function showSuccessModal() {
 
 	successClinic.textContent = state.lastCompletedSale.clinicName;
 	successTxnId.textContent = state.lastCompletedSale.transactionCode;
-	successPatientId.textContent = state.lastCompletedSale.patientId;
+	successPatientId.textContent = state.lastCompletedSale.patientName || "N/A";
 	const selectedItemsMarkup = state.lastCompletedSale.selected
 		.map((item) => `<p>${item.name} - ${formatPeso(item.qty * item.price)}</p>`)
 		.join("");

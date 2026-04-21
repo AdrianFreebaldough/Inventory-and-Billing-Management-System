@@ -229,11 +229,44 @@ const toMinorUnits = (amount) => {
   return Math.round(parsed * 100);
 };
 
+const compactPayload = (value) => {
+  if (Array.isArray(value)) {
+    return value
+      .map((entry) => compactPayload(entry))
+      .filter((entry) => {
+        if (entry === undefined || entry === null) return false;
+        if (typeof entry === "string" && entry.trim() === "") return false;
+        if (Array.isArray(entry) && entry.length === 0) return false;
+        if (typeof entry === "object" && !Array.isArray(entry) && Object.keys(entry).length === 0) return false;
+        return true;
+      });
+  }
+
+  if (value && typeof value === "object") {
+    const next = {};
+
+    Object.entries(value).forEach(([key, entry]) => {
+      const compacted = compactPayload(entry);
+
+      if (compacted === undefined || compacted === null) return;
+      if (typeof compacted === "string" && compacted.trim() === "") return;
+      if (Array.isArray(compacted) && compacted.length === 0) return;
+      if (typeof compacted === "object" && !Array.isArray(compacted) && Object.keys(compacted).length === 0) return;
+
+      next[key] = compacted;
+    });
+
+    return next;
+  }
+
+  return value;
+};
+
 const buildReceiptPayload = (transaction) => {
   const snapshot = transaction?.receiptSnapshot;
   if (!snapshot) return null;
 
-  return {
+  const receipt = {
     receiptNumber: snapshot.receiptNumber || null,
     clinicName: snapshot.clinic?.name || null,
     transactionDateTime: snapshot.transactionDateTime
@@ -241,7 +274,9 @@ const buildReceiptPayload = (transaction) => {
       : null,
     patientId: snapshot.patientId || transaction.patientId || null,
     patientName: snapshot.patientName || transaction.patientName || null,
-    staffId: snapshot.staffId ? String(snapshot.staffId) : String(transaction.staffId || ""),
+    staffId: snapshot.staffId
+      ? String(snapshot.staffId)
+      : (transaction.staffId ? String(transaction.staffId) : null),
     subtotalMinor: toMinorUnits(snapshot.subtotal),
     discountMinor: toMinorUnits(snapshot.discountAmount),
     vatMinor: toMinorUnits(snapshot.vatAmount),
@@ -270,6 +305,8 @@ const buildReceiptPayload = (transaction) => {
       amountMinor: toMinorUnits(line.amount),
     })),
   };
+
+  return compactPayload(receipt);
 };
 
 const buildSyncPayload = (transaction) => {
@@ -284,18 +321,16 @@ const buildSyncPayload = (transaction) => {
   const externalBillingId = String(transaction.parmsIntentId || transaction._id);
   const invoiceNumber = transaction.parmsInvoiceNumber || transaction.receiptSnapshot?.receiptNumber || null;
   const ibmsReference = transaction.parmsInvoiceReference || transaction.receiptSnapshot?.receiptNumber || String(transaction._id);
-  const receiptNumber = transaction.receiptSnapshot?.receiptNumber || invoiceNumber || null;
   const receipt = buildReceiptPayload(transaction);
 
-  return {
+  const payload = {
     billingId: externalBillingId,
     intentId: transaction.parmsIntentId || null,
     invoiceNumber,
     ibmsReference,
-    receiptNumber,
+    receiptNumber: receipt?.receiptNumber || invoiceNumber || null,
     status: "paid",
     ibmsStatus: "synced",
-    errorMessage: null,
     paidAt: paidAtIso,
     processedAt: processedAtIso,
     totalAmountMinor,
@@ -303,10 +338,10 @@ const buildSyncPayload = (transaction) => {
     balanceDueMinor: 0,
     currency: env.PARMS_SYNC_CURRENCY || "PHP",
     receipt,
-    receiptSnapshot: transaction.receiptSnapshot || null,
   };
-};
 
+  return compactPayload(payload);
+};
 const buildSyncHeaders = ({ payloadString, correlationId, eventId, billingId }) => {
   const timestamp = Math.floor(Date.now() / 1000);
   const headers = {
@@ -682,3 +717,4 @@ export const fetchPatientPendingBalancesFromPARMS = async (patientId) => {
 };
 
 export const parmsIntegrationReady = () => hasParmsConfig();
+

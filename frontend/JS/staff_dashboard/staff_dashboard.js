@@ -111,22 +111,77 @@ function decodeTokenPayload() {
   return null;
 }
 
+function toFirstLastName(value, fallback = "Staff") {
+  const parts = String(value || "")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+
+  if (!parts.length) return fallback;
+  if (parts.length === 1) return parts[0];
+  return `${parts[0]} ${parts[parts.length - 1]}`;
+}
+
+function getInitial(value, fallback = "S") {
+  const normalized = String(value || "").trim();
+  if (!normalized) return fallback;
+  return normalized.charAt(0).toUpperCase();
+}
+
+function toRoleLabel(value, fallback = "Staff") {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (!normalized) return fallback;
+  return normalized.charAt(0).toUpperCase() + normalized.slice(1);
+}
+
 function getStaffDisplayInfo() {
   const payload = decodeTokenPayload();
-  const email = localStorage.getItem("userEmail") || payload?.email || "";
-  const name  = localStorage.getItem("userName")  || "";
+  const name = localStorage.getItem("userName") || "";
+  const displayName = toFirstLastName(name, "Staff");
+  const initial = getInitial(displayName, "S");
+  const roleLabel = toRoleLabel(payload?.role, "Staff");
 
-  let displayName = name;
-  if (!displayName && email) {
-    displayName = email.split("@")[0].replace(/[._-]/g, " ")
-                       .replace(/\b\w/g, c => c.toUpperCase());
+  return {
+    displayName,
+    subtitle: roleLabel,
+    initial,
+    role: String(payload?.role || "").toLowerCase(),
+  };
+}
+
+async function hydrateStaffHeaderIdentity({ staffNameEl, staffUsernameEl, staffAvatarEl }) {
+  try {
+    const payload = await apiFetch("/api/auth/profile/me", { method: "GET" });
+    const rawFullName = String(payload?.data?.fullName || "").trim();
+    const roleLabel = String(payload?.data?.role || "").trim() || "Staff";
+    const displayName = toFirstLastName(
+      rawFullName,
+      String(staffNameEl?.textContent || "").trim() || "Staff"
+    );
+
+    if (staffNameEl) {
+      staffNameEl.textContent = displayName;
+    }
+
+    if (staffAvatarEl) {
+      staffAvatarEl.textContent = getInitial(displayName, "S");
+    }
+
+    if (staffUsernameEl) {
+      staffUsernameEl.textContent = roleLabel;
+      staffUsernameEl.classList.remove("hidden");
+      staffUsernameEl.removeAttribute("aria-hidden");
+    }
+
+    localStorage.setItem("userName", displayName);
+  } catch {
+    if (staffUsernameEl) {
+      const fallback = getStaffDisplayInfo();
+      staffUsernameEl.textContent = fallback.subtitle;
+      staffUsernameEl.classList.remove("hidden");
+      staffUsernameEl.removeAttribute("aria-hidden");
+    }
   }
-  if (!displayName) displayName = "Staff";
-
-  const username = email || "staff";
-  const initial  = displayName.charAt(0).toUpperCase();
-
-  return { displayName, username, initial, role: String(payload?.role || "").toLowerCase() };
 }
 
 /* ════════════════════════════════════════════════════════════════
@@ -157,9 +212,19 @@ document.addEventListener("DOMContentLoaded", () => {
 
   /* ── Staff header display ── */
   const staffInfo = getStaffDisplayInfo();
-  staffNameEl.textContent     = staffInfo.displayName;
-  staffUsernameEl.textContent = staffInfo.username;
-  staffAvatarEl.textContent   = staffInfo.initial;
+  if (staffNameEl) {
+    staffNameEl.textContent = staffInfo.displayName;
+  }
+  if (staffUsernameEl) {
+    staffUsernameEl.textContent = staffInfo.subtitle;
+    staffUsernameEl.classList.remove("hidden");
+    staffUsernameEl.removeAttribute("aria-hidden");
+  }
+  if (staffAvatarEl) {
+    staffAvatarEl.textContent = staffInfo.initial;
+  }
+
+  hydrateStaffHeaderIdentity({ staffNameEl, staffUsernameEl, staffAvatarEl });
 
   const currentRole = staffInfo.role;
   let currentStaffRoute = "dashboard";

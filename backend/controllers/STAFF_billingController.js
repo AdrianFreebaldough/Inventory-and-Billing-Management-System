@@ -475,6 +475,17 @@ export const STAFF_getBillingProducts = async (req, res) => {
       const totalBatchStock = productBatches.length
         ? productBatches.reduce((sum, batch) => sum + Number(batch?.currentQuantity ?? batch?.quantity ?? 0), 0)
         : Number(product.quantity ?? 0);
+      const pendingDisposalStock = productBatches.reduce((sum, batch) => {
+        const quantity = Number(batch?.currentQuantity ?? batch?.quantity ?? 0);
+        if (!Number.isFinite(quantity) || quantity <= 0) return sum;
+        return getBatchEffectiveStatus(batch) === BATCH_EFFECTIVE_STATUS.PENDING_DISPOSAL
+          ? sum + quantity
+          : sum;
+      }, 0);
+      const hasPendingDisposalOnlyStock =
+        !hasSellableStock &&
+        pendingDisposalStock > 0 &&
+        pendingDisposalStock === totalBatchStock;
 
       let inventoryStatus = product.status;
       if (hasSellableStock) {
@@ -482,6 +493,8 @@ export const STAFF_getBillingProducts = async (req, res) => {
         inventoryStatus = sellableEffectiveStatuses.includes(BATCH_EFFECTIVE_STATUS.IMMEDIATE_REVIEW)
           ? "Immediate Review"
           : "In Stock";
+      } else if (hasPendingDisposalOnlyStock) {
+        inventoryStatus = "Out of Stock";
       } else if (effectiveStatuses.includes(BATCH_EFFECTIVE_STATUS.DISPOSED)) {
         inventoryStatus = "Disposed";
       } else if (effectiveStatuses.includes(BATCH_EFFECTIVE_STATUS.PENDING_DISPOSAL)) {
@@ -528,6 +541,7 @@ export const STAFF_getBillingProducts = async (req, res) => {
         supplier: product.supplier || null,
         stock: stockForBillingDisplay,
         sellableStock: eligibleStock,
+        pendingDisposalOnly: hasPendingDisposalOnlyStock,
         totalStock: totalBatchStock,
         price: product.unitPrice ?? 0,
       };

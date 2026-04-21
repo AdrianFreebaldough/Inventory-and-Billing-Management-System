@@ -7,7 +7,12 @@ import ActivityLog from "../models/activityLog.js";
 import mongoose from "mongoose";
 import { getExpirationStatus, getDaysUntilExpiry } from "../services/expirationService.js";
 import { classifyExpiryRisk, toUiExpiryRiskKey } from "../services/fefoService.js";
-import { getBatchLifecycleFlags, getBatchEffectiveStatus } from "../services/batchLifecycleService.js";
+import {
+  BATCH_EFFECTIVE_STATUS,
+  getBatchLifecycleFlags,
+  getBatchEffectiveStatus,
+  isBatchEligibleForBilling,
+} from "../services/batchLifecycleService.js";
 import { syncProductFromBatchTotals } from "../services/inventoryIntegrityService.js";
 
 // Reuse existing InventoryRequest schema so staff can request restocks without direct stock edits.
@@ -130,14 +135,61 @@ const STAFF_pickFirstNonEmpty = (...values) => {
   return null;
 };
 
-/**
- * Map internal DB status to canonical API status vocabulary.
- * DB: "available" | "low" | "out"
- * API: "IN_STOCK" | "LOW_STOCK" | "OUT_OF_STOCK"
- */
-const STAFF_mapStockStatus = (dbStatus) => {
-  const map = { available: "IN_STOCK", low: "LOW_STOCK", out: "OUT_OF_STOCK" };
-  return map[dbStatus] || "IN_STOCK";
+const STAFF_getBatchQuantity = (batch) => {
+  const quantity = Number(batch?.currentQuantity ?? batch?.quantity ?? 0);
+  return Number.isFinite(quantity) ? quantity : 0;
+};
+
+const STAFF_getStockSummaryFromBatches = ({ batches = [], fallbackQuantity = 0, minStock = 10 }) => {
+  const safeMinStock = Number.isFinite(Number(minStock)) ? Number(minStock) : 10;
+  const normalizedBatches = Array.isArray(batches) ? batches : [];
+
+  if (!normalizedBatches.length) {
+    const quantity = Math.max(0, Number(fallbackQuantity) || 0);
+    return {
+      stockStatus: quantity <= 0 ? "OUT_OF_STOCK" : (quantity <= safeMinStock ? "LOW_STOCK" : "IN_STOCK"),
+      sellableQuantity: quantity,
+      pendingDisposalQuantity: 0,
+      totalPositiveQuantity: quantity,
+      hasPendingDisposalOnlyStock: false,
+    };
+  }
+
+  let sellableQuantity = 0;
+  let pendingDisposalQuantity = 0;
+  let totalPositiveQuantity = 0;
+
+  normalizedBatches.forEach((batch) => {
+    const quantity = STAFF_getBatchQuantity(batch);
+    if (quantity <= 0) return;
+
+    totalPositiveQuantity += quantity;
+
+    if (isBatchEligibleForBilling(batch)) {
+      sellableQuantity += quantity;
+    }
+
+    if (getBatchEffectiveStatus(batch) === BATCH_EFFECTIVE_STATUS.PENDING_DISPOSAL) {
+      pendingDisposalQuantity += quantity;
+    }
+  });
+
+  const hasPendingDisposalOnlyStock =
+    sellableQuantity <= 0 &&
+    pendingDisposalQuantity > 0 &&
+    totalPositiveQuantity === pendingDisposalQuantity;
+
+  const stockStatus = sellableQuantity <= 0
+    ? "OUT_OF_STOCK"
+    : (sellableQuantity <= safeMinStock ? "LOW_STOCK" : "IN_STOCK");
+
+  return {
+    stockStatus,
+    sellableQuantity,
+    pendingDisposalQuantity,
+    totalPositiveQuantity,
+    hasPendingDisposalOnlyStock,
+  };
 };
 
 const STAFF_buildLegacyBatch = (product) => {
@@ -263,6 +315,11 @@ const STAFF_enrichMissingFieldsFromApprovedRequests = async (items) => {
  * Build the normalized item response shape used by all inventory endpoints.
  */
 const STAFF_buildItemPayload = (item) => {
+  const stockSummary = STAFF_getStockSummaryFromBatches({
+    batches: item.batches,
+    fallbackQuantity: item.productQuantity ?? item.quantity ?? 0,
+    minStock: item.minStock,
+  });
   const referenceExpiryDate = item.nearestExpiryDate || item.expiryDate;
   const expirationStatus = getExpirationStatus(referenceExpiryDate);
   const daysUntilExpiry = getDaysUntilExpiry(referenceExpiryDate);
@@ -271,10 +328,13 @@ const STAFF_buildItemPayload = (item) => {
     itemId: item._id,
     itemName: item.name,
     category: item.category,
-    stockStatus: STAFF_mapStockStatus(item.status),
+    stockStatus: stockSummary.stockStatus,
     currentQuantity: Number(item.productQuantity ?? item.quantity ?? 0),
     totalQuantity: Number(item.productQuantity ?? item.quantity ?? 0),
     batchQuantity: Number(item.totalBatchQuantity ?? 0),
+    sellableQuantity: Number(stockSummary.sellableQuantity ?? 0),
+    pendingDisposalQuantity: Number(stockSummary.pendingDisposalQuantity ?? 0),
+    hasPendingDisposalOnlyStock: stockSummary.hasPendingDisposalOnlyStock === true,
     unit: item.unit || "pcs",
     unitPrice: item.unitPrice ?? 0,
     minStock: item.minStock ?? 10,
@@ -355,10 +415,6 @@ export const STAFF_getInventory = async (req, res) => {
       filter.category = categoryRegex;
     }
 
-    if (lowStockOnly) {
-      filter.$or = [{ status: "low" }, { status: "out" }, { quantity: { $lte: 10 } }];
-    }
-
     // Expiration filters
     if (expirationFilter) {
       const now = new Date();
@@ -387,9 +443,12 @@ export const STAFF_getInventory = async (req, res) => {
     const data = enrichedItems.map(STAFF_buildItemPayload);
 
     const normalizedRiskFilter = String(expiryRisk || "").trim().toLowerCase();
-    const filteredData = normalizedRiskFilter
+    const riskFilteredData = normalizedRiskFilter
       ? data.filter((entry) => entry.expiryRiskKey === normalizedRiskFilter)
       : data;
+    const filteredData = lowStockOnly
+      ? riskFilteredData.filter((entry) => ["LOW_STOCK", "OUT_OF_STOCK"].includes(String(entry.stockStatus || "")))
+      : riskFilteredData;
 
     /* ---- Optionally include pending ADD_ITEM requests as virtual items ---- */
     if (includePending && !includeArchived) {

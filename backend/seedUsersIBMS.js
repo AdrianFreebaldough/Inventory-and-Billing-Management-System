@@ -48,13 +48,13 @@ const run = async () => {
         username: "owner",
         email: "owner@test.com",
         password: bcrypt.hashSync("owner123", 10),
-        role: "OWNER",
+        role: "owner",
       },
       {
         username: "staff",
         email: "staff@test.com",
         password: bcrypt.hashSync("staff123", 10),
-        role: "STAFF",
+        role: "staff",
       },
     ]);
 

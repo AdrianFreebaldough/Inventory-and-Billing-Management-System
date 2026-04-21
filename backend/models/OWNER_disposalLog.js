@@ -70,6 +70,11 @@ const OWNER_disposalLogSchema = new mongoose.Schema(
       required: true,
       index: true,
     },
+    requestedByName: {
+      type: String,
+      trim: true,
+      default: null,
+    },
     approvedBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",

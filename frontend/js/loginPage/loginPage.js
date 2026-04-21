@@ -17,6 +17,7 @@ function resetPasswordToggles() {
 }
 
 let eyeToggleHandlerBound = false;
+const FIRST_LOGIN_CHALLENGE_STORAGE_KEY = "ibmsFirstLoginChallengeToken";
 
 function bindEyeToggleHandler() {
   if (eyeToggleHandlerBound) return;
@@ -47,6 +48,106 @@ function bindEyeToggleHandler() {
   });
 
   eyeToggleHandlerBound = true;
+}
+
+function setFirstLoginChallengeToken(value) {
+  const token = String(value || "").trim();
+  if (!token) return;
+
+  try {
+    sessionStorage.setItem(FIRST_LOGIN_CHALLENGE_STORAGE_KEY, token);
+  } catch {
+    /* noop */
+  }
+}
+
+function getFirstLoginChallengeToken() {
+  try {
+    return String(sessionStorage.getItem(FIRST_LOGIN_CHALLENGE_STORAGE_KEY) || "").trim();
+  } catch {
+    return "";
+  }
+}
+
+function clearFirstLoginChallengeToken() {
+  try {
+    sessionStorage.removeItem(FIRST_LOGIN_CHALLENGE_STORAGE_KEY);
+  } catch {
+    /* noop */
+  }
+}
+
+function clearAuthSessionData() {
+  ["token", "role", "userEmail", "userAccountId", "userName"].forEach((key) => {
+    localStorage.removeItem(key);
+  });
+}
+
+function updateSessionFromAuthPayload(payload) {
+  localStorage.setItem("token", payload?.token || "");
+  localStorage.setItem("role", payload?.user?.role || "");
+  localStorage.setItem("userEmail", payload?.user?.email || "");
+  localStorage.setItem("userAccountId", payload?.user?.accountId || payload?.user?.email || "");
+  localStorage.setItem("userName", payload?.user?.name || "");
+}
+
+function redirectToDashboardByRole(role) {
+  if (role === "owner") {
+    window.location.href = resolveDashboardRedirect("owner");
+    return;
+  }
+
+  if (role === "staff") {
+    window.location.href = resolveDashboardRedirect("staff");
+    return;
+  }
+
+  throw new Error("Invalid role");
+}
+
+function setUpdatePasswordHeading(title) {
+  const heading = document.getElementById("updatePasswordTitle");
+  const subtitle = document.getElementById("updatePasswordSubtitle");
+  const badge = document.getElementById("updatePasswordBadge");
+
+  if (!heading) return;
+
+  const normalizedTitle = String(title || "Change Password").trim() || "Change Password";
+  heading.textContent = normalizedTitle;
+
+  if (normalizedTitle === "Change Password") {
+    if (subtitle) {
+      subtitle.textContent = "Create a strong password to continue to your dashboard.";
+    }
+    if (badge) {
+      badge.textContent = "First Login";
+    }
+    return;
+  }
+
+  if (subtitle) {
+    subtitle.textContent = "Set a new password that meets all requirements.";
+  }
+  if (badge) {
+    badge.textContent = "Account Security";
+  }
+}
+
+function resetPasswordRequirementChecklist() {
+  ["reqLength", "reqUppercase", "reqNumber", "reqSpecial"].forEach((id) => {
+    const item = document.getElementById(id);
+    if (!item) return;
+
+    item.classList.remove("text-blue-700");
+    item.classList.add("text-gray-500");
+
+    const icon = item.querySelector(".requirementIcon");
+    if (!icon) return;
+
+    icon.innerHTML = "&#9675;";
+    icon.classList.remove("bg-blue-600", "text-white", "border-blue-600");
+    icon.classList.add("border-gray-300", "text-gray-500");
+  });
 }
 
 function initializeLoginPage() {
@@ -119,39 +220,40 @@ function initializeLoginPage() {
   const confirmMsg = $("confirmMsg");
   const updateBtn = $("updatePasswordBtn");
 
-  const getMissing = (pw) => {
-    const missing = [];
-    if (pw.length < 8) missing.push("length");
-    if (!/[A-Z]/.test(pw)) missing.push("uppercase");
-    if (!/[0-9]/.test(pw)) missing.push("number");
-    if (!/[^A-Za-z0-9]/.test(pw)) missing.push("special");
-    return missing;
+  const requirementRules = [
+    { id: "reqLength", isMet: (pw) => pw.length >= 8 },
+    { id: "reqUppercase", isMet: (pw) => /[A-Z]/.test(pw) },
+    { id: "reqNumber", isMet: (pw) => /[0-9]/.test(pw) },
+    { id: "reqSpecial", isMet: (pw) => /[^A-Za-z0-9]/.test(pw) },
+  ];
+
+  const setRequirementState = (requirementId, met) => {
+    const requirementNode = $(requirementId);
+    if (!requirementNode) return;
+
+    requirementNode.classList.toggle("text-blue-700", met);
+    requirementNode.classList.toggle("text-gray-500", !met);
+
+    const icon = requirementNode.querySelector(".requirementIcon");
+    if (!icon) return;
+
+    icon.innerHTML = met ? "&#10003;" : "&#9675;";
+    icon.classList.toggle("bg-blue-600", met);
+    icon.classList.toggle("text-white", met);
+    icon.classList.toggle("border-blue-600", met);
+    icon.classList.toggle("border-gray-300", !met);
+    icon.classList.toggle("text-gray-500", !met);
   };
 
-  const updatePasswordMessage = () => {
-    if (!newPassword || !passwordMsg) return;
+  const updatePasswordRequirementChecklist = () => {
+    const pw = newPassword?.value || "";
+    requirementRules.forEach((rule) => {
+      setRequirementState(rule.id, rule.isMet(pw));
+    });
 
-    const pw = newPassword.value;
-    if (!pw) return hide(passwordMsg);
-
-    if (pw.length < 8) {
-      passwordMsg.textContent = "Password is too short";
-      passwordMsg.className = "text-red-600";
-      show(passwordMsg);
-      return;
+    if (passwordMsg) {
+      hide(passwordMsg);
     }
-
-    const missing = getMissing(pw);
-    if (missing.length) {
-      passwordMsg.textContent =
-        "Password must contain at least one uppercase letter, number, and special character.";
-      passwordMsg.className = "text-red-600";
-    } else {
-      passwordMsg.textContent = "Password is strong";
-      passwordMsg.className = "text-green-600";
-    }
-
-    show(passwordMsg);
   };
 
   const updateConfirmMessage = () => {
@@ -164,7 +266,7 @@ function initializeLoginPage() {
 
     if (pw === cpw) {
       confirmMsg.textContent = "Passwords match";
-      confirmMsg.className = "text-green-600";
+      confirmMsg.className = "text-blue-600";
     } else {
       confirmMsg.textContent = "Passwords do not match";
       confirmMsg.className = "text-red-600";
@@ -179,7 +281,7 @@ function initializeLoginPage() {
     const pw = newPassword?.value || "";
     const cpw = confirmPassword?.value || "";
 
-    const strong = getMissing(pw).length === 0 && pw;
+    const strong = pw && requirementRules.every((rule) => rule.isMet(pw));
     const match = pw && pw === cpw;
 
     updateBtn.disabled = !(strong && match);
@@ -188,7 +290,7 @@ function initializeLoginPage() {
   };
 
   newPassword?.addEventListener("input", () => {
-    updatePasswordMessage();
+    updatePasswordRequirementChecklist();
     updateConfirmMessage();
     updateButtonState();
   });
@@ -198,22 +300,76 @@ function initializeLoginPage() {
     updateButtonState();
   });
 
+  updatePasswordRequirementChecklist();
+  updateButtonState();
+
   // =========================
   // Update Password Submit
   // =========================
   const updatePasswordForm = document.querySelector("#updatePasswordPage form");
 
-  updatePasswordForm?.addEventListener("submit", (e) => {
+  updatePasswordForm?.addEventListener("submit", async (e) => {
     e.preventDefault();
-    alert("Password changed successfully!");
 
-    clear(newPassword);
-    clear(confirmPassword);
-    hide(passwordMsg);
-    hide(confirmMsg);
-    updateButtonState();
-    resetPasswordToggles();
-    showLoginPage();
+    const challengeToken = getFirstLoginChallengeToken();
+
+    if (!challengeToken) {
+      alert("Password changed successfully!");
+
+      clear(newPassword);
+      clear(confirmPassword);
+      hide(passwordMsg);
+      hide(confirmMsg);
+      updateButtonState();
+      resetPasswordToggles();
+      showLoginPage();
+      return;
+    }
+
+    const API_BASE_URL = resolveApiBaseUrl();
+
+    if (updateBtn) {
+      updateBtn.disabled = true;
+      updateBtn.classList.add("opacity-50", "cursor-not-allowed");
+    }
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/auth/first-login/change-password`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          challengeToken,
+          newPassword: newPassword?.value || "",
+          confirmPassword: confirmPassword?.value || "",
+        }),
+      });
+
+      const payload = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(payload?.message || "Unable to update password");
+      }
+
+      if (!payload?.token || !payload?.user) {
+        throw new Error("Invalid server response");
+      }
+
+      clearFirstLoginChallengeToken();
+      updateSessionFromAuthPayload(payload);
+      redirectToDashboardByRole(payload?.user?.role);
+      return;
+    } catch (error) {
+      if (passwordMsg) {
+        passwordMsg.textContent = String(error?.message || "Unable to update password");
+        passwordMsg.className = "text-red-600";
+        passwordMsg.classList.remove("hidden");
+      }
+
+      updateButtonState();
+      return;
+    }
   });
 
 }
@@ -262,6 +418,9 @@ function showLoginPage() {
 
   hide($("passwordMsg"));
   hide($("confirmMsg"));
+  clearFirstLoginChallengeToken();
+  setUpdatePasswordHeading("Reset Password");
+  resetPasswordRequirementChecklist();
 
   const updateBtn = $("updatePasswordBtn");
   if (updateBtn) {
@@ -270,6 +429,35 @@ function showLoginPage() {
   }
   resetPasswordToggles();
 
+}
+
+function showFirstLoginPasswordPage() {
+  const $ = (id) => document.getElementById(id);
+  const hide = (el) => el && el.classList.add("hidden");
+  const clear = (el) => el && (el.value = "");
+
+  hide($("loginUsernameWarning"));
+  hide($("loginPasswordWarning"));
+  hide($("passwordMsg"));
+  hide($("confirmMsg"));
+
+  clear($("newPassword"));
+  clear($("confirmPassword"));
+
+  $("loginPage")?.classList.add("hidden");
+  $("resetPasswordPage")?.classList.add("hidden");
+  $("updatePasswordPage")?.classList.remove("hidden");
+
+  setUpdatePasswordHeading("Change Password");
+  resetPasswordRequirementChecklist();
+
+  const updateBtn = $("updatePasswordBtn");
+  if (updateBtn) {
+    updateBtn.disabled = true;
+    updateBtn.classList.add("opacity-50", "cursor-not-allowed");
+  }
+
+  resetPasswordToggles();
 }
 
 function verifyReset() {
@@ -296,6 +484,9 @@ function verifyReset() {
   if (usernameVal && pinVal && !/\D/.test(pinVal)) {
     $("resetPasswordPage")?.classList.add("hidden");
     $("updatePasswordPage")?.classList.remove("hidden");
+    setUpdatePasswordHeading("Reset Password");
+    clearFirstLoginChallengeToken();
+    resetPasswordRequirementChecklist();
     $("resetUsername").value = "";
     $("pinInput").value = "";
   }
@@ -335,6 +526,7 @@ function resolveApiBaseUrl() {
 
 function validateLogin() {
   const $ = (id) => document.getElementById(id);
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
   const usernameVal = $("loginUsername")?.value.trim() || "";
   const passwordVal = $("loginPassword")?.value.trim() || "";
@@ -346,6 +538,14 @@ function validateLogin() {
   !passwordVal ? passWarn?.classList.remove("hidden") : passWarn?.classList.add("hidden");
 
   if (!usernameVal || !passwordVal) {
+    return;
+  }
+
+  if (!emailRegex.test(usernameVal)) {
+    if (userWarn) {
+      userWarn.textContent = "Please enter a valid email address.";
+      userWarn.classList.remove("hidden");
+    }
     return;
   }
 
@@ -371,27 +571,23 @@ function validateLogin() {
       return payload;
     })
     .then((payload) => {
-      localStorage.setItem("token", payload.token);
-      localStorage.setItem("role", payload?.user?.role || "");
-      localStorage.setItem("userEmail", payload?.user?.email || "");
-      localStorage.setItem("userName", payload?.user?.name || "");
-
-      const role = payload?.user?.role;
-
-      if (role === "owner") {
-        window.location.href = resolveDashboardRedirect("owner");
+      if (payload?.requiresPasswordChange && payload?.challengeToken) {
+        clearAuthSessionData();
+        setFirstLoginChallengeToken(payload.challengeToken);
+        showFirstLoginPasswordPage();
         return;
       }
 
-      if (role === "staff") {
-        window.location.href = resolveDashboardRedirect("staff");
-        return;
+      if (!payload?.token || !payload?.user) {
+        throw new Error("Invalid server response");
       }
 
-      throw new Error("Invalid role");
+      clearFirstLoginChallengeToken();
+      updateSessionFromAuthPayload(payload);
+      redirectToDashboardByRole(payload?.user?.role);
     })
     .catch((error) => {
-      const message = String(error.message || "Invalid username or password");
+      const message = String(error.message || "Invalid email or password");
 
       if (userWarn) {
         userWarn.textContent = message;

@@ -6,11 +6,37 @@ import User from "../models/user.js";
 import { createStockLog } from "../services/Owner_StockLog.service.js";
 import mongoose from "mongoose";
 import { setProductQuantityViaBatches } from "../services/inventoryIntegrityService.js";
+import { createCachedActorDisplayResolver } from "../utils/requesterDisplayName.js";
 
 const OWNER_getAdjustmentTimestamp = (adjustment) => {
   const raw = adjustment?.date_requested || adjustment?.createdAt || null;
   const parsed = raw ? new Date(raw).getTime() : 0;
   return Number.isFinite(parsed) ? parsed : 0;
+};
+
+const OWNER_hydrateAdjustmentRequesterNames = async (adjustments = []) => {
+  const resolveActorIdentity = createCachedActorDisplayResolver();
+
+  await Promise.all(
+    adjustments.map(async (adjustment) => {
+      const staffId = adjustment?.staffId?._id || adjustment?.staffId || null;
+      const resolvedIdentity = await resolveActorIdentity({
+        userId: staffId ? String(staffId) : null,
+        name: adjustment?.staffName || adjustment?.staffId?.name || null,
+        email: adjustment?.staffId?.email || null,
+        role: "staff",
+      });
+
+      adjustment.staffName = resolvedIdentity.name;
+      adjustment.staffId = {
+        _id: resolvedIdentity.id || (staffId ? String(staffId) : null),
+        name: resolvedIdentity.name,
+        email: resolvedIdentity.email || null,
+      };
+    })
+  );
+
+  return adjustments;
 };
 
 // Staff: Create quantity adjustment request
@@ -107,9 +133,10 @@ export const OWNER_getQuantityAdjustments = async (req, res) => {
 
     const adjustments = await STAFF_QuantityAdjustment.find(filter)
       .populate("productId", "category")
-      .populate("staffId", "name email")
       .populate("reviewedBy", "name email")
       .lean();
+
+    await OWNER_hydrateAdjustmentRequesterNames(adjustments);
 
     adjustments.sort((a, b) => OWNER_getAdjustmentTimestamp(b) - OWNER_getAdjustmentTimestamp(a));
 

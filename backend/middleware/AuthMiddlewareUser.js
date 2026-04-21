@@ -32,7 +32,10 @@ export const protect = (req, res, next) => {
       id: String(candidateId),
       role: String(decoded?.role || "").toUpperCase(),
       email: decoded?.email,
+      accountId: String(decoded?.accountId || decoded?.email || "").trim() || null,
       name: decoded?.name || null,
+      authSource: String(decoded?.authSource || "IBMS").toUpperCase(),
+      externalId: decoded?.externalId ? String(decoded.externalId) : null,
     };
 
     next();

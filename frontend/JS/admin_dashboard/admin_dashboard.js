@@ -20,13 +20,62 @@ let refreshTimer = null;
    Owner display info (from localStorage / JWT)
    ════════════════════════════════════════════════════════════════ */
 function getOwnerDisplayInfo() {
-  const name  = localStorage.getItem("userName")  || "Admin";
-  const email = localStorage.getItem("userEmail") || "";
+  const name = localStorage.getItem("userName") || "";
+  const roleKey = String(localStorage.getItem("role") || "owner").trim().toLowerCase();
+  const roleLabel = roleKey ? roleKey.charAt(0).toUpperCase() + roleKey.slice(1) : "Owner";
+  const tokens = String(name)
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+
+  const fullName = !tokens.length
+    ? "Admin"
+    : tokens.length === 1
+      ? tokens[0]
+      : `${tokens[0]} ${tokens[tokens.length - 1]}`;
+
   return {
-    fullName:  name,
-    username:  email || name.toUpperCase(),
-    initial:   name.charAt(0).toUpperCase(),
+    fullName,
+    subtitle: roleLabel,
+    initial: fullName.charAt(0).toUpperCase(),
   };
+}
+
+async function hydrateOwnerHeaderIdentity({ staffNameEl, staffUsernameEl, staffAvatarEl }) {
+  try {
+    const payload = await apiFetch("/api/auth/profile/me", { method: "GET" });
+    const rawFullName = String(payload?.data?.fullName || "").trim();
+    const roleLabel = String(payload?.data?.role || "").trim() || "Owner";
+    const tokens = rawFullName.split(/\s+/).filter(Boolean);
+    const fullName = !tokens.length
+      ? String(staffNameEl?.textContent || "").trim() || "Admin"
+      : tokens.length === 1
+        ? tokens[0]
+        : `${tokens[0]} ${tokens[tokens.length - 1]}`;
+
+    if (staffNameEl) {
+      staffNameEl.textContent = fullName;
+    }
+
+    if (staffAvatarEl) {
+      staffAvatarEl.textContent = fullName.charAt(0).toUpperCase();
+    }
+
+    if (staffUsernameEl) {
+      staffUsernameEl.textContent = roleLabel;
+      staffUsernameEl.classList.remove("hidden");
+      staffUsernameEl.removeAttribute("aria-hidden");
+    }
+
+    localStorage.setItem("userName", fullName);
+  } catch {
+    if (staffUsernameEl) {
+      const fallback = getOwnerDisplayInfo();
+      staffUsernameEl.textContent = fallback.subtitle;
+      staffUsernameEl.classList.remove("hidden");
+      staffUsernameEl.removeAttribute("aria-hidden");
+    }
+  }
 }
 
 /* ════════════════════════════════════════════════════════════════
@@ -203,8 +252,14 @@ document.addEventListener("DOMContentLoaded", () => {
   /* ================= OWNER INFO ================= */
   const ownerInfo = getOwnerDisplayInfo();
   if (staffNameEl)     staffNameEl.textContent     = ownerInfo.fullName;
-  if (staffUsernameEl) staffUsernameEl.textContent = ownerInfo.username;
+  if (staffUsernameEl) {
+    staffUsernameEl.textContent = ownerInfo.subtitle;
+    staffUsernameEl.classList.remove("hidden");
+    staffUsernameEl.removeAttribute("aria-hidden");
+  }
   if (staffAvatarEl)   staffAvatarEl.textContent   = ownerInfo.initial;
+
+  hydrateOwnerHeaderIdentity({ staffNameEl, staffUsernameEl, staffAvatarEl });
 
   /* ================= NAV ACTIVE ================= */
   function setActive(activeEl) {

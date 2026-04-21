@@ -59,6 +59,12 @@ const DB_STATUS_TO_UI = {
   out:       "out-of-stock",
 };
 
+const API_STATUS_TO_UI = {
+  IN_STOCK: "in-stock",
+  LOW_STOCK: "low-stock",
+  OUT_OF_STOCK: "out-of-stock",
+};
+
 const DB_REQUEST_STATUS_TO_UI = {
   pending:  "pending",
   approved: "approved",
@@ -141,6 +147,10 @@ function mapBackendItemToUI(p) {
 
   const nearestExpiry = p.nearestExpiryDate || p.expiryDate || null;
   const batchCount = Number.isFinite(Number(p.batchCount)) ? Number(p.batchCount) : batches.length;
+  const apiStockStatus = String(p.stockStatus || "").trim().toUpperCase();
+  const resolvedStatus = p.isArchived
+    ? "archived"
+    : (API_STATUS_TO_UI[apiStockStatus] || DB_STATUS_TO_UI[p.status] || "in-stock");
 
   return {
     id:              String(p._id || p.itemId || ""),
@@ -151,7 +161,7 @@ function mapBackendItemToUI(p) {
     minStock:        p.minStock ?? 10,
     unit:            p.unit || "pcs",
     supplier:        p.nearestBatchSupplier || p.supplier || p.supplierName || "—",
-    status:          p.isArchived ? "archived" : (DB_STATUS_TO_UI[p.status] || "in-stock"),
+    status:          resolvedStatus,
     expiryDate:      nearestExpiry ? formatDateDisplay(nearestExpiry, "—") : "—",
     expiryDateISO:   nearestExpiry ? new Date(nearestExpiry).toISOString().split("T")[0] : "",
     batchNumber:     p.nearestBatchNumber || p.batchNumber || "—",
@@ -176,6 +186,7 @@ function mapBackendItemToUI(p) {
       ? Number(p.variance)
       : Number(p.physicalCount ?? p.quantity ?? 0) - Number(p.expectedRemaining ?? p.quantity ?? 0),
     discrepancyStatus: p.discrepancyStatus || "Balanced",
+    hasPendingDisposalOnlyStock: p.hasPendingDisposalOnlyStock === true,
   };
 }
 
@@ -188,7 +199,11 @@ function mapExpiryRiskToUi(value) {
   return "no-expiry";
 }
 
-function getExpiryRiskPill(expiryRisk) {
+function getExpiryRiskPill(expiryRisk, options = {}) {
+  if (options.pendingDisposalOnly === true) {
+    return { label: "Under Review", textClass: "text-amber-700", dotColor: "#f59e0b" };
+  }
+
   const normalized = mapExpiryRiskToUi(expiryRisk);
   if (normalized === "safe") {
     return { label: "Safe", textClass: "text-emerald-700", dotColor: "#16a34a" };
@@ -250,7 +265,7 @@ function mapBackendRequestToUI(r) {
     minStock:        isRestock ? 10 : 10,       // product minStock not populated; safe default
     unit:            r.unit || "pcs",
     requestQuantity: isRestock ? (r.requestedQuantity ?? 0) : (r.initialQuantity ?? 0),
-    requestedBy:     r.requestedBy?.email || "Staff",
+    requestedBy:     r.requestedBy?.name || r.requestedByName || "Staff",
     requestDate,
     status:          DB_REQUEST_STATUS_TO_UI[r.status] || r.status,
     supplier:        "",
@@ -328,7 +343,7 @@ function mapBackendDisposalToUI(r) {
     minStock: 0,
     unit: "pcs",
     requestQuantity: Number(r.quantity_requested ?? r.quantityDisposed ?? 0),
-    requestedBy: r.requestedBy?.name || r.requestedBy?.email || "Staff",
+    requestedBy: r.requestedBy?.name || r.requestedByName || "Unknown",
     requestDate,
     status: uiStatus,
     supplier: "",
@@ -850,7 +865,9 @@ function renderInventory() {
 
   pagedItems.forEach(item => {
       const hasBatchWarning = hasExpiringSoonBatch(item.batches || []);
-    const riskPill = getExpiryRiskPill(item.expiryRisk);
+    const riskPill = getExpiryRiskPill(item.expiryRisk, {
+      pendingDisposalOnly: item.hasPendingDisposalOnlyStock === true,
+    });
 
     const colors = getStatusColors(item.status);
     const statusText = getStatusDisplayText(item.status);

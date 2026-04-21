@@ -16,6 +16,7 @@ let pendingArchiveUserId = null;
 let pendingArchiveReason = "";
 let currentEditUserId = null;
 let showArchivedOnly = false;
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const userFilterOptions = [
 	{ value: "All", label: "All Status" },
@@ -35,7 +36,7 @@ const normalizeUser = (user) => ({
 	id: user?.id || user?._id,
 	name: String(user?.name || "").trim() || "Unnamed Staff",
 	role: String(user?.role || "STAFF").toUpperCase(),
-	email: String(user?.email || "").trim(),
+	accountId: String(user?.email || user?.accountId || "").trim().toLowerCase(),
 	status: String(user?.status || "Active").trim(),
 	archivedAt: user?.archivedAt || null,
 	archiveReason: user?.archiveReason || null,
@@ -54,7 +55,7 @@ const normalizeActivity = (activity) => ({
 	timestampRaw: activity?.createdAt || new Date().toISOString(),
 	timestamp: formatTimestamp(activity?.createdAt),
 	name: String(activity?.actorName || "").trim() || "Unknown User",
-	email: String(activity?.actorEmail || "").trim() || "N/A",
+	accountId: String(activity?.actorEmail || "").trim() || "N/A",
 	actionType: String(activity?.actionType || "Activity").trim(),
 	description: String(activity?.description || "No description provided").trim(),
 	category: normalizeCategory(activity?.category),
@@ -225,7 +226,7 @@ function getFilteredUsers() {
 		const matchesSearch =
 			user.name.toLowerCase().includes(searchValue) ||
 			user.role.toLowerCase().includes(searchValue) ||
-			user.email.toLowerCase().includes(searchValue);
+			user.accountId.toLowerCase().includes(searchValue);
 
 		if (showArchivedOnly) {
 			return matchesSearch && user.status === "Archived";
@@ -251,7 +252,7 @@ function getFilteredActivities() {
 	return activityLogs.filter((activity) => {
 		const matchesSearch =
 			activity.name.toLowerCase().includes(searchValue) ||
-			activity.email.toLowerCase().includes(searchValue) ||
+			activity.accountId.toLowerCase().includes(searchValue) ||
 			activity.actionType.toLowerCase().includes(searchValue) ||
 			activity.description.toLowerCase().includes(searchValue);
 
@@ -301,7 +302,7 @@ function renderUsersTable() {
 				<tr class="hover:bg-slate-50 transition-colors">
 					<td class="px-4 py-3 text-sm text-slate-900 font-medium">${user.name}</td>
 					<td class="px-4 py-3 text-sm text-slate-700">${user.role}</td>
-					<td class="px-4 py-3 text-sm text-slate-700">${user.email}</td>
+					<td class="px-4 py-3 text-sm text-slate-700">${user.accountId}</td>
 					<td class="px-4 py-3 text-sm">
 						<span class="inline-flex px-3 py-1 rounded-full text-xs font-medium ${badgeClass}">${user.status}</span>
 					</td>
@@ -344,7 +345,7 @@ function renderActivityTable() {
 				<tr>
 					<td class="px-4 py-3 text-sm text-slate-700 whitespace-nowrap">${activity.timestamp}</td>
 					<td class="px-4 py-3 text-sm text-slate-900 font-medium">${activity.name}</td>
-					<td class="px-4 py-3 text-sm text-slate-700">${activity.email}</td>
+					<td class="px-4 py-3 text-sm text-slate-700">${activity.accountId}</td>
 					<td class="px-4 py-3">
 						<div class="flex items-start gap-3">
 							${iconMarkup}
@@ -376,15 +377,15 @@ function renderCurrentView() {
 function setEditFormValues(user) {
 	const editName = document.getElementById("editName");
 	const editRole = document.getElementById("editRole");
-	const editEmail = document.getElementById("editEmail");
+	const editAccountId = document.getElementById("editAccountId");
 	const editStatus = document.getElementById("editStatus");
 
-	if (!editName || !editRole || !editEmail || !editStatus) return;
+	if (!editName || !editRole || !editAccountId || !editStatus) return;
 
 	editName.value = user.name;
 	editRole.value = user.role;
 	editRole.setAttribute("readonly", "readonly");
-	editEmail.value = user.email;
+	editAccountId.value = user.accountId;
 	editStatus.value = user.status;
 	editStatus.setAttribute("disabled", "disabled");
 }
@@ -544,11 +545,15 @@ function bindEvents() {
 		event.preventDefault();
 
 		const addName = document.getElementById("addName")?.value.trim();
-		const addEmail = document.getElementById("addEmail")?.value.trim();
+		const addAccountId = document.getElementById("addAccountId")?.value.trim().toLowerCase();
 		const addPassword = document.getElementById("addPassword")?.value;
 
-		if (!addName || !addEmail || !addPassword) {
-			showMessage("Name, email, and password are required.");
+		if (!addName || !addPassword) {
+			showMessage("Name and password are required.");
+			return;
+		}
+		if (!addAccountId || !EMAIL_REGEX.test(addAccountId)) {
+			showMessage("A valid email is required.");
 			return;
 		}
 
@@ -559,7 +564,7 @@ function bindEvents() {
 
 		pendingAddUser = {
 			name: addName,
-			email: addEmail,
+			email: addAccountId,
 			password: addPassword,
 		};
 
@@ -625,7 +630,7 @@ function bindEvents() {
 			pendingArchiveUserId = user.id;
 			const archiveUserLabel = document.getElementById("archiveUserLabel");
 			if (archiveUserLabel) {
-				archiveUserLabel.textContent = `Account: ${user.name}`;
+				archiveUserLabel.textContent = `Email: ${user.accountId} (${user.name})`;
 			}
 			openModal("archiveModal");
 		}
@@ -636,17 +641,21 @@ function bindEvents() {
 		if (!currentEditUserId) return;
 
 		const editName = document.getElementById("editName")?.value.trim();
-		const editEmail = document.getElementById("editEmail")?.value.trim();
+		const editAccountId = document.getElementById("editAccountId")?.value.trim().toLowerCase();
 
-		if (!editName || !editEmail) {
+		if (!editName || !editAccountId) {
 			showMessage("Name and email are required.");
+			return;
+		}
+		if (!EMAIL_REGEX.test(editAccountId)) {
+			showMessage("A valid email is required.");
 			return;
 		}
 
 		pendingEditUser = {
 			id: currentEditUserId,
 			name: editName,
-			email: editEmail,
+			email: editAccountId,
 		};
 
 		closeModal("editUserModal");

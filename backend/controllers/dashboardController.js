@@ -5,6 +5,7 @@ import InventoryRequest from "../models/InventoryRequest.js";
 import ActivityLog from "../models/activityLog.js";
 import STAFF_ActivityLog from "../models/STAFF_activityLog.js";
 import Owner_StockLog from "../models/Owner_StockLog.model.js";
+import { createCachedActorDisplayResolver } from "../utils/requesterDisplayName.js";
 
 /* ================================================================
    Helper – start-of-day Date for "today" queries
@@ -157,26 +158,36 @@ export const getPendingInventoryRequests = async (_req, res) => {
   try {
     const requests = await InventoryRequest.find({ status: "pending" })
       .populate("product", "name category quantity")
-      .populate("requestedBy", "name email role")
       .lean();
 
     requests.sort((a, b) => getRequestTimestamp(b) - getRequestTimestamp(a));
     const topFive = requests.slice(0, 5);
+    const resolveActorIdentity = createCachedActorDisplayResolver();
 
     /* Normalise shape for the UI */
-    const mapped = topFive.map((r) => ({
-      _id:               r._id,
-      requestType:       r.requestType,
-      itemName:          r.requestType === "ADD_ITEM"
-                           ? r.itemName
-                           : r.product?.name ?? "Unknown",
-      requestedBy:       r.requestedBy?.name || r.requestedBy?.email || "Unknown",
-      requestedQuantity: r.requestType === "ADD_ITEM"
-                           ? r.initialQuantity
-                           : r.requestedQuantity,
-      status:            r.status,
-      date_requested:    r.date_requested || r.createdAt,
-      createdAt:         r.createdAt,
+    const mapped = await Promise.all(topFive.map(async (r) => {
+      const requestedById = r?.requestedBy?._id || r?.requestedBy || null;
+      const resolvedIdentity = await resolveActorIdentity({
+        userId: requestedById ? String(requestedById) : null,
+        name: r?.requestedBy?.name || r?.requestedByName || null,
+        email: r?.requestedBy?.email || null,
+        role: r?.requestedBy?.role || "staff",
+      });
+
+      return {
+        _id:               r._id,
+        requestType:       r.requestType,
+        itemName:          r.requestType === "ADD_ITEM"
+                             ? r.itemName
+                             : r.product?.name ?? "Unknown",
+        requestedBy:       resolvedIdentity.name,
+        requestedQuantity: r.requestType === "ADD_ITEM"
+                             ? r.initialQuantity
+                             : r.requestedQuantity,
+        status:            r.status,
+        date_requested:    r.date_requested || r.createdAt,
+        createdAt:         r.createdAt,
+      };
     }));
 
     res.json(mapped);

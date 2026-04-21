@@ -3,6 +3,13 @@ import bcrypt from "bcryptjs";
 import User from "../models/user.js";
 import ActivityLog from "../models/activityLog.js";
 import STAFF_ActivityLog from "../models/STAFF_activityLog.js";
+import { escapeRegex } from "../utils/accountIdUtils.js";
+
+const OWNER_EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+const OWNER_normalizeEmail = (value) => String(value || "").trim().toLowerCase();
+
+const OWNER_isValidEmail = (value) => OWNER_EMAIL_REGEX.test(OWNER_normalizeEmail(value));
 
 const OWNER_toDisplayName = (userLike) => {
 	const explicitName = String(userLike?.name || userLike?.actorName || "").trim();
@@ -12,6 +19,7 @@ const OWNER_toDisplayName = (userLike) => {
 	if (email.includes("@")) {
 		return email.split("@")[0];
 	}
+	if (email) return email;
 
 	const role = String(userLike?.role || userLike?.actorRole || "").trim().toUpperCase();
 	if (role === "OWNER") return "Owner";
@@ -94,6 +102,7 @@ const OWNER_mapStaffUser = (user) => ({
 	id: user._id,
 	name: OWNER_toDisplayName(user),
 	role: "STAFF",
+	accountId: user.email,
 	email: user.email,
 	status: OWNER_normalizeUserStatus(user),
 	archivedAt: user.archivedAt || null,
@@ -137,23 +146,32 @@ export const OWNER_getStaffUsers = async (req, res) => {
 
 export const OWNER_createStaffUser = async (req, res) => {
 	try {
-		const { name, email, password } = req.body;
+		const { name, accountId, email, password } = req.body;
 
 		const normalizedName = String(name || "").trim();
-		const normalizedEmail = String(email || "").trim().toLowerCase();
+		const normalizedEmail = OWNER_normalizeEmail(email || accountId);
 		const plainPassword = String(password || "");
 
 		if (!normalizedName || !normalizedEmail || !plainPassword) {
 			return res.status(400).json({ message: "name, email, and password are required" });
 		}
 
+		if (!OWNER_isValidEmail(normalizedEmail)) {
+			return res.status(400).json({ message: "A valid email is required" });
+		}
+
 		if (plainPassword.length < 6) {
 			return res.status(400).json({ message: "password must be at least 6 characters" });
 		}
 
-		const existingUser = await User.findOne({ email: normalizedEmail }).lean();
+		const existingUser = await User.findOne({
+			email: {
+				$regex: `^${escapeRegex(normalizedEmail)}$`,
+				$options: "i",
+			},
+		}).lean();
 		if (existingUser) {
-			return res.status(409).json({ message: "User already exists" });
+			return res.status(409).json({ message: "Email already exists" });
 		}
 
 		const hashedPassword = await bcrypt.hash(plainPassword, 10);
@@ -195,7 +213,7 @@ export const OWNER_createStaffUser = async (req, res) => {
 export const OWNER_updateStaffUser = async (req, res) => {
 	try {
 		const { id } = req.params;
-		const { name, email } = req.body;
+		const { name, accountId, email } = req.body;
 
 		if (!mongoose.Types.ObjectId.isValid(id)) {
 			return res.status(400).json({ message: "Invalid user id" });
@@ -207,15 +225,23 @@ export const OWNER_updateStaffUser = async (req, res) => {
 		}
 
 		const nextName = name !== undefined ? String(name).trim() : staffUser.name;
-		const nextEmail = email !== undefined ? String(email).trim().toLowerCase() : staffUser.email;
+		const nextEmail = accountId !== undefined || email !== undefined
+			? OWNER_normalizeEmail(accountId || email)
+			: staffUser.email;
 
 		if (!nextName || !nextEmail) {
 			return res.status(400).json({ message: "name and email are required" });
 		}
+		if (!OWNER_isValidEmail(nextEmail)) {
+			return res.status(400).json({ message: "A valid email is required" });
+		}
 
 		const emailAlreadyUsed = await User.findOne({
 			_id: { $ne: staffUser._id },
-			email: nextEmail,
+			email: {
+				$regex: `^${escapeRegex(nextEmail)}$`,
+				$options: "i",
+			},
 		}).lean();
 
 		if (emailAlreadyUsed) {

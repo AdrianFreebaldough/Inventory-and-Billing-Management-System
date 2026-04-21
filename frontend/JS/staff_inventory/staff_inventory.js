@@ -68,7 +68,11 @@ function mapExpiryRiskToUi(value) {
     return 'no-expiry';
 }
 
-function getExpiryRiskPill(expiryRisk) {
+function getExpiryRiskPill(expiryRisk, options = {}) {
+    if (options.pendingDisposalOnly === true) {
+        return { label: 'Under Review', textClass: 'text-amber-700', dotColor: '#f59e0b' };
+    }
+
     const normalized = mapExpiryRiskToUi(expiryRisk);
     if (normalized === 'safe') {
         return { label: 'Safe', textClass: 'text-emerald-700', dotColor: '#16a34a' };
@@ -352,6 +356,7 @@ function mapBackendItemToUI(item) {
         medicineName: item.medicineName || item.itemName || item.name || "",
         archived: !!item.isArchived,
         isPendingRequest: !!item.isPendingRequest,
+        hasPendingDisposalOnlyStock: item.hasPendingDisposalOnlyStock === true,
     };
 }
 
@@ -665,7 +670,9 @@ function renderInventory() {
         const statusText = getStatusDisplayText(item.status);
         const archivedPill = item.archived === true ? `<span class="ml-2 inline-block px-2 py-1 rounded text-xs font-medium bg-gray-200 text-gray-700">Archived</span>` : '';
         const hasBatchWarning = hasExpiringSoonBatch(item.batches || []);
-        const riskPill = getExpiryRiskPill(item.expiryRisk);
+        const riskPill = getExpiryRiskPill(item.expiryRisk, {
+            pendingDisposalOnly: item.hasPendingDisposalOnlyStock === true,
+        });
 
         const card = document.createElement("div");
         card.className = "border border-gray-200 rounded-lg p-4 bg-white shadow-md hover:shadow-lg transition-all duration-200 h-full flex flex-col transform hover:-translate-y-1";

@@ -24,7 +24,12 @@ const normalizeBoolean = (value, fallback = false) => {
   return ["1", "true", "yes", "on"].includes(normalized);
 };
 
+const HRMS_AUTH_ENABLED = normalizeBoolean(process.env.HRMS_AUTH_ENABLED, false);
+
 const requiredEnv = ["IBMS_DB_URI", "JWT_SECRET"];
+if (HRMS_AUTH_ENABLED) {
+  requiredEnv.push("HRMS_DB_URI");
+}
 if (!isTest) {
   const missing = requiredEnv.filter((key) => !process.env[key]);
   if (missing.length > 0) {
@@ -53,6 +58,23 @@ const env = {
   NODE_ENV,
   PORT: Number(process.env.PORT || 3000),
   IBMS_DB_URI: process.env.IBMS_DB_URI,
+  HRMS_AUTH_ENABLED,
+  HRMS_DB_URI: String(process.env.HRMS_DB_URI || "").trim(),
+  HRMS_USER_COLLECTION: String(process.env.HRMS_USER_COLLECTION || "usertable").trim(),
+  HRMS_LOGIN_FIELD: String(process.env.HRMS_LOGIN_FIELD || "email").trim(),
+  HRMS_IDENTIFIER_FIELDS: String(process.env.HRMS_IDENTIFIER_FIELDS || "").trim(),
+  HRMS_PASSWORD_FIELD: String(process.env.HRMS_PASSWORD_FIELD || "password").trim(),
+  HRMS_ROLE_FIELD: String(process.env.HRMS_ROLE_FIELD || "role").trim(),
+  HRMS_STATUS_FIELD: String(process.env.HRMS_STATUS_FIELD || "status").trim(),
+  HRMS_NAME_FIELD: String(process.env.HRMS_NAME_FIELD || "name").trim(),
+  HRMS_EMAIL_FIELD: String(process.env.HRMS_EMAIL_FIELD || "email").trim(),
+  HRMS_ID_FIELD: String(process.env.HRMS_ID_FIELD || "_id").trim(),
+  HRMS_ACTIVE_VALUES: String(process.env.HRMS_ACTIVE_VALUES || "active,enabled,true,1").trim(),
+  HRMS_OWNER_ROLE_VALUES: String(process.env.HRMS_OWNER_ROLE_VALUES || "owner,admin,administrator,superadmin").trim(),
+  HRMS_STAFF_ROLE_VALUES: String(process.env.HRMS_STAFF_ROLE_VALUES || "staff,employee,user").trim(),
+  HRMS_PASSWORD_ALGORITHM: String(process.env.HRMS_PASSWORD_ALGORITHM || "bcrypt").trim().toLowerCase(),
+  HRMS_LOGIN_CASE_INSENSITIVE: normalizeBoolean(process.env.HRMS_LOGIN_CASE_INSENSITIVE, true),
+  HRMS_REQUIRE_STATUS: normalizeBoolean(process.env.HRMS_REQUIRE_STATUS, false),
   JWT_SECRET: process.env.JWT_SECRET,
   IBMS_INTEGRATION_TOKEN: String(process.env.IBMS_INTEGRATION_TOKEN || "").trim(),
   PARMS_STRICT_PATIENT_LOOKUP: normalizeBoolean(process.env.PARMS_STRICT_PATIENT_LOOKUP, false),

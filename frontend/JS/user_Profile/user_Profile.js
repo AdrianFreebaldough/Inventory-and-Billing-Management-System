@@ -1,253 +1,216 @@
-// User Profile JavaScript - All Logic Centralized
+import { apiFetch } from "../utils/apiClient.js";
 
-import { staffProfileData, adminProfileData } from './data/user_Profile_data.js';
-
-// ==========================================
-// Configuration
-// ==========================================
 const CONFIG = {
-    notificationDuration: 3000,
-    phoneRegex: /^09\d{9}$/,
-    emailRegex: /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
-    maxFileSize: 5 * 1024 * 1024,
-    allowedTypes: ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
+  notificationDuration: 3000,
 };
 
-// ==========================================
-// Data Access Functions
-// ==========================================
-const getUserProfileData = (userType = 'staff') => {
-    if (!staffProfileData || !adminProfileData) {
-        return {
-            fullName: "Error Loading",
-            employeeId: "N/A",
-            role: "Unknown",
-            contactNumber: "",
-            email: "",
-            avatar: null
-        };
-    }
-    
-    const data = userType === 'admin' 
-        ? adminProfileData 
-        : staffProfileData;
-    
-    return { ...data };
-};
-
-// ==========================================
-// DOM Helpers
-// ==========================================
 const getElements = () => ({
-    avatar: document.getElementById('profile-avatar'),
-    avatarUpload: document.getElementById('avatar-upload'),
-    avatarOverlay: document.getElementById('avatar-overlay'),
-    displayName: document.getElementById('profile-fullname'),
-    displayRole: document.getElementById('profile-role'),
-    fullName: document.getElementById('full-name'),
-    employeeId: document.getElementById('employee-id'),
-    role: document.getElementById('role'),
-    contactNumber: document.getElementById('contact-number'),
-    email: document.getElementById('email'),
-    saveBtn: document.getElementById('saveProfileBtn')
+  avatar: document.getElementById("profile-avatar"),
+  displayName: document.getElementById("profile-fullname"),
+  displayRole: document.getElementById("profile-role"),
+  fullName: document.getElementById("full-name"),
+  employeeId: document.getElementById("employee-id"),
+  role: document.getElementById("role"),
+  contactNumber: document.getElementById("contact-number"),
+  email: document.getElementById("email"),
+  saveBtn: document.getElementById("saveProfileBtn"),
 });
 
-// ==========================================
-// Utilities
-// ==========================================
+const decodeTokenPayload = () => {
+  const tokenKeys = ["token", "authToken", "jwtToken", "ibmsToken"];
+  for (const key of tokenKeys) {
+    const token = localStorage.getItem(key);
+    if (!token || !token.trim()) continue;
+
+    const parts = token.split(".");
+    if (parts.length < 2) continue;
+
+    try {
+      return JSON.parse(atob(parts[1]));
+    } catch {
+      // ignore malformed token payload
+    }
+  }
+
+  return null;
+};
+
+const toTitleCase = (value) => {
+  const normalized = String(value || "").trim();
+  if (!normalized) return "";
+
+  return normalized
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((token) => token.charAt(0).toUpperCase() + token.slice(1).toLowerCase())
+    .join(" ");
+};
+
 const getInitials = (name) => {
-    if (!name || typeof name !== 'string') {
-        return '??';
-    }
-    
-    return name
-        .split(' ')
-        .map(word => word[0]?.toUpperCase() || '')
-        .join('')
-        .slice(0, 2);
+  const normalized = String(name || "").trim();
+  if (!normalized) return "U";
+
+  return normalized
+    .split(" ")
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase())
+    .join("")
+    .slice(0, 2);
 };
 
-const cleanPhone = (phone) => phone?.replace(/\s/g, '') || '';
+const fallbackProfile = (userType = "staff") => {
+  const payload = decodeTokenPayload();
+  const accountId = String(
+    localStorage.getItem("userAccountId") ||
+      localStorage.getItem("userEmail") ||
+      payload?.accountId ||
+      payload?.email ||
+      ""
+  )
+    .trim()
+    .toUpperCase();
 
-const validateEmail = (email) => CONFIG.emailRegex.test(email);
-const validatePhone = (phone) => CONFIG.phoneRegex.test(cleanPhone(phone));
+  const roleKey = String(payload?.role || localStorage.getItem("role") || userType || "staff").trim().toLowerCase();
+  const roleLabel = toTitleCase(roleKey || "staff");
 
-// ==========================================
-// Avatar Handling
-// ==========================================
-const handleAvatarClick = (elements) => {
-    elements.avatarUpload.click();
+  const fullName = String(localStorage.getItem("userName") || "").trim() || accountId || "User";
+
+  return {
+    fullName,
+    employeeId: accountId || "N/A",
+    role: roleLabel,
+    contactNumber: "",
+    email: String(payload?.email || "").trim(),
+    authSource: String(payload?.authSource || "IBMS").toUpperCase(),
+  };
 };
 
-const handleAvatarChange = (elements, userType) => (e) => {
-    const file = e.target.files[0];
-    
-    if (!file) return;
-    
-    if (!CONFIG.allowedTypes.includes(file.type)) {
-        showNotification('Please upload a valid image (JPEG, PNG, GIF, WebP)', 'error');
-        return;
-    }
-    
-    if (file.size > CONFIG.maxFileSize) {
-        showNotification('File size must be less than 5MB', 'error');
-        return;
-    }
-    
-    const reader = new FileReader();
-    reader.onload = (event) => {
-        const imageUrl = event.target.result;
-        
-        elements.avatar.innerHTML = `<img src="${imageUrl}" class="w-full h-full object-cover" alt="Profile">`;
-        elements.avatar.classList.remove('bg-blue-600', 'text-white', 'text-2xl', 'font-semibold');
-        
-        const targetData = userType === 'admin' ? adminProfileData : staffProfileData;
-        targetData.avatar = imageUrl;
-        
-        showNotification('Profile picture updated', 'success');
-    };
-    
-    reader.onerror = () => {
-        showNotification('Failed to read image file', 'error');
-    };
-    
-    reader.readAsDataURL(file);
+const normalizeProfileResponse = (payload = {}, userType = "staff") => {
+  const data = payload?.data || {};
+  const fallback = fallbackProfile(userType);
+
+  const fullName = String(data?.fullName || "").trim() || fallback.fullName;
+  const employeeId = String(data?.employeeId || data?.accountId || "").trim().toUpperCase() || fallback.employeeId;
+  const role = String(data?.role || "").trim() || fallback.role;
+  const contactNumber = String(data?.contactNumber || "").trim() || "";
+  const email = String(data?.email || "").trim() || "";
+  const authSource = String(data?.authSource || fallback.authSource || "IBMS").toUpperCase();
+
+  return {
+    fullName,
+    employeeId,
+    role,
+    contactNumber,
+    email,
+    authSource,
+  };
 };
 
-const loadAvatar = (elements, data) => {
-    if (data?.avatar) {
-        elements.avatar.innerHTML = `<img src="${data.avatar}" class="w-full h-full object-cover" alt="Profile">`;
-        elements.avatar.classList.remove('bg-blue-600', 'text-white', 'text-2xl', 'font-semibold');
-    } else {
-        elements.avatar.textContent = getInitials(data.fullName);
-    }
+const showNotification = (message, type = "info") => {
+  document.querySelectorAll(".profile-notification").forEach((el) => el.remove());
+
+  const palette = {
+    info: "bg-blue-600",
+    success: "bg-green-600",
+    error: "bg-red-600",
+  };
+
+  const notification = document.createElement("div");
+  notification.className = `profile-notification fixed bottom-16 right-14 px-4 py-3 rounded-lg text-white font-medium z-50 shadow-lg ${palette[type] || palette.info}`;
+  notification.textContent = message;
+
+  document.body.appendChild(notification);
+  setTimeout(() => notification.remove(), CONFIG.notificationDuration);
 };
 
-// ==========================================
-// Validation
-// ==========================================
-const validateProfileData = (data) => {
-    const errors = [];
-    
-    if (!data?.fullName?.trim() || data.fullName.trim().length < 2) {
-        errors.push('Full name must be at least 2 characters');
-    }
-    if (!validateEmail(data?.email || '')) {
-        errors.push('Valid email address is required');
-    }
-    if (!validatePhone(data?.contactNumber || '')) {
-        errors.push('Valid contact number required');
-    }
-    
-    return errors;
+const renderProfile = (elements, profile) => {
+  if (!elements || !profile) return;
+
+  if (elements.avatar) {
+    elements.avatar.textContent = getInitials(profile.fullName || profile.employeeId);
+  }
+
+  if (elements.displayName) {
+    elements.displayName.textContent = profile.fullName || profile.employeeId || "User";
+  }
+
+  if (elements.displayRole) {
+    const suffix = profile.authSource === "HRMS" ? " (HRMS)" : "";
+    elements.displayRole.textContent = `${profile.role || "Staff"}${suffix}`;
+  }
+
+  if (elements.fullName) {
+    elements.fullName.value = profile.fullName || "";
+  }
+
+  if (elements.employeeId) {
+    elements.employeeId.value = profile.employeeId || "";
+  }
+
+  if (elements.role) {
+    elements.role.value = profile.role || "";
+  }
+
+  if (elements.contactNumber) {
+    elements.contactNumber.value = profile.contactNumber || "";
+  }
+
+  if (elements.email) {
+    elements.email.value = profile.email || "";
+  }
 };
 
-// ==========================================
-// UI Updates
-// ==========================================
-const updateDisplayElements = (elements, data) => {
-    if (!data || !data.fullName) {
-        return;
-    }
-    
-    loadAvatar(elements, data);
-    elements.displayName.textContent = data.fullName;
-    elements.displayRole.textContent = data.role;
+const setReadonlyFields = (elements) => {
+  [elements.fullName, elements.employeeId, elements.role, elements.contactNumber, elements.email].forEach((field) => {
+    if (!field) return;
+    field.setAttribute("readonly", "readonly");
+  });
 };
 
-const populateForm = (elements, data) => {
-    if (!data) {
-        return;
-    }
-    
-    elements.fullName.value = data.fullName || '';
-    elements.employeeId.value = data.employeeId || '';
-    elements.role.value = data.role || '';
-    elements.contactNumber.value = data.contactNumber || '';
-    elements.email.value = data.email || '';
+const loadProfile = async ({ elements, userType }) => {
+  try {
+    const payload = await apiFetch("/api/auth/profile/me", { method: "GET" });
+    const profile = normalizeProfileResponse(payload, userType);
+    renderProfile(elements, profile);
+  } catch (error) {
+    const fallback = fallbackProfile(userType);
+    renderProfile(elements, fallback);
+    showNotification(error?.message || "Unable to load profile from server", "error");
+  }
 };
 
-const showNotification = (message, type = 'info') => {
-    document.querySelectorAll('.profile-notification').forEach(el => el.remove());
-    
-    const notification = document.createElement('div');
-    // Position: bottom-8 (more up from bottom), right-8 (more left from right edge)
-    notification.className = `profile-notification fixed bottom-16 right-14 px-4 py-3 rounded-lg text-white font-medium z-50 shadow-lg bg-blue-600`;
-    notification.textContent = message;
-    
-    document.body.appendChild(notification);
-    setTimeout(() => notification.remove(), CONFIG.notificationDuration);
-};
-
-// ==========================================
-// Event Handlers
-// ==========================================
-const handleSave = (userType) => (e) => {
-    e.preventDefault();
+export const initProfile = (userType = "staff") => {
+  const run = async () => {
     const elements = getElements();
-    
-    const formData = {
-        fullName: elements.fullName.value,
-        employeeId: elements.employeeId.value,
-        role: elements.role.value,
-        contactNumber: elements.contactNumber.value,
-        email: elements.email.value,
-        avatar: userType === 'admin' ? adminProfileData.avatar : staffProfileData.avatar
-    };
-    
-    const errors = validateProfileData(formData);
-    if (errors.length) {
-        showNotification(errors.join(', '), 'error');
-        return;
-    }
-    
-    const targetData = userType === 'admin' ? adminProfileData : staffProfileData;
-    Object.assign(targetData, formData);
-    
-    updateDisplayElements(elements, formData);
-    showNotification('Profile saved successfully!', 'success');
-};
-
-// ==========================================
-// Initialization
-// ==========================================
-export const initProfile = (userType = 'staff') => {
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', () => doInit(userType));
-    } else {
-        doInit(userType);
-    }
-};
-
-const doInit = (userType) => {
-    const elements = getElements();
-    
     const missing = Object.entries(elements)
-        .filter(([_, el]) => !el)
-        .map(([name]) => name);
-    
-    if (missing.length) {
-        return;
+      .filter(([, el]) => !el)
+      .map(([key]) => key);
+
+    if (missing.length > 0) {
+      return;
     }
-    
-    const data = getUserProfileData(userType);
-    
-    if (!data || !data.fullName) {
-        showNotification('Failed to load profile data', 'error');
-        return;
+
+    setReadonlyFields(elements);
+
+    if (elements.saveBtn) {
+      elements.saveBtn.textContent = "Refresh Profile";
+      elements.saveBtn.addEventListener("click", async (event) => {
+        event.preventDefault();
+        await loadProfile({ elements, userType });
+        showNotification("Profile refreshed", "success");
+      });
     }
-    
-    elements.avatar.addEventListener('click', () => handleAvatarClick(elements));
-    elements.avatarOverlay.addEventListener('click', () => handleAvatarClick(elements));
-    elements.avatarUpload.addEventListener('change', handleAvatarChange(elements, userType));
-    
-    updateDisplayElements(elements, data);
-    populateForm(elements, data);
-    
-    elements.saveBtn.addEventListener('click', handleSave(userType));
+
+    await loadProfile({ elements, userType });
+  };
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", run, { once: true });
+  } else {
+    run();
+  }
 };
 
-// Auto-init if contentArea exists
-if (typeof window !== 'undefined' && document.querySelector('#contentArea')) {
-    initProfile();
+if (typeof window !== "undefined" && document.querySelector("#contentArea")) {
+  initProfile();
 }

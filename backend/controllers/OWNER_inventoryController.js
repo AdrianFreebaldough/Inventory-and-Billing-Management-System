@@ -7,7 +7,13 @@ import InventoryBatch from "../models/InventoryBatch.js";
 import { createStockLog } from "../services/Owner_StockLog.service.js";
 import { getExpirationStatus, getDaysUntilExpiry } from "../services/expirationService.js";
 import { classifyExpiryRisk, toUiExpiryRiskKey } from "../services/fefoService.js";
-import { getBatchLifecycleFlags, getBatchEffectiveStatus } from "../services/batchLifecycleService.js";
+import { createCachedActorDisplayResolver } from "../utils/requesterDisplayName.js";
+import {
+  BATCH_EFFECTIVE_STATUS,
+  getBatchLifecycleFlags,
+  getBatchEffectiveStatus,
+  isBatchEligibleForBilling,
+} from "../services/batchLifecycleService.js";
 import {
   applyBatchDeltaToProduct,
   setProductQuantityViaBatches,
@@ -154,6 +160,72 @@ const OWNER_buildLegacyBatch = (product) => {
   };
 };
 
+const OWNER_API_STOCK_TO_DB_STATUS = {
+  IN_STOCK: "available",
+  LOW_STOCK: "low",
+  OUT_OF_STOCK: "out",
+};
+
+const OWNER_getBatchQuantity = (batch) => {
+  const quantity = Number(batch?.currentQuantity ?? batch?.quantity ?? 0);
+  return Number.isFinite(quantity) ? quantity : 0;
+};
+
+const OWNER_getStockSummaryFromBatches = ({ batches = [], fallbackQuantity = 0, minStock = 10 }) => {
+  const safeMinStock = Number.isFinite(Number(minStock)) ? Number(minStock) : 10;
+  const normalizedBatches = Array.isArray(batches) ? batches : [];
+
+  if (!normalizedBatches.length) {
+    const quantity = Math.max(0, Number(fallbackQuantity) || 0);
+    const stockStatus = quantity <= 0 ? "OUT_OF_STOCK" : (quantity <= safeMinStock ? "LOW_STOCK" : "IN_STOCK");
+    return {
+      stockStatus,
+      status: OWNER_API_STOCK_TO_DB_STATUS[stockStatus] || "available",
+      sellableQuantity: quantity,
+      pendingDisposalQuantity: 0,
+      totalPositiveQuantity: quantity,
+      hasPendingDisposalOnlyStock: false,
+    };
+  }
+
+  let sellableQuantity = 0;
+  let pendingDisposalQuantity = 0;
+  let totalPositiveQuantity = 0;
+
+  normalizedBatches.forEach((batch) => {
+    const quantity = OWNER_getBatchQuantity(batch);
+    if (quantity <= 0) return;
+
+    totalPositiveQuantity += quantity;
+
+    if (isBatchEligibleForBilling(batch)) {
+      sellableQuantity += quantity;
+    }
+
+    if (getBatchEffectiveStatus(batch) === BATCH_EFFECTIVE_STATUS.PENDING_DISPOSAL) {
+      pendingDisposalQuantity += quantity;
+    }
+  });
+
+  const hasPendingDisposalOnlyStock =
+    sellableQuantity <= 0 &&
+    pendingDisposalQuantity > 0 &&
+    totalPositiveQuantity === pendingDisposalQuantity;
+
+  const stockStatus = sellableQuantity <= 0
+    ? "OUT_OF_STOCK"
+    : (sellableQuantity <= safeMinStock ? "LOW_STOCK" : "IN_STOCK");
+
+  return {
+    stockStatus,
+    status: OWNER_API_STOCK_TO_DB_STATUS[stockStatus] || "available",
+    sellableQuantity,
+    pendingDisposalQuantity,
+    totalPositiveQuantity,
+    hasPendingDisposalOnlyStock,
+  };
+};
+
 const OWNER_REQUEST_STATUS_PRIORITY = {
   pending: 1,
   approved: 2,
@@ -179,6 +251,32 @@ const OWNER_sortRequestsByStatusThenLatest = (requests = []) => {
     if (aPriority !== bPriority) return aPriority - bPriority;
     return OWNER_getRequestTimestamp(b) - OWNER_getRequestTimestamp(a);
   });
+
+  return requests;
+};
+
+const OWNER_hydrateInventoryRequesterIdentity = async (requests = []) => {
+  const resolveActorIdentity = createCachedActorDisplayResolver();
+
+  await Promise.all(
+    requests.map(async (request) => {
+      const requestedById = request?.requestedBy?._id || request?.requestedBy || null;
+      const resolvedIdentity = await resolveActorIdentity({
+        userId: requestedById ? String(requestedById) : null,
+        name: request?.requestedBy?.name || request?.requestedByName || null,
+        email: request?.requestedBy?.email || null,
+        role: request?.requestedBy?.role || "staff",
+      });
+
+      request.requestedBy = {
+        _id: resolvedIdentity.id || (requestedById ? String(requestedById) : null),
+        name: resolvedIdentity.name,
+        email: resolvedIdentity.email || null,
+        role: resolvedIdentity.role || "staff",
+      };
+      request.requestedByName = resolvedIdentity.name;
+    })
+  );
 
   return requests;
 };
@@ -284,6 +382,11 @@ const OWNER_enrichMissingFieldsFromApprovedRequests = async (products) => {
 };
 
 const OWNER_enrichProductWithExpiration = (product) => {
+  const stockSummary = OWNER_getStockSummaryFromBatches({
+    batches: product.batches,
+    fallbackQuantity: product.productQuantity ?? product.quantity ?? 0,
+    minStock: product.minStock,
+  });
   const referenceExpiryDate = product.nearestExpiryDate || product.expiryDate;
   const expectedRemaining = Number.isFinite(Number(product.expectedRemaining))
     ? Number(product.expectedRemaining)
@@ -301,9 +404,14 @@ const OWNER_enrichProductWithExpiration = (product) => {
 
   return {
     ...product,
+    status: stockSummary.status,
+    stockStatus: stockSummary.stockStatus,
     quantity: Number(product.productQuantity ?? product.quantity ?? 0),
     totalQuantity: Number(product.productQuantity ?? product.quantity ?? 0),
     batchQuantity: Number(product.totalBatchQuantity ?? 0),
+    sellableQuantity: Number(stockSummary.sellableQuantity ?? 0),
+    pendingDisposalQuantity: Number(stockSummary.pendingDisposalQuantity ?? 0),
+    hasPendingDisposalOnlyStock: stockSummary.hasPendingDisposalOnlyStock === true,
     expiryDate: referenceExpiryDate || null,
     nearestExpiryDate: referenceExpiryDate || null,
     expiryRisk: product.expiryRisk || classifyExpiryRisk(referenceExpiryDate || null),
@@ -583,8 +691,9 @@ export const OWNER_getPendingInventoryRequests = async (req, res) => {
   try {
     const requests = await InventoryRequest.find({ status: "pending" })
       .populate("product", "name category quantity isArchived")
-      .populate("requestedBy", "email role")
       .lean();
+
+    await OWNER_hydrateInventoryRequesterIdentity(requests);
 
     const filtered = requests.filter((request) => {
       if (request.requestType === "ADD_ITEM") {
@@ -1201,8 +1310,9 @@ export const OWNER_getAllInventoryRequests = async (req, res) => {
   try {
     const requests = await InventoryRequest.find()
       .populate("product", "name category quantity isArchived")
-      .populate("requestedBy", "email role")
       .lean();
+
+    await OWNER_hydrateInventoryRequesterIdentity(requests);
 
     OWNER_sortRequestsByStatusThenLatest(requests);
 

@@ -2,11 +2,11 @@ import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import mongoose from "mongoose";
 import Product from "../models/product.js";
-import User from "../models/user.js";
 import InventoryBatch from "../models/InventoryBatch.js";
 import ActivityLog from "../models/activityLog.js";
 import OWNER_DisposalLog from "../models/OWNER_disposalLog.js";
 import { createStockLog } from "./Owner_StockLog.service.js";
+import { createCachedActorDisplayResolver } from "../utils/requesterDisplayName.js";
 import {
   BATCH_EFFECTIVE_STATUS,
   BATCH_MANUAL_STATUS,
@@ -31,6 +31,13 @@ const parsePositiveInteger = (value) => {
     return null;
   }
   return parsed;
+};
+
+const resolveRequesterDisplayName = ({ requesterName, requesterEmail, requesterAccountId, userRole = "STAFF" }) => {
+  const byName = String(requesterName || "").trim();
+  if (byName) return byName;
+
+  return String(userRole || "").toUpperCase() === "OWNER" ? "Admin" : "Staff";
 };
 
 const executeWithOptionalTransaction = async (workFn) => {
@@ -94,7 +101,13 @@ export const recalculateProductStock = async (productId, session = null) => {
   return result.product;
 };
 
-const mapDisposalLog = (log) => ({
+const mapDisposalLog = (log) => {
+  const requestedById = log.requestedBy?._id || log.requestedBy || null;
+  const requestedByName = String(
+    log.requestedBy?.name || log.requestedByName || ""
+  ).trim();
+
+  return {
   id: log._id,
   referenceId: log.referenceId,
   itemId: log.itemId?._id || log.itemId || null,
@@ -106,11 +119,11 @@ const mapDisposalLog = (log) => ({
   quantityDisposed: Number(log.quantityDisposed || 0),
   reason: log.reason,
   remarks: log.remarks || "",
-  requestedBy: log.requestedBy
+  requestedBy: requestedById || requestedByName
     ? {
-        id: log.requestedBy._id,
-        name: log.requestedBy.name || log.requestedBy.email || "Unknown",
-        email: log.requestedBy.email || null,
+        id: requestedById,
+        name: requestedByName || "Unknown",
+        email: log.requestedBy?.email || null,
       }
     : null,
   approvedBy: log.approvedBy
@@ -130,7 +143,101 @@ const mapDisposalLog = (log) => ({
   status: log.status,
   quantity_requested: Number(log.quantityDisposed || 0),
   requested_role: log.requestedBy?.role || null,
-});
+  };
+};
+
+const hydrateMissingRequesterIdentity = async (logs = [], session = null) => {
+  const rows = Array.isArray(logs) ? logs : [];
+  const missingRows = rows.filter((row) => {
+    const hasRequestedBy = Boolean(row?.requestedBy);
+    const hasRequestedByName = String(row?.requestedByName || "").trim().length > 0;
+    return !hasRequestedBy && !hasRequestedByName;
+  });
+
+  if (!missingRows.length) {
+    return rows;
+  }
+
+  const missingEntityIds = missingRows
+    .map((row) => row?._id)
+    .filter(Boolean);
+
+  const missingReferenceIds = missingRows
+    .map((row) => String(row?.referenceId || "").trim())
+    .filter(Boolean);
+
+  const activityQuery = ActivityLog.find({
+    $or: [
+      {
+        entityType: "DisposalLog",
+        entityId: { $in: missingEntityIds },
+      },
+      {
+        actionType: "DISPOSAL_REQUEST",
+        "details.referenceId": { $in: missingReferenceIds },
+      },
+      {
+        action: "DISPOSAL_REQUEST_CREATED",
+        "details.referenceId": { $in: missingReferenceIds },
+      },
+    ],
+  })
+    .select("entityId actorId actorName actorEmail actorRole details createdAt")
+    .sort({ createdAt: -1 })
+    .lean();
+  getQueryWithSession(activityQuery, session);
+  const activities = await activityQuery;
+
+  if (!activities.length) {
+    return rows;
+  }
+  const resolveActorIdentity = createCachedActorDisplayResolver();
+
+  const missingByEntityId = new Map();
+  const missingByReferenceId = new Map();
+
+  missingRows.forEach((row) => {
+    if (row?._id) {
+      missingByEntityId.set(String(row._id), row);
+    }
+
+    const referenceId = String(row?.referenceId || "").trim();
+    if (referenceId) {
+      missingByReferenceId.set(referenceId, row);
+    }
+  });
+
+  for (const activity of activities) {
+    const actorId = String(activity?.actorId || "").trim();
+    const resolvedIdentity = await resolveActorIdentity({
+      userId: actorId || null,
+      name: activity?.actorName || null,
+      email: activity?.actorEmail || null,
+      role: activity?.actorRole || "staff",
+    });
+
+    const entityId = String(activity?.entityId || "").trim();
+    const referenceId = String(activity?.details?.referenceId || "").trim();
+
+    const targetRow = missingByEntityId.get(entityId) || missingByReferenceId.get(referenceId);
+    if (!targetRow) {
+      return;
+    }
+
+    targetRow.requestedBy = {
+      _id: resolvedIdentity.id || actorId || null,
+      name: resolvedIdentity.name,
+      email: resolvedIdentity.email || null,
+      role: resolvedIdentity.role || null,
+    };
+
+    if (!String(targetRow.requestedByName || "").trim()) {
+      targetRow.requestedByName = resolvedIdentity.name;
+    }
+  }
+
+  return rows;
+};
 
 const createDisposalLogEntry = async (payload, session = null) => {
   try {
@@ -185,6 +292,8 @@ export const getDisposalLogs = async ({
     .populate("approvedBy", "name email")
     .lean();
 
+  await hydrateMissingRequesterIdentity(logs);
+
   return logs.map(mapDisposalLog);
 };
 
@@ -199,12 +308,17 @@ export const getDisposalLogById = async (id, options = {}) => {
     throw new Error("Disposal record not found");
   }
 
+  await hydrateMissingRequesterIdentity([log], options.session || null);
+
   return mapDisposalLog(log);
 };
 
 export const createDisposalRequest = async ({
   userId,
   userRole = "OWNER",
+  requesterName = null,
+  requesterEmail = null,
+  requesterAccountId = null,
   productId,
   batchId,
   quantityDisposed,
@@ -267,6 +381,13 @@ export const createDisposalRequest = async ({
     }
 
     const referenceId = await generateReferenceId(session);
+    const requesterDisplayName = resolveRequesterDisplayName({
+      requesterName,
+      requesterEmail,
+      requesterAccountId,
+      userRole,
+    });
+
     const createdLog = await createDisposalLogEntry(
       {
         referenceId,
@@ -280,6 +401,7 @@ export const createDisposalRequest = async ({
         reason,
         remarks: remarks ? String(remarks).trim() : "",
         requestedBy: userId,
+        requestedByName: requesterDisplayName,
         disposalMethod: disposalMethod || null,
         dateRequested: new Date(),
         status: "Pending",
@@ -398,6 +520,12 @@ export const directOwnerDisposal = async ({
 
     const referenceId = await generateReferenceId(session);
     const disposedAt = new Date();
+    const requesterDisplayName = resolveRequesterDisplayName({
+      requesterName: owner?.name,
+      requesterEmail: owner?.email,
+      requesterAccountId: owner?._id,
+      userRole: "OWNER",
+    });
 
     const createdLog = await createDisposalLogEntry(
       {
@@ -412,6 +540,7 @@ export const directOwnerDisposal = async ({
         reason,
         remarks: remarks ? String(remarks).trim() : "",
         requestedBy: ownerId,
+        requestedByName: requesterDisplayName,
         approvedBy: ownerId,
         disposalMethod: disposalMethod || null,
         dateRequested: disposedAt,

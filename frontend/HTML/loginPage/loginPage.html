@@ -19,11 +19,12 @@
     <!-- ================= LOGIN PAGE ================= -->
     <div id="loginPage" class="fixed inset-0 grid grid-cols-1 md:grid-cols-2 h-screen">
         
-        <div class="hidden md:block h-screen">
+        <div class="hidden md:block h-screen relative overflow-hidden">
             <img src="../../assets/login_left_bg.png" alt="Background" class="w-full h-full object-cover">
+            <div class="absolute inset-0 pointer-events-none" style="background: linear-gradient(145deg, rgba(30, 64, 175, 0.50) 0%, rgba(37, 99, 235, 0.35) 52%, rgba(30, 58, 138, 0.55) 100%);"></div>
         </div>
 
-        <div class="flex flex-col items-center justify-center bg-white p-8">
+        <div class="flex flex-col items-center justify-start bg-white p-6 md:p-8 pt-8 md:pt-10 overflow-y-auto">
 
             <img src="../../assets/zealLogo.png" alt="Company Logo"
                 class="w-24 h-24 rounded-full object-cover mb-6 shadow-md" />
@@ -33,11 +34,11 @@
             <form class="w-full max-w-sm space-y-5">
 
                 <div>
-                    <label class="block text-gray-700 text-sm font-medium mb-2">Username</label>
-                    <input id="loginUsername" type="text" placeholder="Enter your username"
-                        class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-600 focus:border-transparent"/>
+                    <label class="block text-gray-700 text-sm font-medium mb-2">Email</label>
+                    <input id="loginUsername" type="text" placeholder="Enter your email"
+                        class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"/>
                     <p id="loginUsernameWarning" class="text-sm text-red-600 mt-1 hidden">
-                        Username is required.
+                        Email is required.
                     </p>
                 </div>
 
@@ -45,7 +46,7 @@
                     <label class="block text-gray-700 text-sm font-medium mb-2">Password</label>
                     <div class="relative">
                         <input id="loginPassword" type="password" placeholder="Enter your password"
-                            class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-600 focus:border-transparent"/>
+                            class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"/>
                         
                         <button type="button" class="absolute right-3 top-1/2 -translate-y-1/2 focus:outline-none bg-transparent border-0 p-0 eyeToggle"
                             data-target="loginPassword">
@@ -62,13 +63,13 @@
                 </div>
 
                 <button type="button" onclick="validateLogin()"
-                    class="w-full bg-teal-700 hover:bg-teal-800 text-white font-bold py-3 rounded-full transition duration-200">
+                    class="w-full bg-blue-700 hover:bg-blue-800 text-white font-bold py-3 rounded-full transition duration-200">
                     Log In
                 </button>
             </form>
 
             <button type="button" id="forgotPasswordBtn"
-                class="text-gray-700 text-sm mt-4 hover:underline hover:text-teal-700 transition border-none cursor-pointer">
+                class="text-gray-700 text-sm mt-4 hover:underline hover:text-blue-700 transition border-none cursor-pointer">
                 Forgot password?
             </button>
 
@@ -80,9 +81,10 @@
     <div id="resetPasswordPage"
         class="hidden fixed inset-0 grid grid-cols-1 md:grid-cols-2 h-screen">
 
-        <div class="hidden md:block h-screen">
+        <div class="hidden md:block h-screen relative overflow-hidden">
             <img src="../../assets/login_left_bg.png" alt="Background"
                 class="w-full h-full object-cover">
+            <div class="absolute inset-0 pointer-events-none" style="background: linear-gradient(145deg, rgba(30, 64, 175, 0.50) 0%, rgba(37, 99, 235, 0.35) 52%, rgba(30, 58, 138, 0.55) 100%);"></div>
         </div>
 
         <div class="flex flex-col items-center justify-center bg-white p-8">
@@ -95,16 +97,16 @@
             <form class="w-full max-w-sm space-y-5">
 
                 <div>
-                    <label class="block text-gray-700 text-sm font-medium mb-2">Username</label>
-                    <input id="resetUsername" type="text" placeholder="Enter your username"
-                        class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-600 focus:border-transparent"/>
+                    <label class="block text-gray-700 text-sm font-medium mb-2">Email</label>
+                    <input id="resetUsername" type="text" placeholder="Enter your email"
+                        class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"/>
 
                     <div class="flex items-center mt-1">
                         <p id="resetUsernameWarning" class="text-sm text-red-600 hidden">
-                            Username is required.
+                            Email is required.
                         </p>
 
-                        <a href="#" class="text-teal-700 text-sm hover:underline ml-auto">
+                        <a href="#" class="text-blue-700 text-sm hover:underline ml-auto">
                             Send PIN
                         </a>
                     </div>
@@ -113,7 +115,7 @@
                 <div>
                     <label class="block text-gray-700 text-sm font-medium mb-2">PIN</label>
                     <input id="pinInput" type="text" placeholder="Enter PIN"
-                        class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-600 focus:border-transparent"/>
+                        class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"/>
 
                     <p id="pinWarning" class="text-sm text-red-600 mt-1 hidden">
                         Input should only be numbers.
@@ -121,13 +123,13 @@
                 </div>
 
                 <button type="button" onclick="verifyReset()"
-                    class="w-full bg-teal-700 hover:bg-teal-800 text-white font-bold py-3 rounded-full transition duration-200">
+                    class="w-full bg-blue-700 hover:bg-blue-800 text-white font-bold py-3 rounded-full transition duration-200">
                     Verify
                 </button>
             </form>
 
             <button type="button" id="rememberPasswordBtn"
-                class="text-gray-700 text-sm mt-4 hover:underline hover:text-teal-700 transition border-none cursor-pointer">
+                class="text-gray-700 text-sm mt-4 hover:underline hover:text-blue-700 transition border-none cursor-pointer">
                 Back to Login
             </button>
 
@@ -139,25 +141,35 @@
     <div id="updatePasswordPage"
         class="hidden fixed inset-0 grid grid-cols-1 md:grid-cols-2 h-screen">
 
-        <div class="hidden md:block h-screen">
+        <div class="hidden md:block h-screen relative overflow-hidden">
             <img src="../../assets/login_left_bg.png" class="w-full h-full object-cover">
+            <div class="absolute inset-0 pointer-events-none" style="background: linear-gradient(145deg, rgba(30, 64, 175, 0.50) 0%, rgba(37, 99, 235, 0.35) 52%, rgba(30, 58, 138, 0.55) 100%);"></div>
         </div>
 
-        <div class="flex flex-col items-center justify-center bg-white p-8">
+        <div class="flex flex-col items-center justify-start bg-white p-6 md:p-8 pt-6 md:pt-8 pb-8 overflow-y-auto">
 
             <img src="../../assets/zealLogo.png"
-                class="w-24 h-24 rounded-full object-cover mb-6 shadow-md" />
+                class="w-20 h-20 rounded-full object-cover mb-4 shadow-md" />
 
-            <h1 class="text-3xl font-bold text-gray-800 mb-8">Reset Password</h1>
+            <div class="w-full max-w-sm mb-4 text-center">
+                <span id="updatePasswordBadge"
+                    class="inline-flex items-center rounded-full bg-blue-50 text-blue-700 px-3 py-1 text-xs font-semibold tracking-wide uppercase">
+                    Account Security
+                </span>
+                <h1 id="updatePasswordTitle" class="text-3xl font-bold text-gray-800 mt-3">Change Password</h1>
+                <p id="updatePasswordSubtitle" class="text-sm text-gray-500 mt-1">
+                    Create a strong password to continue.
+                </p>
+            </div>
 
-            <form class="w-full max-w-sm space-y-5">
+            <form class="w-full max-w-sm space-y-4">
 
                 <div>
                     <label class="block text-gray-700 text-sm font-medium mb-2">New Password</label>
                     <div class="relative">
                         <input id="newPassword" type="password"
                             placeholder="Enter your new password"
-                            class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-600 focus:border-transparent"/>
+                            class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"/>
 
                         <button type="button"
                             class="absolute right-3 top-1/2 -translate-y-1/2 focus:outline-none bg-transparent border-0 p-0 eyeToggle"
@@ -167,6 +179,25 @@
                         </button>
                     </div>
 
+                    <ul id="passwordRequirementList" class="mt-2 space-y-1 text-xs leading-5 text-gray-500">
+                        <li id="reqLength" class="flex items-center gap-2">
+                            <span class="requirementIcon inline-flex items-center justify-center w-5 h-5 rounded-full border border-gray-300 text-xs">&#9675;</span>
+                            <span>At least 8 characters</span>
+                        </li>
+                        <li id="reqUppercase" class="flex items-center gap-2">
+                            <span class="requirementIcon inline-flex items-center justify-center w-5 h-5 rounded-full border border-gray-300 text-xs">&#9675;</span>
+                            <span>At least 1 uppercase letter</span>
+                        </li>
+                        <li id="reqNumber" class="flex items-center gap-2">
+                            <span class="requirementIcon inline-flex items-center justify-center w-5 h-5 rounded-full border border-gray-300 text-xs">&#9675;</span>
+                            <span>At least 1 number</span>
+                        </li>
+                        <li id="reqSpecial" class="flex items-center gap-2">
+                            <span class="requirementIcon inline-flex items-center justify-center w-5 h-5 rounded-full border border-gray-300 text-xs">&#9675;</span>
+                            <span>At least 1 special character</span>
+                        </li>
+                    </ul>
+
                     <p id="passwordMsg" class="text-sm mt-2 text-red-600 hidden"></p>
                 </div>
 
@@ -174,7 +205,7 @@
                     <label class="block text-gray-700 text-sm font-medium mb-2">Confirm Password</label>
                     <div class="relative">
                         <input id="confirmPassword" type="password" placeholder="Confirm your new password"
-                            class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-600 focus:border-transparent"/>
+                            class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"/>
 
                         <button type="button"
                             class="absolute right-3 top-1/2 -translate-y-1/2 focus:outline-none bg-transparent border-0 p-0 eyeToggle"
@@ -188,13 +219,13 @@
                 </div>
 
                 <button id="updatePasswordBtn" type="submit" disabled
-                    class="w-full bg-teal-700 hover:bg-teal-800 text-white font-bold py-3 rounded-full transition duration-200 opacity-50 cursor-not-allowed">
+                    class="w-full bg-blue-700 hover:bg-blue-800 text-white font-bold py-3 rounded-full transition duration-200 opacity-50 cursor-not-allowed">
                     Update Password
                 </button>
             </form>
 
             <button type="button" id="updateBackBtn"
-                class="text-gray-700 text-sm mt-4 hover:underline hover:text-teal-700 transition border-none cursor-pointer">
+                class="text-gray-700 text-sm mt-3 hover:underline hover:text-blue-700 transition border-none cursor-pointer">
                 Back to Login
             </button>
         </div>

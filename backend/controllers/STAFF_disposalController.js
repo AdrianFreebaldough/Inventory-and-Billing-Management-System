@@ -5,6 +5,9 @@ export const STAFF_createDisposalRequest = async (req, res) => {
     const data = await createDisposalRequest({
       userId: req.user.id,
       userRole: "STAFF",
+      requesterName: req.user.name,
+      requesterEmail: req.user.email,
+      requesterAccountId: req.user.accountId,
       productId: req.body.productId,
       batchId: req.body.batchId,
       quantityDisposed: req.body.quantityDisposed,

@@ -38,11 +38,13 @@ const Owner_resolvePerformer = async ({ performedBy, session = null }) => {
   }
 
   const user = await userQuery;
-  if (!user) {
-    throw new Error("Performer not found");
+  if (user?._id) {
+    return user._id;
   }
 
-  return user._id;
+  // HRMS-authenticated users may not exist in IBMS users collection;
+  // keep log writes in IBMS by storing the authenticated ObjectId.
+  return new mongoose.Types.ObjectId(userId);
 };
 
 export const createStockLog = async ({

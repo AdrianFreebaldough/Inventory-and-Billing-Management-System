@@ -6,6 +6,7 @@ import STAFF_ActivityLog from "../models/STAFF_activityLog.js";
 import User from "../models/user.js";
 import { createStockLog } from "../services/Owner_StockLog.service.js";
 import { syncProductFromBatchTotals } from "../services/inventoryIntegrityService.js";
+import { createCachedActorDisplayResolver } from "../utils/requesterDisplayName.js";
 
 // Generate unique request ID
 const generateRequestId = () => {
@@ -15,6 +16,31 @@ const generateRequestId = () => {
   const dd = String(now.getDate()).padStart(2, "0");
   const randomPart = Math.floor(1000 + Math.random() * 9000);
   return `REQ-${yyyy}${mm}${dd}-${randomPart}`;
+};
+
+const STOCK_hydrateRequesterNames = async (requests = []) => {
+  const resolveActorIdentity = createCachedActorDisplayResolver();
+
+  await Promise.all(
+    requests.map(async (request) => {
+      const staffId = request?.staffId?._id || request?.staffId || null;
+      const resolvedIdentity = await resolveActorIdentity({
+        userId: staffId ? String(staffId) : null,
+        name: request?.staffName || request?.staffId?.name || null,
+        email: request?.staffId?.email || null,
+        role: "staff",
+      });
+
+      request.staffName = resolvedIdentity.name;
+      request.staffId = {
+        _id: resolvedIdentity.id || (staffId ? String(staffId) : null),
+        name: resolvedIdentity.name,
+        email: resolvedIdentity.email || null,
+      };
+    })
+  );
+
+  return requests;
 };
 
 // Staff: Get low stock items for restock request
@@ -143,9 +169,10 @@ export const OWNER_getStockRequests = async (req, res) => {
 
     const requests = await STAFF_StockRequest.find(filter)
       .sort({ createdAt: -1 })
-      .populate("staffId", "name email")
       .populate("reviewedBy", "name email")
       .lean();
+
+    await STOCK_hydrateRequesterNames(requests);
 
     return res.status(200).json({
       count: requests.length,

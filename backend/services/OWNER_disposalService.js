@@ -4,6 +4,7 @@ import mongoose from "mongoose";
 import Product from "../models/product.js";
 import InventoryBatch from "../models/InventoryBatch.js";
 import ActivityLog from "../models/activityLog.js";
+import User from "../models/user.js";
 import OWNER_DisposalLog from "../models/OWNER_disposalLog.js";
 import { createStockLog } from "./Owner_StockLog.service.js";
 import { createCachedActorDisplayResolver } from "../utils/requesterDisplayName.js";
@@ -108,41 +109,41 @@ const mapDisposalLog = (log) => {
   ).trim();
 
   return {
-  id: log._id,
-  referenceId: log.referenceId,
-  itemId: log.itemId?._id || log.itemId || null,
-  itemName: log.itemName,
-  genericName: log.genericName || null,
-  batchId: log.batchId?._id || log.batchId || null,
-  batchNumber: log.batchNumber,
-  expirationDate: log.expirationDate || null,
-  quantityDisposed: Number(log.quantityDisposed || 0),
-  reason: log.reason,
-  remarks: log.remarks || "",
-  requestedBy: requestedById || requestedByName
-    ? {
+    id: log._id,
+    referenceId: log.referenceId,
+    itemId: log.itemId?._id || log.itemId || null,
+    itemName: log.itemName,
+    genericName: log.genericName || null,
+    batchId: log.batchId?._id || log.batchId || null,
+    batchNumber: log.batchNumber,
+    expirationDate: log.expirationDate || null,
+    quantityDisposed: Number(log.quantityDisposed || 0),
+    reason: log.reason,
+    remarks: log.remarks || "",
+    requestedBy: requestedById || requestedByName
+      ? {
         id: requestedById,
         name: requestedByName || "Unknown",
         email: log.requestedBy?.email || null,
       }
-    : null,
-  approvedBy: log.approvedBy
-    ? {
+      : null,
+    approvedBy: log.approvedBy
+      ? {
         id: log.approvedBy._id,
         name: log.approvedBy.name || log.approvedBy.email || "Unknown",
         email: log.approvedBy.email || null,
       }
-    : null,
-  disposalMethod: log.disposalMethod || null,
-  dateRequested: log.dateRequested || log.createdAt,
-  date_requested: log.dateRequested || log.createdAt,
-  dateApproved: log.dateApproved || null,
-  date_approved: log.dateApproved || null,
-  dateDisposed: log.dateDisposed || null,
-  date_disposed: log.dateDisposed || null,
-  status: log.status,
-  quantity_requested: Number(log.quantityDisposed || 0),
-  requested_role: log.requestedBy?.role || null,
+      : null,
+    disposalMethod: log.disposalMethod || null,
+    dateRequested: log.dateRequested || log.createdAt,
+    date_requested: log.dateRequested || log.createdAt,
+    dateApproved: log.dateApproved || null,
+    date_approved: log.dateApproved || null,
+    dateDisposed: log.dateDisposed || null,
+    date_disposed: log.dateDisposed || null,
+    status: log.status,
+    quantity_requested: Number(log.quantityDisposed || 0),
+    requested_role: log.requestedBy?.role || null,
   };
 };
 
@@ -354,12 +355,17 @@ export const createDisposalRequest = async ({
       throw new Error("Batch does not belong to the selected product");
     }
 
+    const currentQty = Number(batch.currentQuantity ?? batch.quantity ?? 0);
+    if (currentQty <= 0) {
+      throw new Error("No remaining stock to dispose.");
+    }
+
     const effectiveStatus = getBatchEffectiveStatus(batch);
-    if ([BATCH_EFFECTIVE_STATUS.PENDING_DISPOSAL, BATCH_EFFECTIVE_STATUS.DISPOSED, BATCH_EFFECTIVE_STATUS.OUT_OF_STOCK].includes(effectiveStatus)) {
+    if ([BATCH_EFFECTIVE_STATUS.PENDING_DISPOSAL, BATCH_EFFECTIVE_STATUS.DISPOSED].includes(effectiveStatus)) {
       throw new Error("This batch is not eligible for disposal");
     }
 
-    if (parsedQuantity > Number(batch.currentQuantity ?? batch.quantity ?? 0)) {
+    if (parsedQuantity > currentQty) {
       throw new Error("Dispose quantity must not exceed the available batch quantity");
     }
 
@@ -492,12 +498,17 @@ export const directOwnerDisposal = async ({
       throw new Error("Batch does not belong to the selected product");
     }
 
+    const currentQty = Number(batch.currentQuantity ?? batch.quantity ?? 0);
+    if (currentQty <= 0) {
+      throw new Error("No remaining stock to dispose.");
+    }
+
     const effectiveStatus = getBatchEffectiveStatus(batch);
-    if ([BATCH_EFFECTIVE_STATUS.PENDING_DISPOSAL, BATCH_EFFECTIVE_STATUS.DISPOSED, BATCH_EFFECTIVE_STATUS.OUT_OF_STOCK].includes(effectiveStatus)) {
+    if ([BATCH_EFFECTIVE_STATUS.PENDING_DISPOSAL, BATCH_EFFECTIVE_STATUS.DISPOSED].includes(effectiveStatus)) {
       throw new Error("This batch is not eligible for disposal");
     }
 
-    if (parsedQuantity > Number(batch.currentQuantity ?? batch.quantity ?? 0)) {
+    if (parsedQuantity > currentQty) {
       throw new Error("Dispose quantity must not exceed the available batch quantity");
     }
 

@@ -4,6 +4,7 @@ import User from "../models/user.js";
 import ActivityLog from "../models/activityLog.js";
 import STAFF_ActivityLog from "../models/STAFF_activityLog.js";
 import { escapeRegex } from "../utils/accountIdUtils.js";
+import { createCachedActorDisplayResolver } from "../utils/requesterDisplayName.js";
 
 const OWNER_EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -21,27 +22,25 @@ const OWNER_toDisplayName = (userLike) => {
 	}
 	if (email) return email;
 
-	const role = String(userLike?.role || userLike?.actorRole || "").trim().toUpperCase();
-	if (role === "OWNER") return "Owner";
-	if (role === "STAFF") return "Staff";
-
 	return "Unknown User";
 };
 
 const OWNER_normalizeUserStatus = (user) => {
-	if (user?.status === "Archived" || user?.archivedAt) {
-		return "Archived";
+	const normalized = String(user?.status || "").trim().toLowerCase();
+
+	if (normalized === "suspended") {
+		return "Suspended";
 	}
 
-	if (user?.status === "Inactive") {
-		return "Inactive";
-	}
-
-	if (user?.status === "Active") {
+	if (normalized === "active") {
 		return "Active";
 	}
 
-	return user?.isActive === false ? "Inactive" : "Active";
+	if (normalized === "archived" || normalized === "inactive") {
+		return "Suspended";
+	}
+
+	return user?.isActive === false ? "Suspended" : "Active";
 };
 
 const OWNER_categorizeAction = (rawAction) => {
@@ -75,14 +74,25 @@ const OWNER_buildActivitySearchRegex = (value) => {
 
 const OWNER_logActivity = async ({ req, actionType, description, category, entityType = "User", entityId = null, details = null }) => {
 	const actor = await User.findById(req.user.id).select("name email role").lean();
+	const resolveActorIdentity = createCachedActorDisplayResolver();
+	const resolvedActor = await resolveActorIdentity({
+		userId: req.user?.id ? String(req.user.id) : null,
+		name: req.user?.name || actor?.name || null,
+		email: req.user?.email || actor?.email || null,
+		role: req.user?.role || actor?.role || "owner",
+	});
 
-	const actorRole = String(req.user.role || actor?.role || "").toUpperCase() || "OWNER";
-	const actorEmail = String(actor?.email || req.user.email || "").trim() || null;
+	const actorRole = String(req.user.role || actor?.role || resolvedActor?.role || "").toUpperCase() || "OWNER";
+	const actorEmail = String(resolvedActor?.email || req.user.email || actor?.email || "").trim() || null;
+	const actorName = String(resolvedActor?.name || req.user?.name || actor?.name || "").trim() || OWNER_toDisplayName({
+		email: actorEmail,
+		role: actorRole,
+	});
 
 	await ActivityLog.create({
 		actorId: req.user.id,
 		actorRole,
-		actorName: OWNER_toDisplayName(actor),
+		actorName,
 		actorEmail,
 		actionType,
 		description,
@@ -181,7 +191,7 @@ export const OWNER_createStaffUser = async (req, res) => {
 			email: normalizedEmail,
 			password: hashedPassword,
 			role: "staff",
-			status: "Active",
+			status: "active",
 			isActive: true,
 			archivedAt: null,
 			archiveReason: null,
@@ -277,18 +287,17 @@ export const OWNER_updateStaffUser = async (req, res) => {
 	}
 };
 
-export const OWNER_archiveStaffUser = async (req, res) => {
+export const OWNER_setStaffUserStatus = async (req, res) => {
 	try {
 		const { id } = req.params;
-		const { archiveReason } = req.body;
+		const requestedStatus = String(req.body?.status || "").trim().toLowerCase();
 
 		if (!mongoose.Types.ObjectId.isValid(id)) {
 			return res.status(400).json({ message: "Invalid user id" });
 		}
 
-		const normalizedReason = String(archiveReason || "").trim();
-		if (!normalizedReason) {
-			return res.status(400).json({ message: "archiveReason is required" });
+		if (!["active", "suspended"].includes(requestedStatus)) {
+			return res.status(400).json({ message: "status must be active or suspended" });
 		}
 
 		const staffUser = await User.findOne({ _id: id, role: "staff" });
@@ -296,30 +305,42 @@ export const OWNER_archiveStaffUser = async (req, res) => {
 			return res.status(404).json({ message: "Staff user not found" });
 		}
 
-		staffUser.status = "Archived";
-		staffUser.isActive = false;
-		staffUser.archivedAt = new Date();
-		staffUser.archiveReason = normalizedReason;
+		staffUser.status = requestedStatus;
+		staffUser.isActive = requestedStatus === "active";
+		if (requestedStatus === "suspended") {
+			staffUser.archivedAt = new Date();
+			staffUser.archiveReason = "Suspended by admin";
+		} else {
+			staffUser.archivedAt = null;
+			staffUser.archiveReason = null;
+		}
 		staffUser.role = "staff";
 
 		await staffUser.save();
 
+		const actionType = requestedStatus === "suspended" ? "user-suspended" : "user-reactivated";
+		const description = requestedStatus === "suspended"
+			? "Owner suspended a staff account"
+			: "Owner reactivated a staff account";
+
 		await OWNER_logActivity({
 			req,
-			actionType: "Archived User",
-			description: `Owner archived staff account. Reason: ${normalizedReason}`,
+			actionType,
+			description,
 			category: "User Management",
 			entityType: "User",
 			entityId: staffUser._id,
 			details: {
 				targetUserId: staffUser._id,
 				targetEmail: staffUser.email,
-				archiveReason: normalizedReason,
+				targetStatus: requestedStatus,
 			},
 		});
 
 		return res.status(200).json({
-			message: "Staff user archived successfully",
+			message: requestedStatus === "suspended"
+				? "Staff user suspended successfully"
+				: "Staff user reactivated successfully",
 			data: OWNER_mapStaffUser(staffUser.toObject()),
 		});
 	} catch (error) {
@@ -327,23 +348,31 @@ export const OWNER_archiveStaffUser = async (req, res) => {
 	}
 };
 
-const OWNER_mapUnifiedActivityLog = (log) => {
+const OWNER_mapUnifiedActivityLog = async (log, resolveActorIdentity) => {
 	const actor = log?.performedBy && typeof log.performedBy === "object" ? log.performedBy : null;
+	const resolvedActor = await resolveActorIdentity({
+		userId: String(log?.actorId || actor?._id || log?.performedBy || "").trim() || null,
+		name: log?.actorName || actor?.name || null,
+		email: log?.actorEmail || actor?.email || null,
+		role: log?.actorRole || actor?.role || null,
+	});
 
 	const actorRole = String(log?.actorRole || actor?.role || "").toUpperCase() || "OWNER";
 	const actionType = String(log?.actionType || log?.action || "Activity").trim();
 	const category = log?.category || OWNER_categorizeAction(actionType);
+	const actorEmail = resolvedActor?.email || log?.actorEmail || actor?.email || null;
+	const actorName = OWNER_toDisplayName({
+		name: resolvedActor?.name || log?.actorName || actor?.name,
+		email: actorEmail,
+		role: actorRole,
+	});
 
 	return {
 		id: log._id,
 		actorId: log.actorId || actor?._id || log.performedBy || null,
 		actorRole,
-		actorName: OWNER_toDisplayName({
-			name: log.actorName || actor?.name,
-			email: log.actorEmail || actor?.email,
-			role: actorRole,
-		}),
-		actorEmail: log.actorEmail || actor?.email || null,
+		actorName,
+		actorEmail: actorEmail || "N/A",
 		actionType,
 		description: log.description || OWNER_extractDescriptionFromLegacyDetails(log.details),
 		category,
@@ -351,17 +380,29 @@ const OWNER_mapUnifiedActivityLog = (log) => {
 	};
 };
 
-const OWNER_mapStaffActivityLog = (log) => {
+const OWNER_mapStaffActivityLog = async (log, resolveActorIdentity) => {
 	const staff = log?.staffId && typeof log.staffId === "object" ? log.staffId : null;
+	const resolvedActor = await resolveActorIdentity({
+		userId: String(staff?._id || log?.staffId || "").trim() || null,
+		name: staff?.name || null,
+		email: staff?.email || null,
+		role: "staff",
+	});
 	const actionType = String(log.actionType || "Activity").trim();
 	const category = OWNER_categorizeAction(actionType);
+	const actorEmail = resolvedActor?.email || staff?.email || null;
+	const actorName = OWNER_toDisplayName({
+		name: resolvedActor?.name || staff?.name,
+		email: actorEmail,
+		role: "STAFF",
+	});
 
 	return {
 		id: log._id,
 		actorId: staff?._id || log.staffId || null,
 		actorRole: "STAFF",
-		actorName: OWNER_toDisplayName(staff),
-		actorEmail: staff?.email || null,
+		actorName,
+		actorEmail: actorEmail || "N/A",
 		actionType,
 		description: log.description || "No description provided",
 		category,
@@ -373,6 +414,7 @@ export const OWNER_getActivityLogs = async (req, res) => {
 	try {
 		const searchValue = String(req.query.search || "").trim().toLowerCase();
 		const categoryFilter = String(req.query.category || "").trim().toLowerCase();
+		const resolveActorIdentity = createCachedActorDisplayResolver();
 
 		const [ownerLogs, staffLogs] = await Promise.all([
 			ActivityLog.find({})
@@ -385,10 +427,12 @@ export const OWNER_getActivityLogs = async (req, res) => {
 				.lean(),
 		]);
 
-		const unifiedLogs = [
-			...ownerLogs.map(OWNER_mapUnifiedActivityLog),
-			...staffLogs.map(OWNER_mapStaffActivityLog),
-		];
+		const [mappedOwnerLogs, mappedStaffLogs] = await Promise.all([
+			Promise.all(ownerLogs.map((log) => OWNER_mapUnifiedActivityLog(log, resolveActorIdentity))),
+			Promise.all(staffLogs.map((log) => OWNER_mapStaffActivityLog(log, resolveActorIdentity))),
+		]);
+
+		const unifiedLogs = [...mappedOwnerLogs, ...mappedStaffLogs];
 
 		const filtered = unifiedLogs
 			.filter((log) => {

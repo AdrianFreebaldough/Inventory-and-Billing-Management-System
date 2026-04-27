@@ -116,6 +116,10 @@ const STAFF_receiptSnapshotSchema = new mongoose.Schema(
       required: true,
       trim: true,
     },
+    isGuest: {
+      type: Boolean,
+      default: false,
+    },
     staffId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
@@ -201,6 +205,11 @@ const STAFF_billingTransactionSchema = new mongoose.Schema(
       type: String,
       required: true,
       trim: true,
+    },
+    isGuest: {
+      type: Boolean,
+      default: false,
+      index: true,
     },
     parmsIntentId: {
       type: String,

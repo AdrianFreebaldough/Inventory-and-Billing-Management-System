@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -12,16 +13,19 @@
     <style>
         input[type="password"]::-ms-reveal,
         input[type="password"]::-ms-clear {
-        display: none;}
+            display: none;
+        }
     </style>
 
 
     <!-- ================= LOGIN PAGE ================= -->
     <div id="loginPage" class="fixed inset-0 grid grid-cols-1 md:grid-cols-2 h-screen">
-        
+
         <div class="hidden md:block h-screen relative overflow-hidden">
             <img src="../../assets/login_left_bg.png" alt="Background" class="w-full h-full object-cover">
-            <div class="absolute inset-0 pointer-events-none" style="background: linear-gradient(145deg, rgba(30, 64, 175, 0.50) 0%, rgba(37, 99, 235, 0.35) 52%, rgba(30, 58, 138, 0.55) 100%);"></div>
+            <div class="absolute inset-0 pointer-events-none"
+                style="background: linear-gradient(145deg, rgba(30, 64, 175, 0.50) 0%, rgba(37, 99, 235, 0.35) 52%, rgba(30, 58, 138, 0.55) 100%);">
+            </div>
         </div>
 
         <div class="flex flex-col items-center justify-start bg-white p-6 md:p-8 pt-8 md:pt-10 overflow-y-auto">
@@ -36,7 +40,7 @@
                 <div>
                     <label class="block text-gray-700 text-sm font-medium mb-2">Email</label>
                     <input id="loginUsername" type="text" placeholder="Enter your email"
-                        class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"/>
+                        class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent" />
                     <p id="loginUsernameWarning" class="text-sm text-red-600 mt-1 hidden">
                         Email is required.
                     </p>
@@ -46,14 +50,13 @@
                     <label class="block text-gray-700 text-sm font-medium mb-2">Password</label>
                     <div class="relative">
                         <input id="loginPassword" type="password" placeholder="Enter your password"
-                            class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"/>
-                        
-                        <button type="button" class="absolute right-3 top-1/2 -translate-y-1/2 focus:outline-none bg-transparent border-0 p-0 eyeToggle"
+                            class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent" />
+
+                        <button type="button"
+                            class="absolute right-3 top-1/2 -translate-y-1/2 focus:outline-none bg-transparent border-0 p-0 eyeToggle"
                             data-target="loginPassword">
-                            <img src="../../assets/eye-open.png" alt="Show password"
-                                class="eyeOpen w-5 h-4 grayscale">
-                            <img src="../../assets/eye-close.png" alt="Hide password"
-                                class="eyeClose hidden w-5 h-5">
+                            <img src="../../assets/eye-open.png" alt="Show password" class="eyeOpen w-5 h-4 grayscale">
+                            <img src="../../assets/eye-close.png" alt="Hide password" class="eyeClose hidden w-5 h-5">
                         </button>
                     </div>
 
@@ -78,19 +81,18 @@
 
 
     <!-- ================= RESET PASSWORD PAGE ================= -->
-    <div id="resetPasswordPage"
-        class="hidden fixed inset-0 grid grid-cols-1 md:grid-cols-2 h-screen">
+    <div id="resetPasswordPage" class="hidden fixed inset-0 grid grid-cols-1 md:grid-cols-2 h-screen">
 
         <div class="hidden md:block h-screen relative overflow-hidden">
-            <img src="../../assets/login_left_bg.png" alt="Background"
-                class="w-full h-full object-cover">
-            <div class="absolute inset-0 pointer-events-none" style="background: linear-gradient(145deg, rgba(30, 64, 175, 0.50) 0%, rgba(37, 99, 235, 0.35) 52%, rgba(30, 58, 138, 0.55) 100%);"></div>
+            <img src="../../assets/login_left_bg.png" alt="Background" class="w-full h-full object-cover">
+            <div class="absolute inset-0 pointer-events-none"
+                style="background: linear-gradient(145deg, rgba(30, 64, 175, 0.50) 0%, rgba(37, 99, 235, 0.35) 52%, rgba(30, 58, 138, 0.55) 100%);">
+            </div>
         </div>
 
         <div class="flex flex-col items-center justify-center bg-white p-8">
 
-            <img src="../../assets/zealLogo.png"
-                class="w-24 h-24 rounded-full object-cover mb-6 shadow-md" />
+            <img src="../../assets/zealLogo.png" class="w-24 h-24 rounded-full object-cover mb-6 shadow-md" />
 
             <h1 class="text-3xl font-bold text-gray-800 mb-8">Forgot Password</h1>
 
@@ -99,7 +101,7 @@
                 <div>
                     <label class="block text-gray-700 text-sm font-medium mb-2">Email</label>
                     <input id="resetUsername" type="text" placeholder="Enter your email"
-                        class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"/>
+                        class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent" />
 
                     <div class="flex items-center mt-1">
                         <p id="resetUsernameWarning" class="text-sm text-red-600 hidden">
@@ -115,7 +117,7 @@
                 <div>
                     <label class="block text-gray-700 text-sm font-medium mb-2">PIN</label>
                     <input id="pinInput" type="text" placeholder="Enter PIN"
-                        class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"/>
+                        class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent" />
 
                     <p id="pinWarning" class="text-sm text-red-600 mt-1 hidden">
                         Input should only be numbers.
@@ -138,18 +140,18 @@
 
 
     <!-- ================= UPDATE PASSWORD PAGE ================= -->
-    <div id="updatePasswordPage"
-        class="hidden fixed inset-0 grid grid-cols-1 md:grid-cols-2 h-screen">
+    <div id="updatePasswordPage" class="hidden fixed inset-0 grid grid-cols-1 md:grid-cols-2 h-screen">
 
         <div class="hidden md:block h-screen relative overflow-hidden">
             <img src="../../assets/login_left_bg.png" class="w-full h-full object-cover">
-            <div class="absolute inset-0 pointer-events-none" style="background: linear-gradient(145deg, rgba(30, 64, 175, 0.50) 0%, rgba(37, 99, 235, 0.35) 52%, rgba(30, 58, 138, 0.55) 100%);"></div>
+            <div class="absolute inset-0 pointer-events-none"
+                style="background: linear-gradient(145deg, rgba(30, 64, 175, 0.50) 0%, rgba(37, 99, 235, 0.35) 52%, rgba(30, 58, 138, 0.55) 100%);">
+            </div>
         </div>
 
         <div class="flex flex-col items-center justify-start bg-white p-6 md:p-8 pt-6 md:pt-8 pb-8 overflow-y-auto">
 
-            <img src="../../assets/zealLogo.png"
-                class="w-20 h-20 rounded-full object-cover mb-4 shadow-md" />
+            <img src="../../assets/zealLogo.png" class="w-20 h-20 rounded-full object-cover mb-4 shadow-md" />
 
             <div class="w-full max-w-sm mb-4 text-center">
                 <span id="updatePasswordBadge"
@@ -167,9 +169,8 @@
                 <div>
                     <label class="block text-gray-700 text-sm font-medium mb-2">New Password</label>
                     <div class="relative">
-                        <input id="newPassword" type="password"
-                            placeholder="Enter your new password"
-                            class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"/>
+                        <input id="newPassword" type="password" placeholder="Enter your new password"
+                            class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent" />
 
                         <button type="button"
                             class="absolute right-3 top-1/2 -translate-y-1/2 focus:outline-none bg-transparent border-0 p-0 eyeToggle"
@@ -181,19 +182,23 @@
 
                     <ul id="passwordRequirementList" class="mt-2 space-y-1 text-xs leading-5 text-gray-500">
                         <li id="reqLength" class="flex items-center gap-2">
-                            <span class="requirementIcon inline-flex items-center justify-center w-5 h-5 rounded-full border border-gray-300 text-xs">&#9675;</span>
+                            <span
+                                class="requirementIcon inline-flex items-center justify-center w-5 h-5 rounded-full border border-gray-300 text-xs">&#9675;</span>
                             <span>At least 8 characters</span>
                         </li>
                         <li id="reqUppercase" class="flex items-center gap-2">
-                            <span class="requirementIcon inline-flex items-center justify-center w-5 h-5 rounded-full border border-gray-300 text-xs">&#9675;</span>
+                            <span
+                                class="requirementIcon inline-flex items-center justify-center w-5 h-5 rounded-full border border-gray-300 text-xs">&#9675;</span>
                             <span>At least 1 uppercase letter</span>
                         </li>
                         <li id="reqNumber" class="flex items-center gap-2">
-                            <span class="requirementIcon inline-flex items-center justify-center w-5 h-5 rounded-full border border-gray-300 text-xs">&#9675;</span>
+                            <span
+                                class="requirementIcon inline-flex items-center justify-center w-5 h-5 rounded-full border border-gray-300 text-xs">&#9675;</span>
                             <span>At least 1 number</span>
                         </li>
                         <li id="reqSpecial" class="flex items-center gap-2">
-                            <span class="requirementIcon inline-flex items-center justify-center w-5 h-5 rounded-full border border-gray-300 text-xs">&#9675;</span>
+                            <span
+                                class="requirementIcon inline-flex items-center justify-center w-5 h-5 rounded-full border border-gray-300 text-xs">&#9675;</span>
                             <span>At least 1 special character</span>
                         </li>
                     </ul>
@@ -205,7 +210,7 @@
                     <label class="block text-gray-700 text-sm font-medium mb-2">Confirm Password</label>
                     <div class="relative">
                         <input id="confirmPassword" type="password" placeholder="Confirm your new password"
-                            class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"/>
+                            class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent" />
 
                         <button type="button"
                             class="absolute right-3 top-1/2 -translate-y-1/2 focus:outline-none bg-transparent border-0 p-0 eyeToggle"
@@ -232,32 +237,33 @@
     </div>
 
 </body>
-    <script>
-        (function loadLoginScript() {
-            const candidates = [
-                "../../JS/loginPage/loginPage.js?v=20260414",
-                "../../js/loginPage/loginPage.js?v=20260414"
-            ];
+<script>
+    (function loadLoginScript() {
+        const candidates = [
+            "../../JS/loginPage/loginPage.js?v=20260414",
+            "../../js/loginPage/loginPage.js?v=20260414"
+        ];
 
-            let current = 0;
+        let current = 0;
 
-            const appendScript = () => {
-                if (current >= candidates.length) {
-                    console.error("Unable to load login script from all known paths.");
-                    return;
-                }
+        const appendScript = () => {
+            if (current >= candidates.length) {
+                console.error("Unable to load login script from all known paths.");
+                return;
+            }
 
-                const script = document.createElement("script");
-                script.src = candidates[current];
-                script.defer = true;
-                script.onerror = () => {
-                    current += 1;
-                    appendScript();
-                };
-                document.body.appendChild(script);
+            const script = document.createElement("script");
+            script.src = candidates[current];
+            script.defer = true;
+            script.onerror = () => {
+                current += 1;
+                appendScript();
             };
+            document.body.appendChild(script);
+        };
 
-            appendScript();
-        })();
-    </script>
+        appendScript();
+    })();
+</script>
+
 </html>

@@ -58,6 +58,36 @@ const BASE_SERVICE_ITEMS = [
     unitPrice: 400,
     description: "Other medical concern",
   },
+  {
+    name: "Pre-Employment Package (Basic)",
+    category: "Services",
+    unitPrice: 2140,
+    description: "PKG-EMP | Includes: CBC, Urinalysis, Fecalysis, Chest X-ray",
+  },
+  {
+    name: "Executive Check-up Package",
+    category: "Services",
+    unitPrice: 3890,
+    description: "PKG-EXEC | Includes: CBC, Fasting Blood Sugar, Lipid Profile, Liver Function, Kidney Function, ECG, Chest X-ray",
+  },
+  {
+    name: "School / University Medical Package",
+    category: "Services",
+    unitPrice: 1980,
+    description: "PKG-SCHOOL | Includes: CBC, Urinalysis, Chest X-ray, Fecalysis",
+  },
+  {
+    name: "Routine Prenatal Package",
+    category: "Services",
+    unitPrice: 2760,
+    description: "PKG-PRENATAL | Includes: CBC, Blood Typing, Urinalysis, VDRL, HBsAg, Rubella IgG",
+  },
+  {
+    name: "Basic Cardiovascular Package",
+    category: "Services",
+    unitPrice: 3320,
+    description: "PKG-CARDIO | Includes: Lipid Profile, Fasting Blood Sugar, ECG, Chest X-ray",
+  },
 ];
 
 const LAB_SERVICE_ITEMS = LAB_EXAM_CATALOG.map((exam) => ({

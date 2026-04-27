@@ -110,10 +110,10 @@ export const createOwnerUser = async ({ name, email, password }) => {
 	return payload?.data || null;
 };
 
-export const archiveOwnerUser = async (userId, archiveReason) => {
-	const payload = await request(`/api/owner/users/${userId}/archive`, {
+export const setOwnerUserStatus = async (userId, status) => {
+	const payload = await request(`/api/owner/users/${userId}/status`, {
 		method: "PUT",
-		body: JSON.stringify({ archiveReason }),
+		body: JSON.stringify({ status }),
 	});
 
 	return payload?.data || null;

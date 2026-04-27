@@ -2,7 +2,7 @@ import {
 	fetchOwnerUsers,
 	createOwnerUser,
 	updateOwnerUser,
-	archiveOwnerUser,
+	setOwnerUserStatus,
 	fetchOwnerActivityLogs,
 } from "./UserManagementData/UserManagementData.js";
 
@@ -12,16 +12,15 @@ let currentView = "users";
 let isLoading = false;
 let pendingAddUser = null;
 let pendingEditUser = null;
-let pendingArchiveUserId = null;
-let pendingArchiveReason = "";
+let pendingStatusUserId = null;
+let pendingStatusValue = "";
 let currentEditUserId = null;
-let showArchivedOnly = false;
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const userFilterOptions = [
-	{ value: "All", label: "All Status" },
+	{ value: "All", label: "All" },
 	{ value: "Active", label: "Active" },
-	{ value: "Inactive", label: "Inactive" },
+	{ value: "Suspended", label: "Suspended" },
 ];
 
 const activityFilterOptions = [
@@ -37,7 +36,11 @@ const normalizeUser = (user) => ({
 	name: String(user?.name || "").trim() || "Unnamed Staff",
 	role: String(user?.role || "STAFF").toUpperCase(),
 	accountId: String(user?.email || user?.accountId || "").trim().toLowerCase(),
-	status: String(user?.status || "Active").trim(),
+	status: (() => {
+		const raw = String(user?.status || "").trim().toLowerCase();
+		if (raw === "suspended" || raw === "inactive" || raw === "archived") return "Suspended";
+		return "Active";
+	})(),
 	archivedAt: user?.archivedAt || null,
 	archiveReason: user?.archiveReason || null,
 });
@@ -77,7 +80,7 @@ function formatTimestamp(value) {
 
 function getStatusBadgeClass(status) {
 	if (status === "Active") return "bg-emerald-100 text-emerald-700";
-	if (status === "Archived") return "bg-red-100 text-red-700";
+	if (status === "Suspended") return "bg-red-100 text-red-700";
 	return "bg-gray-100 text-gray-700";
 }
 
@@ -101,8 +104,8 @@ function closeAllModals() {
 		"confirmAddModal",
 		"editUserModal",
 		"confirmSaveModal",
-		"archiveModal",
-		"confirmArchiveModal",
+		"statusModal",
+		"confirmStatusModal",
 	].forEach(closeModal);
 }
 
@@ -228,14 +231,6 @@ function getFilteredUsers() {
 			user.role.toLowerCase().includes(searchValue) ||
 			user.accountId.toLowerCase().includes(searchValue);
 
-		if (showArchivedOnly) {
-			return matchesSearch && user.status === "Archived";
-		}
-
-		if (user.status === "Archived") {
-			return false;
-		}
-
 		const matchesStatus = statusValue === "All" || user.status === statusValue;
 
 		return matchesSearch && matchesStatus;
@@ -296,7 +291,12 @@ function renderUsersTable() {
 	tableBody.innerHTML = filteredUsers
 		.map((user) => {
 			const badgeClass = getStatusBadgeClass(user.status);
-			const isArchived = user.status === "Archived";
+			const isSuspended = user.status === "Suspended";
+			const nextAction = isSuspended ? "Activate" : "Suspend";
+			const nextStatus = isSuspended ? "active" : "suspended";
+			const actionBtnClass = isSuspended
+				? "status-user-btn p-2 rounded-md text-emerald-600 hover:bg-emerald-50"
+				: "status-user-btn p-2 rounded-md text-red-600 hover:bg-red-50";
 
 			return `
 				<tr class="hover:bg-slate-50 transition-colors">
@@ -308,16 +308,17 @@ function renderUsersTable() {
 					</td>
 					<td class="px-4 py-3">
 						<div class="flex items-center gap-2">
-							<button type="button" class="edit-user-btn p-2 rounded-md text-blue-600 hover:bg-blue-50 ${isArchived ? "opacity-40 cursor-not-allowed" : ""}" data-id="${user.id}" title="Edit" ${isArchived ? "disabled" : ""}>
+							<button type="button" class="edit-user-btn p-2 rounded-md text-blue-600 hover:bg-blue-50" data-id="${user.id}" title="Edit">
 								<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 pointer-events-none">
 									<path stroke-linecap="round" stroke-linejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931ZM19.5 7.125 16.862 4.487" />
 								</svg>
 							</button>
-							<button type="button" class="archive-user-btn p-2 rounded-md text-red-600 hover:bg-red-50 ${isArchived ? "opacity-40 cursor-not-allowed" : ""}" data-id="${user.id}" title="Archive" ${isArchived ? "disabled" : ""}>
+							<button type="button" class="${actionBtnClass}" data-id="${user.id}" data-next-status="${nextStatus}" title="${nextAction}">
 								<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 pointer-events-none">
-									<path stroke-linecap="round" stroke-linejoin="round" d="m20.25 7.5-.866 12.142A2.25 2.25 0 0 1 17.14 21.75H6.86a2.25 2.25 0 0 1-2.244-2.108L3.75 7.5m3 0V6A2.25 2.25 0 0 1 9 3.75h6A2.25 2.25 0 0 1 17.25 6v1.5m-10.5 0h10.5" />
+									<path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
 								</svg>
 							</button>
+							<span class="text-xs text-slate-500">${nextAction}</span>
 						</div>
 					</td>
 				</tr>
@@ -433,9 +434,6 @@ async function refreshCurrentViewFromApi() {
 async function switchView(view) {
 	if (view !== "users" && view !== "activity") return;
 	currentView = view;
-	if (view === "users") {
-		showArchivedOnly = false;
-	}
 
 	const userSearchInput = document.getElementById("userSearchInput");
 	if (userSearchInput) userSearchInput.value = "";
@@ -473,30 +471,20 @@ async function submitPendingEdit() {
 	}
 }
 
-async function submitArchive() {
-	if (!pendingArchiveUserId) return;
-
-	const archiveReason = String(pendingArchiveReason || "").trim();
-	if (!archiveReason) {
-		showMessage("Archive reason is required.");
-		closeModal("confirmArchiveModal");
-		openModal("archiveModal");
-		return;
-	}
+async function submitStatusChange() {
+	if (!pendingStatusUserId || !pendingStatusValue) return;
 
 	try {
 		setLoadingState(true);
-		await archiveOwnerUser(pendingArchiveUserId, archiveReason);
-		pendingArchiveUserId = null;
-		pendingArchiveReason = "";
-		closeModal("confirmArchiveModal");
-		const reasonInput = document.getElementById("archiveReason");
-		if (reasonInput) reasonInput.value = "";
+		await setOwnerUserStatus(pendingStatusUserId, pendingStatusValue);
+		pendingStatusUserId = null;
+		pendingStatusValue = "";
+		closeModal("confirmStatusModal");
 		await loadUsersFromApi();
-		showMessage("User archived successfully.");
+		showMessage("User status updated successfully.");
 	} catch (error) {
 		if (!handleAuthError(error)) {
-			showMessage(error.message || "Failed to archive user.");
+			showMessage(error.message || "Failed to update user status.");
 		}
 	} finally {
 		setLoadingState(false);
@@ -510,13 +498,13 @@ function bindEvents() {
 	const userSearchInput = document.getElementById("userSearchInput");
 	const statusFilter = document.getElementById("statusFilter");
 	const addUserBtn = document.getElementById("addUserBtn");
-	const archivedAccountBtn = document.getElementById("archivedAccountBtn");
+	const suspendAccountBtn = document.getElementById("archivedAccountBtn");
 	const addUserForm = document.getElementById("addUserForm");
 	const confirmAddBtn = document.getElementById("confirmAddBtn");
 	const editUserForm = document.getElementById("editUserForm");
 	const confirmSaveBtn = document.getElementById("confirmSaveBtn");
-	const archiveProceedBtn = document.getElementById("archiveProceedBtn");
-	const confirmArchiveBtn = document.getElementById("confirmArchiveBtn");
+	const statusProceedBtn = document.getElementById("archiveProceedBtn");
+	const confirmStatusBtn = document.getElementById("confirmArchiveBtn");
 	const tableBody = document.getElementById("userTableBody");
 
 	usersTab?.addEventListener("click", () => {
@@ -530,10 +518,9 @@ function bindEvents() {
 	userSearchInput?.addEventListener("input", renderCurrentView);
 	statusFilter?.addEventListener("change", renderCurrentView);
 
-	archivedAccountBtn?.addEventListener("click", () => {
+	suspendAccountBtn?.addEventListener("click", () => {
 		if (currentView !== "users" || !statusFilter) return;
-		showArchivedOnly = true;
-		statusFilter.value = "All";
+		statusFilter.value = "Suspended";
 		renderUsersTable();
 	});
 
@@ -597,14 +584,12 @@ function bindEvents() {
 		if (currentView !== "users") return;
 
 		const editButton = event.target.closest(".edit-user-btn");
-		const archiveButton = event.target.closest(".archive-user-btn");
+		const statusButton = event.target.closest(".status-user-btn");
 
 		if (editButton) {
-			if (editButton.hasAttribute("disabled")) return;
-
 			const userId = String(editButton.dataset.id || "");
 			const user = users.find((item) => String(item.id) === userId);
-			if (!user || user.role === "OWNER" || user.status === "Archived") return;
+			if (!user || user.role === "OWNER") return;
 
 			currentEditUserId = user.id;
 			setEditFormValues(user);
@@ -612,27 +597,27 @@ function bindEvents() {
 			return;
 		}
 
-		if (archiveButton) {
-			if (archiveButton.hasAttribute("disabled")) return;
-
-			const userId = String(archiveButton.dataset.id || "");
+		if (statusButton) {
+			const userId = String(statusButton.dataset.id || "");
+			const nextStatus = String(statusButton.dataset.nextStatus || "").toLowerCase();
 			const user = users.find((item) => String(item.id) === userId);
 			if (!user || user.role === "OWNER") {
-				showMessage("Owner accounts cannot be archived.");
+				showMessage("Owner accounts cannot be suspended.");
 				return;
 			}
 
-			if (user.status === "Archived") {
-				showMessage("User is already archived.");
+			if (!["active", "suspended"].includes(nextStatus)) {
+				showMessage("Invalid status request.");
 				return;
 			}
 
-			pendingArchiveUserId = user.id;
+			pendingStatusUserId = user.id;
+			pendingStatusValue = nextStatus;
 			const archiveUserLabel = document.getElementById("archiveUserLabel");
 			if (archiveUserLabel) {
 				archiveUserLabel.textContent = `Email: ${user.accountId} (${user.name})`;
 			}
-			openModal("archiveModal");
+			openModal("statusModal");
 		}
 	});
 
@@ -664,19 +649,16 @@ function bindEvents() {
 
 	confirmSaveBtn?.addEventListener("click", submitPendingEdit);
 
-	archiveProceedBtn?.addEventListener("click", () => {
-		const archiveReason = document.getElementById("archiveReason")?.value.trim() || "";
-		if (!archiveReason) {
-			showMessage("Archive reason is required.");
+	statusProceedBtn?.addEventListener("click", () => {
+		if (!pendingStatusUserId || !pendingStatusValue) {
+			showMessage("No selected user status change.");
 			return;
 		}
-
-		pendingArchiveReason = archiveReason;
-		closeModal("archiveModal");
-		openModal("confirmArchiveModal");
+		closeModal("statusModal");
+		openModal("confirmStatusModal");
 	});
 
-	confirmArchiveBtn?.addEventListener("click", submitArchive);
+	confirmStatusBtn?.addEventListener("click", submitStatusChange);
 
 	document.querySelectorAll("[data-close]").forEach((button) => {
 		button.addEventListener("click", () => {
@@ -685,11 +667,9 @@ function bindEvents() {
 
 			if (modalId === "confirmAddModal") pendingAddUser = null;
 			if (modalId === "confirmSaveModal") pendingEditUser = null;
-			if (modalId === "confirmArchiveModal" || modalId === "archiveModal") {
-				pendingArchiveUserId = null;
-				pendingArchiveReason = "";
-				const archiveReason = document.getElementById("archiveReason");
-				if (archiveReason) archiveReason.value = "";
+			if (modalId === "confirmStatusModal" || modalId === "statusModal") {
+				pendingStatusUserId = null;
+				pendingStatusValue = "";
 			}
 
 			closeModal(modalId);
@@ -719,10 +699,9 @@ export async function initUserManagement() {
 	isLoading = false;
 	pendingAddUser = null;
 	pendingEditUser = null;
-	pendingArchiveUserId = null;
-	pendingArchiveReason = "";
+	pendingStatusUserId = null;
+	pendingStatusValue = "";
 	currentEditUserId = null;
-	showArchivedOnly = false;
 
 	bindEvents();
 	renderFilterOptions();

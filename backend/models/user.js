@@ -14,6 +14,13 @@ export const userSchema = new mongoose.Schema(
       lowercase: true,
       trim: true,
     },
+    hrmsId: {
+      type: String,
+      trim: true,
+      default: null,
+      index: true,
+      sparse: true,
+    },
     password: {
       type: String,
       required: true,
@@ -25,8 +32,8 @@ export const userSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ["Active", "Inactive", "Archived"],
-      default: "Active",
+      enum: ["active", "suspended"],
+      default: "active",
       index: true,
     },
     isActive: {

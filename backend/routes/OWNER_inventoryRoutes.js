@@ -13,6 +13,11 @@ import {
   OWNER_restoreProduct,
   OWNER_adjustProductStock,
   OWNER_updateDiscrepancy,
+  OWNER_updateProductPrice,
+  OWNER_getPriceChangeRequests,
+  OWNER_getPriceChangeRequestForProduct,
+  OWNER_approvePriceChangeRequest,
+  OWNER_rejectPriceChangeRequest,
 } from "../controllers/OWNER_inventoryController.js";
 
 const OWNER_router = express.Router();
@@ -60,5 +65,10 @@ OWNER_router.patch(
 
 OWNER_router.patch("/:productId/adjust-stock", OWNER_adjustProductStock);
 OWNER_router.patch("/:productId/discrepancy", OWNER_updateDiscrepancy);
+OWNER_router.patch("/:productId/price", OWNER_updateProductPrice);
+OWNER_router.get("/price-change-requests", OWNER_getPriceChangeRequests);
+OWNER_router.get("/price-change-requests/product/:productId", OWNER_getPriceChangeRequestForProduct);
+OWNER_router.patch("/price-change-requests/:requestId/approve", OWNER_approvePriceChangeRequest);
+OWNER_router.patch("/price-change-requests/:requestId/reject", OWNER_rejectPriceChangeRequest);
 
 export default OWNER_router;

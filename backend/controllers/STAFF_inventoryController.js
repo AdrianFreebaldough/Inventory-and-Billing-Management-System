@@ -1,6 +1,7 @@
 import Product from "../models/product.js";
 import InventoryBatch from "../models/InventoryBatch.js";
 import InventoryRequest from "../models/InventoryRequest.js";
+import PriceChangeRequest from "../models/priceChangeRequest.js";
 import STAFF_ActivityLog from "../models/STAFF_activityLog.js";
 import OWNER_ArchivedProduct from "../models/OWNER_archivedProduct.js";
 import ActivityLog from "../models/activityLog.js";
@@ -896,6 +897,116 @@ export const STAFF_getMyRequests = async (req, res) => {
       summary,
       data,
     });
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+};
+
+export const STAFF_createPriceChangeRequest = async (req, res) => {
+  try {
+    const { productId, newPrice, reason } = req.body || {};
+    const parsedPrice = Number(newPrice);
+    const normalizedReason = String(reason || "").trim();
+
+    if (!productId) {
+      return res.status(400).json({ message: "productId is required" });
+    }
+
+    if (!Number.isFinite(parsedPrice) || parsedPrice <= 0) {
+      return res.status(400).json({ message: "newPrice must be a valid number greater than 0" });
+    }
+
+    if (!normalizedReason) {
+      return res.status(400).json({ message: "reason is required" });
+    }
+
+    const product = await Product.findOne({
+      _id: productId,
+      isArchived: { $ne: true },
+    }).select("_id name unitPrice");
+
+    if (!product) {
+      return res.status(404).json({ message: "Active product not found" });
+    }
+
+    const currentPrice = Number(product.unitPrice ?? 0);
+    if (currentPrice === parsedPrice) {
+      return res.status(400).json({ message: "Requested price must be different from current price" });
+    }
+
+    const duplicatePending = await PriceChangeRequest.findOne({
+      productId: product._id,
+      requestedBy: req.user.id,
+      requestedPrice: parsedPrice,
+      status: "pending",
+    }).lean();
+
+    if (duplicatePending) {
+      return res.status(400).json({ message: "An identical pending request already exists" });
+    }
+
+    const request = await PriceChangeRequest.create({
+      productId: product._id,
+      productName: product.name,
+      oldPrice: currentPrice,
+      requestedPrice: parsedPrice,
+      requestedBy: req.user.id,
+      requestedByName: req.user.name || null,
+      requestedByRole: "staff",
+      reason: normalizedReason,
+      status: "pending",
+    });
+
+    await STAFF_logActivity({
+      staffId: req.user.id,
+      actionType: "price-change-request",
+      targetItemId: product._id,
+      description: `Staff ${req.user.name || "Staff"} requested price change of ${product.name} from P${currentPrice.toFixed(2)} to P${parsedPrice.toFixed(2)}`,
+      status: "pending",
+    });
+
+    await ActivityLog.create({
+      action: "REQUEST_PRICE_CHANGE",
+      actionType: "STAFF_REQUEST_PRICE_CHANGE",
+      category: "Request",
+      actorId: req.user.id,
+      actorRole: "STAFF",
+      actorName: req.user.name || null,
+      actorEmail: req.user.email || null,
+      performedBy: req.user.id,
+      entityType: "Product",
+      entityId: product._id,
+      description: `Staff ${req.user.name || "Staff"} requested price change of ${product.name} from P${currentPrice.toFixed(2)} to P${parsedPrice.toFixed(2)}`,
+      details: {
+        requestId: request._id,
+        oldPrice: currentPrice,
+        requestedPrice: parsedPrice,
+        reason: normalizedReason,
+      },
+    });
+
+    return res.status(201).json({
+      message: "Price change request submitted",
+      data: request,
+    });
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+};
+
+export const STAFF_getPendingPriceChangeForProduct = async (req, res) => {
+  const { productId } = req.params;
+
+  try {
+    const request = await PriceChangeRequest.findOne({
+      productId,
+      requestedBy: req.user.id,
+      status: "pending",
+    })
+      .sort({ createdAt: -1 })
+      .lean();
+
+    return res.status(200).json({ data: request || null });
   } catch (error) {
     return res.status(500).json({ message: error.message });
   }

@@ -1,6 +1,7 @@
 import mongoose from "mongoose";
 import Product from "../models/product.js";
 import InventoryRequest from "../models/InventoryRequest.js";
+import PriceChangeRequest from "../models/priceChangeRequest.js";
 import ActivityLog from "../models/activityLog.js";
 import OWNER_ArchivedProduct from "../models/OWNER_archivedProduct.js";
 import InventoryBatch from "../models/InventoryBatch.js";
@@ -474,7 +475,7 @@ const OWNER_mapBatchForResponse = (batch, unit = "pcs") => {
 export const OWNER_getActiveInventory = async (req, res) => {
   try {
     const { category, expirationFilter, expiryRisk } = req.query;
-    
+
     const filter = { isArchived: { $ne: true } };
 
     const categoryRegex = OWNER_buildCategoryFilterRegex(category);
@@ -1156,11 +1157,11 @@ export const OWNER_adjustProductStock = async (req, res) => {
     const quantityBefore = Number(product.quantity);
 
     let syncResult;
-    
+
     if (parsedQuantityChange > 0) {
       // Create new batch with provided details
       const newBatchNumber = batchNumber || OWNER_generateBatchNumber("RST");
-      
+
       await InventoryBatch.create({
         product: product._id,
         batchNumber: newBatchNumber,
@@ -1475,6 +1476,232 @@ export const OWNER_updateDiscrepancy = async (req, res) => {
           variance: updatedProduct.variance,
           status: updatedProduct.discrepancyStatus,
         },
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+};
+
+export const OWNER_updateProductPrice = async (req, res) => {
+  const { productId } = req.params;
+  const { newPrice } = req.body || {};
+
+  try {
+    const parsedNewPrice = Number(newPrice);
+    if (!Number.isFinite(parsedNewPrice) || parsedNewPrice <= 0) {
+      return res.status(400).json({ message: "newPrice must be a valid number greater than 0" });
+    }
+
+    const product = await Product.findOne({
+      _id: productId,
+      isArchived: { $ne: true },
+    });
+
+    if (!product) {
+      return res.status(404).json({ message: "Active product not found" });
+    }
+
+    const oldPrice = Number(product.unitPrice ?? 0);
+    if (oldPrice === parsedNewPrice) {
+      return res.status(400).json({ message: "New price must be different from current price" });
+    }
+
+    product.unitPrice = parsedNewPrice;
+    await product.save();
+
+    await ActivityLog.create({
+      action: "EDIT_PRODUCT_PRICE",
+      actionType: "OWNER_EDIT_PRODUCT_PRICE",
+      category: "Inventory",
+      actorId: req.user.id,
+      actorRole: "OWNER",
+      actorName: req.user.name || null,
+      actorEmail: req.user.email || null,
+      performedBy: req.user.id,
+      entityType: "Product",
+      entityId: product._id,
+      description: `Admin ${req.user.name || "Owner"} updated price of ${product.name} from P${oldPrice.toFixed(2)} to P${parsedNewPrice.toFixed(2)}`,
+      details: {
+        itemName: product.name,
+        oldPrice,
+        newPrice: parsedNewPrice,
+      },
+    });
+
+    return res.status(200).json({
+      message: "Price updated successfully",
+      data: {
+        productId: product._id,
+        productName: product.name,
+        oldPrice,
+        newPrice: parsedNewPrice,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+};
+
+export const OWNER_getPriceChangeRequests = async (req, res) => {
+  try {
+    const status = String(req.query.status || "pending").trim().toLowerCase();
+    const filter = {};
+    if (["pending", "approved", "rejected"].includes(status)) {
+      filter.status = status;
+    }
+
+    const requests = await PriceChangeRequest.find(filter)
+      .sort({ createdAt: -1 })
+      .lean();
+
+    return res.status(200).json({
+      count: requests.length,
+      data: requests,
+    });
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+};
+
+export const OWNER_getPriceChangeRequestForProduct = async (req, res) => {
+  const { productId } = req.params;
+
+  try {
+    const latestPending = await PriceChangeRequest.findOne({
+      productId,
+      status: "pending",
+    })
+      .sort({ createdAt: -1 })
+      .lean();
+
+    return res.status(200).json({
+      data: latestPending || null,
+    });
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+};
+
+export const OWNER_approvePriceChangeRequest = async (req, res) => {
+  const { requestId } = req.params;
+
+  try {
+    const request = await PriceChangeRequest.findOne({
+      _id: requestId,
+      status: "pending",
+    });
+
+    if (!request) {
+      return res.status(404).json({ message: "Pending price change request not found" });
+    }
+
+    const product = await Product.findOne({
+      _id: request.productId,
+      isArchived: { $ne: true },
+    });
+
+    if (!product) {
+      return res.status(404).json({ message: "Active product not found" });
+    }
+
+    const currentPrice = Number(product.unitPrice ?? 0);
+    const targetPrice = Number(request.requestedPrice ?? 0);
+
+    if (!Number.isFinite(targetPrice) || targetPrice <= 0) {
+      return res.status(400).json({ message: "Requested price is invalid" });
+    }
+
+    if (currentPrice !== targetPrice) {
+      product.unitPrice = targetPrice;
+      await product.save();
+    }
+
+    request.status = "approved";
+    request.reviewedBy = req.user.id;
+    request.reviewedAt = new Date();
+    await request.save();
+
+    await ActivityLog.create({
+      action: "APPROVE_PRICE_CHANGE_REQUEST",
+      actionType: "OWNER_APPROVE_PRICE_CHANGE_REQUEST",
+      category: "Request",
+      actorId: req.user.id,
+      actorRole: "OWNER",
+      actorName: req.user.name || null,
+      actorEmail: req.user.email || null,
+      performedBy: req.user.id,
+      entityType: "Product",
+      entityId: product._id,
+      description: `Admin ${req.user.name || "Owner"} approved price change request of ${product.name}`,
+      details: {
+        requestId: request._id,
+        productId: product._id,
+        oldPrice: currentPrice,
+        approvedPrice: targetPrice,
+        requestedBy: request.requestedBy,
+      },
+    });
+
+    return res.status(200).json({
+      message: "Price change request approved",
+      data: {
+        requestId: request._id,
+        productId: product._id,
+        oldPrice: currentPrice,
+        newPrice: targetPrice,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+};
+
+export const OWNER_rejectPriceChangeRequest = async (req, res) => {
+  const { requestId } = req.params;
+
+  try {
+    const request = await PriceChangeRequest.findOne({
+      _id: requestId,
+      status: "pending",
+    });
+
+    if (!request) {
+      return res.status(404).json({ message: "Pending price change request not found" });
+    }
+
+    request.status = "rejected";
+    request.reviewedBy = req.user.id;
+    request.reviewedAt = new Date();
+    await request.save();
+
+    await ActivityLog.create({
+      action: "REJECT_PRICE_CHANGE_REQUEST",
+      actionType: "OWNER_REJECT_PRICE_CHANGE_REQUEST",
+      category: "Request",
+      actorId: req.user.id,
+      actorRole: "OWNER",
+      actorName: req.user.name || null,
+      actorEmail: req.user.email || null,
+      performedBy: req.user.id,
+      entityType: "Product",
+      entityId: request.productId,
+      description: `Admin ${req.user.name || "Owner"} rejected price change request of ${request.productName}`,
+      details: {
+        requestId: request._id,
+        productId: request.productId,
+        oldPrice: request.oldPrice,
+        requestedPrice: request.requestedPrice,
+        requestedBy: request.requestedBy,
+      },
+    });
+
+    return res.status(200).json({
+      message: "Price change request rejected",
+      data: {
+        requestId: request._id,
+        productId: request.productId,
+        status: request.status,
       },
     });
   } catch (error) {

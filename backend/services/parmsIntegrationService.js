@@ -262,6 +262,76 @@ const compactPayload = (value) => {
   return value;
 };
 
+const normalizeItemNameKey = (value) => String(value || "")
+  .trim()
+  .toLowerCase()
+  .replace(/[^a-z0-9]+/g, " ")
+  .trim();
+
+const normalizeReceiptItemsForSync = (items = []) => {
+  const normalizedItems = (Array.isArray(items) ? items : []).map((item) => {
+    const unitPriceMinor = toMinorUnits(item?.unitPrice);
+    const lineTotalMinor = toMinorUnits(item?.lineTotal);
+
+    return {
+      productId: item?.productId ? String(item.productId) : null,
+      name: item?.name || null,
+      quantity: Number(item?.quantity || 0),
+      unitPriceMinor,
+      lineTotalMinor,
+      batchAllocations: (item?.batchAllocations || []).map((allocation) => ({
+        batchId: allocation?.batchId ? String(allocation.batchId) : null,
+        batchNumber: allocation?.batchNumber || null,
+        quantity: Number(allocation?.quantity || 0),
+        expiryDate: allocation?.expiryDate ? new Date(allocation.expiryDate).toISOString() : null,
+        expiryRisk: allocation?.expiryRisk || null,
+      })),
+      nameKey: normalizeItemNameKey(item?.name),
+    };
+  });
+
+  const pricedNameKeys = new Set(
+    normalizedItems
+      .filter((item) => item.lineTotalMinor > 0)
+      .map((item) => item.nameKey)
+      .filter(Boolean)
+  );
+
+  const withoutZeroPlaceholders = normalizedItems.filter((item) => {
+    if (!item.nameKey) return true;
+    if (item.lineTotalMinor > 0) return true;
+    return !pricedNameKeys.has(item.nameKey);
+  });
+
+  const mergedByKey = new Map();
+
+  withoutZeroPlaceholders.forEach((item) => {
+    const mergeKey = `${item.productId || ""}|${item.nameKey || ""}|${item.unitPriceMinor}`;
+    const existing = mergedByKey.get(mergeKey);
+
+    if (!existing) {
+      mergedByKey.set(mergeKey, {
+        ...item,
+        batchAllocations: [...item.batchAllocations],
+      });
+      return;
+    }
+
+    existing.quantity += item.quantity;
+    existing.lineTotalMinor += item.lineTotalMinor;
+    existing.batchAllocations.push(...item.batchAllocations);
+  });
+
+  return Array.from(mergedByKey.values()).map((item) => ({
+    productId: item.productId,
+    name: item.name,
+    quantity: item.quantity,
+    unitPriceMinor: item.unitPriceMinor,
+    lineTotalMinor: item.lineTotalMinor,
+    batchAllocations: item.batchAllocations,
+  }));
+};
+
 const buildReceiptPayload = (transaction) => {
   const snapshot = transaction?.receiptSnapshot;
   if (!snapshot) return null;
@@ -284,20 +354,7 @@ const buildReceiptPayload = (transaction) => {
     cashReceivedMinor: toMinorUnits(snapshot.cashReceived),
     changeMinor: toMinorUnits(snapshot.change),
     pendingBalanceTotalMinor: toMinorUnits(snapshot.pendingBalanceTotal),
-    items: (snapshot.items || []).map((item) => ({
-      productId: item.productId ? String(item.productId) : null,
-      name: item.name || null,
-      quantity: Number(item.quantity || 0),
-      unitPriceMinor: toMinorUnits(item.unitPrice),
-      lineTotalMinor: toMinorUnits(item.lineTotal),
-      batchAllocations: (item.batchAllocations || []).map((allocation) => ({
-        batchId: allocation.batchId ? String(allocation.batchId) : null,
-        batchNumber: allocation.batchNumber || null,
-        quantity: Number(allocation.quantity || 0),
-        expiryDate: allocation.expiryDate ? new Date(allocation.expiryDate).toISOString() : null,
-        expiryRisk: allocation.expiryRisk || null,
-      })),
-    })),
+    items: normalizeReceiptItemsForSync(snapshot.items || []),
     pendingBalances: (snapshot.pendingBalances || []).map((line) => ({
       sourceType: line.sourceType || null,
       referenceId: line.referenceId || null,

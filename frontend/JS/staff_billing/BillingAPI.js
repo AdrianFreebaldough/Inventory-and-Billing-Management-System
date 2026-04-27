@@ -30,6 +30,7 @@ export const fetchBillingProducts = async (category = null) => {
 export const createTransaction = async ({
   patientId,
   patientName = "",
+  isGuest = false,
   items,
   discountRate = 0,
   pendingBalances = [],
@@ -37,7 +38,7 @@ export const createTransaction = async ({
 }) => {
   const response = await apiFetch(`${BILLING_BASE}/create`, {
     method: "POST",
-    body: JSON.stringify({ patientId, patientName, items, discountRate, pendingBalances, parmsIntentId }),
+    body: JSON.stringify({ patientId, patientName, isGuest, items, discountRate, pendingBalances, parmsIntentId }),
   });
   return response.data;
 };

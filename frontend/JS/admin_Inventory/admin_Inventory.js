@@ -23,10 +23,15 @@ const API = {
   allRequests:       "/api/owner/inventory/requests/all",
   approveRequest:    (id) => `/api/owner/inventory/requests/${id}/approve`,
   rejectRequest:     (id) => `/api/owner/inventory/requests/${id}/reject`,
+  updateProductPrice: (id) => `/api/owner/inventory/${id}/price`,
   archiveProduct:    (id) => `/api/owner/inventory/${id}/archive`,
   restoreProduct:    (id) => `/api/owner/inventory/${id}/restore`,
   adjustStock:       (id) => `/api/owner/inventory/${id}/adjust-stock`,
   updateDiscrepancy: (id) => `/api/owner/inventory/${id}/discrepancy`,
+  priceChangeRequests: "/api/owner/inventory/price-change-requests",
+  priceChangeRequestForProduct: (id) => `/api/owner/inventory/price-change-requests/product/${id}`,
+  approvePriceChangeRequest: (id) => `/api/owner/inventory/price-change-requests/${id}/approve`,
+  rejectPriceChangeRequest: (id) => `/api/owner/inventory/price-change-requests/${id}/reject`,
   quantityAdjustments: "/api/owner/quantity-adjustments",
   reviewQuantityAdjustment: (id) => `/api/owner/quantity-adjustments/${id}/review`,
   disposalLogs: "/api/owner/disposal",
@@ -138,7 +143,7 @@ function mapBackendItemToUI(p) {
         expiryRisk: mapExpiryRiskToUi(batch.expiryRisk || null),
         status: batch.status || null,
         statusKey: batch.statusKey || "active",
-        canDispose: batch.canDispose !== false,
+        canDispose: (Number(batch.currentQuantity ?? batch.quantity ?? 0) > 0) && (batch.statusKey !== "disposed") && (!batch.isPendingDisposal),
         isExpired: !!batch.isExpired,
         isImmediateReview: !!batch.isImmediateReview,
         isPendingDisposal: !!batch.isPendingDisposal,
@@ -357,6 +362,43 @@ function mapBackendDisposalToUI(r) {
   };
 }
 
+function mapBackendPriceChangeToUI(r) {
+  const submittedAt = r.createdAt || null;
+  const requestDate = submittedAt
+    ? new Date(submittedAt).toLocaleString("en-US", {
+      month: "2-digit",
+      day: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: true,
+    })
+    : "-";
+
+  return {
+    id: String(r._id || ""),
+    requestType: "PRICE_CHANGE",
+    itemName: r.productName || "Unknown",
+    type: "Price Update",
+    category: "Medicine",
+    currentQuantity: 0,
+    minStock: 0,
+    unit: "",
+    requestQuantity: 0,
+    requestedBy: r.requestedByName || "Staff",
+    requestDate,
+    status: String(r.status || "pending").toLowerCase() === "rejected" ? "denied" : String(r.status || "pending").toLowerCase(),
+    supplier: "",
+    productId: String(r.productId || ""),
+    notes: r.reason || "",
+    submittedAt,
+    oldPrice: Number(r.oldPrice ?? 0),
+    requestedPrice: Number(r.requestedPrice ?? 0),
+    reason: r.reason || "",
+    isPriceChange: true,
+  };
+}
+
 /* ================= API FETCH HELPERS ================= */
 async function fetchInventoryItems() {
   try {
@@ -418,6 +460,16 @@ async function fetchDisposalRequests() {
   }
 }
 
+async function fetchPriceChangeRequests() {
+  try {
+    const res = await apiFetch(`${API.priceChangeRequests}?status=pending`);
+    return (res?.data || []).map(mapBackendPriceChangeToUI);
+  } catch (err) {
+    showToast(`Failed to load price change requests: ${err.message}`, "error");
+    return [];
+  }
+}
+
 async function refreshInventory() {
   if (showArchivedItems) {
     inventoryItems = await fetchArchivedItems();
@@ -429,13 +481,14 @@ async function refreshInventory() {
 }
 
 async function refreshRequests() {
-  const [inventoryReqs, discrepancyReqs, disposalReqs] = await Promise.all([
+  const [inventoryReqs, discrepancyReqs, disposalReqs, priceChangeReqs] = await Promise.all([
     fetchAllRequests(),
     fetchDiscrepancyRequests(),
     fetchDisposalRequests(),
+    fetchPriceChangeRequests(),
   ]);
 
-  restockRequests = [...inventoryReqs, ...discrepancyReqs, ...disposalReqs];
+  restockRequests = [...inventoryReqs, ...discrepancyReqs, ...disposalReqs, ...priceChangeReqs];
   renderRestockCategorySelect(restockRequests);
   applyRestockFilters();
 }
@@ -978,6 +1031,12 @@ function renderRestockRequests() {
           <div class="flex justify-between"><span class="text-gray-600">Quantity Requested</span><span class="font-semibold text-red-700">${req.requestQuantity} ${req.unit}</span></div>
           <div class="text-gray-500 border-t pt-2 mt-1"><span class="font-medium text-gray-700">Reason:</span> ${escapeHtml(req.reason || "No reason provided")}</div>
         `
+      : req.requestType === "PRICE_CHANGE"
+        ? `
+          <div class="flex justify-between"><span class="text-gray-600">Current Price</span><span class="font-semibold text-gray-900">P${Number(req.oldPrice || 0).toFixed(2)}</span></div>
+          <div class="flex justify-between"><span class="text-gray-600">Requested Price</span><span class="font-semibold text-indigo-700">P${Number(req.requestedPrice || 0).toFixed(2)}</span></div>
+          <div class="text-gray-500 border-t pt-2 mt-1"><span class="font-medium text-gray-700">Reason:</span> ${escapeHtml(req.reason || "No reason provided")}</div>
+        `
       : `
         <div class="flex justify-between"><span class="text-gray-600">Current Stock</span><span class="font-semibold ${stockColor}">${req.currentQuantity} ${req.unit}</span></div>
         <div class="flex justify-between"><span class="text-gray-600">Requested</span><span class="font-semibold text-blue-700">${req.requestQuantity} ${req.unit}</span></div>
@@ -1305,6 +1364,22 @@ async function showItemDetails(item) {
   setText("detailsCategory", formatCategory(detailItem.category));
   setText("detailsSellingPrice", `₱${(detailItem.price || 0).toFixed(2)}`);
 
+  const requestedPricePreview = getElement(modal, "#detailsRequestedPricePreview");
+  if (requestedPricePreview) {
+    requestedPricePreview.classList.add("hidden");
+    requestedPricePreview.textContent = "";
+    try {
+      const pendingPriceResponse = await apiFetch(API.priceChangeRequestForProduct(detailItem.id));
+      const pendingPriceRequest = pendingPriceResponse?.data || null;
+      if (pendingPriceRequest && String(pendingPriceRequest.status || "") === "pending") {
+        requestedPricePreview.textContent = `Pending Approval · Requested: P${Number(pendingPriceRequest.requestedPrice || 0).toFixed(2)}`;
+        requestedPricePreview.classList.remove("hidden");
+      }
+    } catch {
+      // Non-blocking fetch for pending price request badge.
+    }
+  }
+
   // Medicine Information section
   setText("detailsMedicineName", detailItem.medicineName || detailItem.name);
   setText("detailsMedicineGeneric", detailItem.genericName || detailItem.generic);
@@ -1359,7 +1434,7 @@ async function showItemDetails(item) {
       const batchStatusPill = getBatchStatusPill(batch);
       const statusHtml = `<span class="inline-flex items-center gap-1 text-xs font-medium ${batchStatusPill.textClass}"><span class="w-2 h-2 rounded-full inline-block" style="background:${batchStatusPill.dotColor};"></span>${batchStatusPill.label}</span>`;
       const actionHtml = batch.canDispose
-        ? `<button class="dispose-batch-btn inline-flex items-center rounded-md border border-red-200 bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-700 hover:bg-red-100 transition-colors" data-batch-id="${escapeHtml(batch.id || batch.batchId || "")}">${batch.isExpired ? "Dispose Expired Batch" : "Dispose"}</button>`
+        ? `<button class="dispose-batch-btn inline-flex items-center rounded-md border border-red-200 bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-700 hover:bg-red-100 transition-colors" data-batch-id="${escapeHtml(batch.id || batch.batchId || "")}">Dispose</button>`
         : `<span class="text-xs text-slate-500">No action</span>`;
 
       return `
@@ -1408,6 +1483,8 @@ async function showItemDetails(item) {
   const btnCloseTop = getElement(modal, "#closeItemDetails");
   const btnCancel   = getElement(modal, "#closeDetails");
   const btnEditDiscrepancy = getElement(modal, "#detailsEditDiscrepancyBtn");
+  const btnEditPrice = getElement(modal, "#detailsEditPriceBtn");
+  const btnEditPriceSecondary = getElement(modal, "#detailsEditPriceBtnSecondary");
   const btnRestock     = getElement(modal, "#restockItemBtn");
 
   const hideDetails = () => { modal.classList.add("hidden"); modal.style.display = ""; };
@@ -1433,12 +1510,33 @@ async function showItemDetails(item) {
     btnRestock.parentNode.replaceChild(n, btnRestock);
     n.onclick = (e) => { e?.stopPropagation?.(); showAdminRestockModal(detailItem); };
   }
+  if (btnEditPrice) {
+    const n = btnEditPrice.cloneNode(true);
+    btnEditPrice.parentNode.replaceChild(n, btnEditPrice);
+    n.onclick = (e) => {
+      e?.stopPropagation?.();
+      showAdminEditPriceModal(detailItem);
+    };
+  }
+  if (btnEditPriceSecondary) {
+    const n = btnEditPriceSecondary.cloneNode(true);
+    btnEditPriceSecondary.parentNode.replaceChild(n, btnEditPriceSecondary);
+    n.onclick = (e) => {
+      e?.stopPropagation?.();
+      showAdminEditPriceModal(detailItem);
+    };
+  }
   modal.classList.remove("hidden");
   modal.style.display = "flex";
 }
 
 /* ================= REVIEW RESTOCK MODAL ================= */
 function showReviewRestockModal(request) {
+  if (request.requestType === "PRICE_CHANGE") {
+    showReviewPriceChangeModal(request);
+    return;
+  }
+
   if (request.requestType === "DISCREPANCY") {
     showReviewDiscrepancyModal(request);
     return;
@@ -1557,6 +1655,113 @@ function showReviewRestockModal(request) {
       }
     });
   });
+}
+
+function showReviewPriceChangeModal(request) {
+  const content = `
+    <h3 class="text-lg font-semibold mb-1">Review Price Change Request</h3>
+    <p class="text-sm text-gray-600 mb-4">PRICE_CHANGE</p>
+    <div class="space-y-3 text-sm">
+      <div class="flex justify-between py-2 border-b"><span class="text-gray-600">Product</span><span class="font-semibold">${escapeHtml(request.itemName || "Unknown")}</span></div>
+      <div class="flex justify-between py-2 border-b"><span class="text-gray-600">Current Price</span><span class="font-semibold text-gray-900">P${Number(request.oldPrice || 0).toFixed(2)}</span></div>
+      <div class="flex justify-between py-2 border-b"><span class="text-gray-600">Requested Price</span><span class="font-semibold text-indigo-700">P${Number(request.requestedPrice || 0).toFixed(2)}</span></div>
+      <div class="py-2 border-b">
+        <p class="text-gray-600 mb-1">Reason</p>
+        <p class="font-medium text-gray-900">${escapeHtml(request.reason || "No reason provided")}</p>
+      </div>
+      <div class="flex justify-between py-2 border-b"><span class="text-gray-600">Requested By</span><span class="font-semibold">${escapeHtml(request.requestedBy || "Staff")}</span></div>
+      <div class="flex justify-between py-2 border-b"><span class="text-gray-600">Date Requested</span><span class="font-semibold">${escapeHtml(request.requestDate || "-")}</span></div>
+    </div>
+    <div class="mt-5 flex gap-5 justify-between">
+      <button id="reviewCancelBtn" class="flex-1 border border-gray-300 py-2 px-4 rounded-lg bg-white">Cancel</button>
+      <button id="reviewDenyBtn" class="flex-1 bg-red-600 text-white py-2 px-4 rounded-lg">Reject</button>
+      <button id="reviewApproveBtn" class="flex-1 bg-green-600 text-white py-2 px-4 rounded-lg">Approve</button>
+    </div>`;
+
+  const reviewModal = createModal({ id: "reviewRestockModal", content, width: "500px" });
+
+  const hide = () => { reviewModal.classList.add("hidden"); reviewModal.style.display = ""; setTimeout(() => reviewModal.remove(), 200); };
+  getElement(reviewModal, "#closeReviewRestockModal")?.addEventListener("click", hide);
+  getElement(reviewModal, "#reviewCancelBtn")?.addEventListener("click", hide);
+
+  getElement(reviewModal, "#reviewDenyBtn")?.addEventListener("click", async () => {
+    try {
+      await apiFetch(API.rejectPriceChangeRequest(request.id), { method: "PATCH" });
+      showToast("Price change request rejected", "success");
+      hide();
+      await refreshAll();
+    } catch (err) {
+      showToast(`Reject failed: ${err.message}`, "error");
+    }
+  });
+
+  getElement(reviewModal, "#reviewApproveBtn")?.addEventListener("click", async () => {
+    try {
+      await apiFetch(API.approvePriceChangeRequest(request.id), { method: "PATCH" });
+      showToast("Price change request approved", "success");
+      hide();
+      await refreshAll();
+    } catch (err) {
+      showToast(`Approve failed: ${err.message}`, "error");
+    }
+  });
+}
+
+function showAdminEditPriceModal(item) {
+  const currentPrice = Number(item?.price ?? 0);
+  const content = `
+    <h3 class="text-lg font-semibold mb-1">Edit Price</h3>
+    <p class="text-sm text-gray-600 mb-4">Update selling price for <span class="font-semibold text-gray-800">${escapeHtml(item?.name || "Item")}</span>.</p>
+    <div class="space-y-3 text-sm">
+      <div>
+        <label class="block text-xs text-gray-700 mb-1">Current Price</label>
+        <input type="text" value="P${currentPrice.toFixed(2)}" class="w-full border border-gray-300 rounded px-3 py-2 bg-gray-50" readonly />
+      </div>
+      <div>
+        <label class="block text-xs text-gray-700 mb-1">New Price</label>
+        <input id="adminNewPriceInput" type="number" min="0.01" step="0.01" value="${currentPrice.toFixed(2)}" class="w-full border border-gray-300 rounded px-3 py-2" />
+      </div>
+    </div>
+    <div class="mt-5 grid grid-cols-2 gap-3">
+      <button id="adminEditPriceCancelBtn" class="w-full border border-gray-300 py-2.5 rounded-lg bg-white text-sm font-semibold hover:bg-gray-50 text-gray-700">Cancel</button>
+      <button id="adminEditPriceSaveBtn" class="w-full bg-indigo-600 text-white py-2.5 rounded-lg text-sm font-semibold hover:bg-indigo-700">Save Changes</button>
+    </div>`;
+
+  const modal = createModal({ id: "adminEditPriceModal", content, width: "460px" });
+  const hide = () => {
+    modal.classList.add("hidden");
+    modal.style.display = "";
+    setTimeout(() => modal.remove(), 200);
+  };
+
+  getElement(modal, "#closeAdminEditPriceModal")?.addEventListener("click", hide);
+  getElement(modal, "#adminEditPriceCancelBtn")?.addEventListener("click", hide);
+  getElement(modal, "#adminEditPriceSaveBtn")?.addEventListener("click", async () => {
+    const newPrice = Number(getElement(modal, "#adminNewPriceInput")?.value || 0);
+    if (!Number.isFinite(newPrice) || newPrice <= 0) {
+      showToast("New price must be greater than 0", "error");
+      return;
+    }
+    if (newPrice === currentPrice) {
+      showToast("New price must be different from current price", "error");
+      return;
+    }
+
+    try {
+      await apiFetch(API.updateProductPrice(item.id), {
+        method: "PATCH",
+        body: JSON.stringify({ newPrice }),
+      });
+      showToast("Price updated successfully", "success");
+      hide();
+      await refreshAll();
+    } catch (err) {
+      showToast(`Price update failed: ${err.message}`, "error");
+    }
+  });
+
+  modal.classList.remove("hidden");
+  modal.style.display = "flex";
 }
 
 /* ================= APPROVE CONFIRM ================= */

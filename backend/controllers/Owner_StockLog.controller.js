@@ -234,16 +234,16 @@ export const Owner_getMonthlyReport = async (req, res) => {
       },
       appliedFilter: hasDateRange
         ? {
-            type: "dateRange",
-            dateField: "dateAdded",
-            startDate,
-            endDate,
-          }
+          type: "dateRange",
+          dateField: "dateAdded",
+          startDate,
+          endDate,
+        }
         : {
-            type: "month",
-            dateField: "dateAdded",
-            month,
-          },
+          type: "month",
+          dateField: "dateAdded",
+          month,
+        },
     });
   } catch (error) {
     console.error("Error generating monthly report:", error);

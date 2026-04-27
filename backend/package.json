@@ -7,10 +7,7 @@
     "dev": "nodemon server.js",
     "test": "node --test tests/**/*.test.js",
     "normalize:categories": "node scripts/normalizeInventoryCategories.js",
-    "seed:transaction-services": "node scripts/seedTransactionServiceInventory.js",
-    "migrate:account-ids": "node scripts/migrateUserAccountIds.js",
-    "migrate:user-emails": "node scripts/migrateUserEmailsFromHrms.js",
-    "restore:legacy-owner-staff-emails": "node scripts/restoreLegacyOwnerStaffEmails.js"
+    "seed:transaction-services": "node scripts/seedTransactionServiceInventory.js"
   },
   "keywords": [],
   "author": "",

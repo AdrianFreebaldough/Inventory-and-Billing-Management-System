@@ -88,18 +88,14 @@ export const getBatchEffectiveStatus = (batch, referenceDate = new Date()) => {
   const manualStatus = normalizeManualStatus(batch?.status);
   const quantity = getBatchCurrentQuantity(batch);
 
-  if (manualStatus === BATCH_MANUAL_STATUS.DISPOSED) {
-    return BATCH_EFFECTIVE_STATUS.DISPOSED;
-  }
-
-  if (manualStatus === BATCH_MANUAL_STATUS.PENDING_DISPOSAL) {
-    return BATCH_EFFECTIVE_STATUS.PENDING_DISPOSAL;
-  }
-
   if (quantity <= 0) {
     return manualStatus === BATCH_MANUAL_STATUS.DISPOSED
       ? BATCH_EFFECTIVE_STATUS.DISPOSED
       : BATCH_EFFECTIVE_STATUS.OUT_OF_STOCK;
+  }
+
+  if (manualStatus === BATCH_MANUAL_STATUS.PENDING_DISPOSAL) {
+    return BATCH_EFFECTIVE_STATUS.PENDING_DISPOSAL;
   }
 
   const risk = getBatchExpiryRisk(batch?.expiryDate, referenceDate);

@@ -21,6 +21,27 @@ class STAFF_BillingError extends Error {
 // Centralized currency rounding keeps stored totals stable and predictable.
 const STAFF_roundCurrency = (value) => Number(Number(value).toFixed(2));
 
+const STAFF_getNextGuestPatientId = async ({ session = null } = {}) => {
+  const counters = mongoose.connection.collection("counters");
+  const options = {
+    upsert: true,
+    returnDocument: "after",
+  };
+
+  if (session) {
+    options.session = session;
+  }
+
+  const counterDoc = await counters.findOneAndUpdate(
+    { _id: "billingGuestPatientSequence" },
+    { $inc: { seq: 1 } },
+    options
+  );
+
+  const sequence = Number(counterDoc?.value?.seq || counterDoc?.seq || 1);
+  return `PAT-${sequence}`;
+};
+
 const STAFF_makeReceiptNumber = () => {
   const now = new Date();
   const yyyy = now.getFullYear();
@@ -501,15 +522,22 @@ export const STAFF_createBillingTransaction = async ({
   items,
   patientId,
   patientName,
+  isGuest = false,
   discountRate = 0,
   pendingBalances = [],
   parmsIntentId = null,
 }) => {
-  if (!patientId || typeof patientId !== "string" || !patientId.trim()) {
+  const guestMode = Boolean(isGuest);
+  const finalPatientId = guestMode
+    ? await STAFF_getNextGuestPatientId()
+    : String(patientId || "").trim();
+  if (!finalPatientId) {
     throw new STAFF_BillingError("Patient ID is required", 400);
   }
 
-  const finalPatientName = String(patientName || "").trim();
+  const finalPatientName = guestMode
+    ? "N/A"
+    : String(patientName || "").trim();
   if (!finalPatientName) {
     throw new STAFF_BillingError("Patient name is required", 400);
   }
@@ -525,7 +553,7 @@ export const STAFF_createBillingTransaction = async ({
     : { items: [], totalAmount: 0 };
 
   const normalizedPending = STAFF_normalizePendingBalanceLines({
-    pendingBalancesPayload: pendingBalances,
+    pendingBalancesPayload: guestMode ? [] : pendingBalances,
     itemSnapshot: snapshot.items,
   });
   const normalizedPendingBalances = normalizedPending.lines;
@@ -534,14 +562,14 @@ export const STAFF_createBillingTransaction = async ({
   if (!hasInventoryItems && pendingBalanceTotal <= 0) {
     throw new STAFF_BillingError("At least one billable line is required", 400);
   }
-  
+
   // IMPORTANT: Prices in DB already include 12% VAT
   // We use REVERSE VAT calculation to show breakdown
   const subtotal = snapshot.totalAmount;
   const discountAmount = STAFF_roundCurrency(subtotal * parsedDiscountRate);
   const discountedInventoryTotal = STAFF_roundCurrency(subtotal - discountAmount);
   const totalAmount = STAFF_roundCurrency(discountedInventoryTotal + pendingBalanceTotal);
-  
+
   // Reverse VAT calculation: Total = Net + VAT
   // Total = Net * 1.12
   // Net = Total / 1.12
@@ -552,20 +580,23 @@ export const STAFF_createBillingTransaction = async ({
 
   let linkedIntent = null;
   const requestedIntentId = String(parmsIntentId || "").trim() || null;
-  try {
-    linkedIntent = await resolveOpenIntentForPatient({
-      patientId: patientId.trim(),
-    });
-  } catch {
-    linkedIntent = null;
+  if (!guestMode) {
+    try {
+      linkedIntent = await resolveOpenIntentForPatient({
+        patientId: finalPatientId,
+      });
+    } catch {
+      linkedIntent = null;
+    }
   }
 
-  const resolvedIntentId = linkedIntent?.intentId || requestedIntentId;
+  const resolvedIntentId = guestMode ? null : (linkedIntent?.intentId || requestedIntentId);
 
   const transaction = await STAFF_BillingTransaction.create({
     staffId,
-    patientId: patientId.trim(),
+    patientId: finalPatientId,
     patientName: finalPatientName,
+    isGuest: guestMode,
     parmsIntentId: resolvedIntentId || null,
     parmsEncounterId: linkedIntent?.encounterId || null,
     parmsInvoiceReference: linkedIntent?.ibmsReference || null,
@@ -680,6 +711,7 @@ export const STAFF_completeBillingTransaction = async ({ transactionId, staffId,
       transactionDateTime: completedAt,
       patientId: transaction.patientId,
       patientName: transaction.patientName,
+      isGuest: Boolean(transaction.isGuest),
       staffId: transaction.staffId,
       items: transaction.items.map((item) => ({
         productId: item.productId,

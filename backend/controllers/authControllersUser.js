@@ -16,6 +16,12 @@ const AUTH_normalizeEmail = (value) => String(value || "").trim().toLowerCase();
 
 const AUTH_isValidEmail = (value) => AUTH_EMAIL_REGEX.test(AUTH_normalizeEmail(value));
 const AUTH_FIRST_LOGIN_CHALLENGE_PURPOSE = "hrms-first-login-password-change";
+const AUTH_TEMP_HRMS_PASSWORD = "__HRMS_SYNCED_ACCOUNT__";
+
+const AUTH_isSuspendedStatus = (value) => {
+  const normalized = String(value || "").trim().toLowerCase();
+  return normalized === "suspended";
+};
 
 const AUTH_isStrongPassword = (value) => {
   const password = String(value || "");
@@ -43,6 +49,72 @@ const AUTH_issueFirstLoginChallenge = (profile, firstLoginField) => {
     env.JWT_SECRET,
     { expiresIn: "15m" }
   );
+};
+
+const AUTH_syncHRMSUserToIBMS = async (hrmsProfile = {}) => {
+  const normalizedEmail = AUTH_normalizeEmail(hrmsProfile?.email);
+  const externalId = String(hrmsProfile?.externalId || "").trim() || null;
+  const normalizedRole = String(hrmsProfile?.role || "").trim().toLowerCase();
+  const displayName = String(hrmsProfile?.name || "").trim() || null;
+
+  if (!AUTH_isValidEmail(normalizedEmail)) {
+    throw new Error("HRMS profile email is invalid");
+  }
+
+  if (!["owner", "staff"].includes(normalizedRole)) {
+    throw new Error("HRMS profile role is invalid");
+  }
+
+  const hashedPlaceholderPassword = await bcrypt.hash(AUTH_TEMP_HRMS_PASSWORD, 10);
+
+  let user = null;
+  if (externalId) {
+    user = await User.findOne({ hrmsId: externalId });
+  }
+
+  if (!user) {
+    user = await User.findOne({
+      email: {
+        $regex: `^${escapeRegex(normalizedEmail)}$`,
+        $options: "i",
+      },
+    });
+  }
+
+  if (!user) {
+    user = await User.create({
+      hrmsId: externalId,
+      name: displayName,
+      email: normalizedEmail,
+      password: hashedPlaceholderPassword,
+      role: normalizedRole,
+      status: "active",
+      isActive: true,
+      archivedAt: null,
+      archiveReason: null,
+    });
+
+    return user;
+  }
+
+  user.hrmsId = externalId || user.hrmsId || null;
+  user.name = displayName || user.name || null;
+  user.email = normalizedEmail;
+  user.role = normalizedRole;
+  if (!AUTH_isSuspendedStatus(user.status)) {
+    user.status = "active";
+  }
+  user.isActive = true;
+  user.archivedAt = null;
+  user.archiveReason = null;
+
+  // Ensure old migrated records without local password remain valid documents.
+  if (!user.password) {
+    user.password = hashedPlaceholderPassword;
+  }
+
+  await user.save();
+  return user;
 };
 
 const AUTH_issueTokenAndRespond = ({ res, profile }) => {
@@ -93,32 +165,49 @@ export const login = async (req, res) => {
         $options: "i",
       },
     });
-    if (user) {
+    if (user && !user.hrmsId) {
+      if (AUTH_isSuspendedStatus(user.status)) {
+        return res.status(403).json({ message: "Account suspended. Please contact administrator." });
+      }
+
       if (!user.isActive) {
         return res.status(401).json({ message: "Invalid credentials" });
       }
 
       const isMatch = await bcrypt.compare(password, user.password);
       if (!isMatch) {
-        return res.status(401).json({ message: "Invalid credentials" });
+        if (!env.HRMS_AUTH_ENABLED) {
+          return res.status(401).json({ message: "Invalid credentials" });
+        }
+      } else {
+        return AUTH_issueTokenAndRespond({
+          res,
+          profile: {
+            id: String(user._id),
+            role: user.role,
+            name: user.name || null,
+            email: user.email,
+            accountId: user.email,
+            authSource: "IBMS",
+            externalId: null,
+          },
+        });
       }
-
-      return AUTH_issueTokenAndRespond({
-        res,
-        profile: {
-          id: String(user._id),
-          role: user.role,
-          name: user.name || null,
-          email: user.email,
-          accountId: user.email,
-          authSource: "IBMS",
-          externalId: null,
-        },
-      });
     }
 
     // 2) Optional HRMS login fallback.
     if (env.HRMS_AUTH_ENABLED) {
+      const existingHrmsShadow = await User.findOne({
+        email: {
+          $regex: `^${escapeRegex(email)}$`,
+          $options: "i",
+        },
+      }).lean();
+
+      if (existingHrmsShadow && AUTH_isSuspendedStatus(existingHrmsShadow.status)) {
+        return res.status(403).json({ message: "Account suspended. Please contact administrator." });
+      }
+
       const hrmsResult = await authenticateAgainstHRMS({ email, password });
       if (hrmsResult?.authenticated && hrmsResult?.user) {
         if (hrmsResult?.requiresPasswordChange) {
@@ -134,9 +223,23 @@ export const login = async (req, res) => {
           });
         }
 
+        const syncedUser = await AUTH_syncHRMSUserToIBMS(hrmsResult.user);
+
+        if (AUTH_isSuspendedStatus(syncedUser.status)) {
+          return res.status(403).json({ message: "Account suspended. Please contact administrator." });
+        }
+
         return AUTH_issueTokenAndRespond({
           res,
-          profile: hrmsResult.user,
+          profile: {
+            id: String(syncedUser._id),
+            role: syncedUser.role,
+            name: syncedUser.name || hrmsResult.user.name || null,
+            email: syncedUser.email,
+            accountId: syncedUser.email,
+            authSource: "HRMS",
+            externalId: hrmsResult.user.externalId || syncedUser.hrmsId || null,
+          },
         });
       }
 
@@ -216,16 +319,27 @@ export const completeFirstLoginPasswordChange = async (req, res) => {
       return res.status(400).json({ message: "Invalid password change session payload" });
     }
 
+    const syncedUser = await AUTH_syncHRMSUserToIBMS({
+      externalId: payload?.externalId || null,
+      role: normalizedRole,
+      name: String(payload?.name || "").trim() || null,
+      email: tokenEmail,
+    });
+
+    if (AUTH_isSuspendedStatus(syncedUser.status)) {
+      return res.status(403).json({ message: "Account suspended. Please contact administrator." });
+    }
+
     return AUTH_issueTokenAndRespond({
       res,
       profile: {
-        id: tokenId,
-        role: normalizedRole,
-        name: String(payload?.name || "").trim() || null,
-        email: tokenEmail,
-        accountId: String(payload?.accountId || payload?.email || "").trim() || null,
+        id: String(syncedUser._id),
+        role: syncedUser.role,
+        name: syncedUser.name || String(payload?.name || "").trim() || null,
+        email: syncedUser.email,
+        accountId: syncedUser.email,
         authSource: "HRMS",
-        externalId: String(payload?.externalId || "").trim() || null,
+        externalId: String(payload?.externalId || syncedUser.hrmsId || "").trim() || null,
       },
     });
   } catch (error) {

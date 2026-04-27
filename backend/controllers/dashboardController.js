@@ -86,8 +86,8 @@ export const getDashboardSummary = async (_req, res) => {
     ).length;
 
     res.json({
-      totalRevenue:             totalRevenueAgg[0]?.total  || 0,
-      todaysRevenue:            todaysRevenueAgg[0]?.total || 0,
+      totalRevenue: totalRevenueAgg[0]?.total || 0,
+      todaysRevenue: todaysRevenueAgg[0]?.total || 0,
       activeStaffCount,
       pendingInventoryRequests,
       lowStockItems,
@@ -104,7 +104,7 @@ export const getDashboardSummary = async (_req, res) => {
    ================================================================ */
 export const getRevenueTrend = async (_req, res) => {
   try {
-    const now   = new Date();
+    const now = new Date();
     const start = new Date(now);
     start.setDate(start.getDate() - 6);       // 7-day window (today incl.)
     start.setHours(0, 0, 0, 0);
@@ -132,12 +132,12 @@ export const getRevenueTrend = async (_req, res) => {
     /* Build a full 7-day series so the chart always has 7 points */
     const revenueMap = new Map(revenue.map((r) => [r._id, r.total]));
     const labels = [];
-    const data   = [];
+    const data = [];
 
     for (let i = 0; i < 7; i++) {
       const d = new Date(start);
       d.setDate(start.getDate() + i);
-      const key   = d.toISOString().slice(0, 10);           // YYYY-MM-DD
+      const key = d.toISOString().slice(0, 10);           // YYYY-MM-DD
       const label = dayLabels[d.getDay()];
       labels.push(label);
       data.push(revenueMap.get(key) || 0);
@@ -175,18 +175,18 @@ export const getPendingInventoryRequests = async (_req, res) => {
       });
 
       return {
-        _id:               r._id,
-        requestType:       r.requestType,
-        itemName:          r.requestType === "ADD_ITEM"
-                             ? r.itemName
-                             : r.product?.name ?? "Unknown",
-        requestedBy:       resolvedIdentity.name,
+        _id: r._id,
+        requestType: r.requestType,
+        itemName: r.requestType === "ADD_ITEM"
+          ? r.itemName
+          : r.product?.name ?? "Unknown",
+        requestedBy: resolvedIdentity.name,
         requestedQuantity: r.requestType === "ADD_ITEM"
-                             ? r.initialQuantity
-                             : r.requestedQuantity,
-        status:            r.status,
-        date_requested:    r.date_requested || r.createdAt,
-        createdAt:         r.createdAt,
+          ? r.initialQuantity
+          : r.requestedQuantity,
+        status: r.status,
+        date_requested: r.date_requested || r.createdAt,
+        createdAt: r.createdAt,
       };
     }));
 
@@ -243,22 +243,22 @@ export const getRecentActivity = async (_req, res) => {
 
     for (const log of ownerLogs) {
       normalised.push({
-        _id:       log._id,
-        actor:     log.actorName || log.actorId?.name || log.actorEmail || "System",
-        action:    log.description || log.action || "",
-        category:  log.category || mapActionTypeToCategory(log.actionType),
-        type:      categoryToType(log.category || mapActionTypeToCategory(log.actionType)),
+        _id: log._id,
+        actor: log.actorName || log.actorId?.name || log.actorEmail || "System",
+        action: log.description || log.action || "",
+        category: log.category || mapActionTypeToCategory(log.actionType),
+        type: categoryToType(log.category || mapActionTypeToCategory(log.actionType)),
         createdAt: log.createdAt,
       });
     }
 
     for (const log of staffLogs) {
       normalised.push({
-        _id:       log._id,
-        actor:     log.staffId?.name || log.staffId?.email || "Staff",
-        action:    log.description || "",
-        category:  mapActionTypeToCategory(log.actionType),
-        type:      categoryToType(mapActionTypeToCategory(log.actionType)),
+        _id: log._id,
+        actor: log.staffId?.name || log.staffId?.email || "Staff",
+        action: log.description || "",
+        category: mapActionTypeToCategory(log.actionType),
+        type: categoryToType(mapActionTypeToCategory(log.actionType)),
         createdAt: log.createdAt,
       });
     }
@@ -321,19 +321,19 @@ export const getStockMovements = async (_req, res) => {
     };
 
     const movements = recentMovements.map((m) => ({
-      _id:            m._id,
-      productName:    m.product?.name || "Unknown",
-      movementType:   m.movementType,
+      _id: m._id,
+      productName: m.product?.name || "Unknown",
+      movementType: m.movementType,
       quantityChange: m.quantityChange,
-      performedBy:    m.performedBy?.name || m.performedBy?.email || "System",
-      source:         m.source,
-      createdAt:      m.createdAt,
+      performedBy: m.performedBy?.name || m.performedBy?.email || "System",
+      source: m.source,
+      createdAt: m.createdAt,
     }));
 
     res.json({
-      totalAdditions:  summary.totalAdditions,
+      totalAdditions: summary.totalAdditions,
       totalDeductions: summary.totalDeductions,
-      movementCount:   summary.movementCount,
+      movementCount: summary.movementCount,
       recentMovements: movements,
     });
   } catch (error) {
@@ -357,9 +357,9 @@ function mapActionTypeToCategory(actionType) {
 
 function categoryToType(category) {
   const map = {
-    Payment:           "billing",
-    Inventory:         "inventory",
-    Request:           "approval",
+    Payment: "billing",
+    Inventory: "inventory",
+    Request: "approval",
     "User Management": "user",
   };
   return map[category] || "general";

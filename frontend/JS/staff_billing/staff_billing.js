@@ -81,6 +81,7 @@ const state = {
 	discountRate: 0,
 	patientId: "",
 	patientName: "",
+	isGuest: false,
 	parmsIntent: null,
 	pendingBalances: [],
 	pendingBalanceTotal: 0,
@@ -126,6 +127,9 @@ const txnStatusElement = document.getElementById("txnStatus");
 const patientIdInput = document.getElementById("patientIdInput");
 const patientNameInput = document.getElementById("patientNameInput");
 const patientIdHint = document.getElementById("patientIdHint");
+const patientFieldsWrap = document.getElementById("patientFieldsWrap");
+const guestModeBtn = document.getElementById("guestModeBtn");
+const pendingBalancesSection = document.getElementById("pendingBalancesSection");
 const pendingBalancesList = document.getElementById("pendingBalancesList");
 const pendingBalancesTotal = document.getElementById("pendingBalancesTotal");
 const proceedButton = document.getElementById("proceedBtn");
@@ -906,6 +910,7 @@ function getSelectedItems() {
 }
 
 function hasResolvedPatientForCart() {
+	if (state.isGuest) return true;
 	return Boolean(String(state.patientName || "").trim()) && Boolean(state.patientId);
 }
 
@@ -932,11 +937,29 @@ function getFilteredServices() {
 	});
 }
 
+function isPackageService(service) {
+	const name = String(service?.name || "").toLowerCase();
+	const category = String(service?.category || "").toLowerCase();
+	const subclassification = String(service?.subclassification || "").toLowerCase();
+	const description = String(service?.description || "").toLowerCase();
+
+	if (name.includes("package") || category === "packages" || subclassification === "packages") {
+		return true;
+	}
+
+	return /\bpkg[-\s]/i.test(description);
+}
+
+function getServiceDisplayCategory(service) {
+	if (isPackageService(service)) return "Health Packages";
+	return String(service?.category || "Services").trim() || "Services";
+}
+
 function groupServicesByClassification(services = []) {
 	const categoryMap = new Map();
 
 	services.forEach((service) => {
-		const category = String(service.category || "Services").trim() || "Services";
+		const category = getServiceDisplayCategory(service);
 		const subclassification = String(service.subclassification || "").trim() || "General";
 
 		if (!categoryMap.has(category)) {
@@ -991,7 +1014,7 @@ function updatePaymentLockStatus() {
 	const hasBillableLines = itemCount > 0 || pendingTotal > 0;
 	const hasReferenceOnlyLines = !hasBillableLines && state.pendingBalances.length > 0;
 	const hasBlockingObligations = unresolvedRequired > 0;
-	if (!state.patientId) {
+	if (!state.patientId && !state.isGuest) {
 		txnStatusElement.textContent = "WAITING FOR PATIENT NAME";
 		txnStatusElement.className = "font-semibold text-amber-300";
 		patientIdHint.textContent = "Type patient name to resolve patient ID and PARMS balances.";
@@ -1009,19 +1032,61 @@ function updatePaymentLockStatus() {
 		return;
 	}
 
-	txnStatusElement.textContent = hasBillableLines ? "READY FOR PAYMENT" : "WAITING FOR BILLABLE LINES";
+	txnStatusElement.textContent = hasBillableLines
+		? (state.isGuest ? "READY FOR PAYMENT (GUEST)" : "READY FOR PAYMENT")
+		: "WAITING FOR BILLABLE LINES";
 	txnStatusElement.className = hasBillableLines && !hasBlockingObligations ? "font-semibold text-emerald-400" : "font-semibold text-amber-300";
 	patientIdHint.textContent = hasBillableLines && !hasBlockingObligations
-		? "Patient resolved. You can proceed to payment."
+		? (state.isGuest ? "Guest walk-in selected. A patient ID will be generated on save." : "Patient resolved. You can proceed to payment.")
 		: hasReferenceOnlyLines
 			? "Patient resolved. PARMS lines loaded for reference, but no billable amount is available yet."
 			: "Patient resolved. Add items or include pending balances to continue.";
 	patientIdHint.className = hasBillableLines && !hasBlockingObligations ? "mt-1 text-[10px] text-emerald-300" : "mt-1 text-[10px] text-slate-400";
-	setProceedButtonEnabled(hasBillableLines && !hasBlockingObligations && Boolean(state.patientId));
+	setProceedButtonEnabled(hasBillableLines && !hasBlockingObligations && (Boolean(state.patientId) || state.isGuest));
+}
+
+function setGuestMode(enabled) {
+	state.isGuest = Boolean(enabled);
+
+	if (state.isGuest) {
+		state.patientId = "";
+		state.patientName = "N/A";
+		state.parmsIntent = null;
+		setPendingBalances([]);
+	} else {
+		state.patientId = "";
+		state.patientName = "";
+		state.parmsIntent = null;
+		setPendingBalances([]);
+	}
+
+	if (guestModeBtn) {
+		guestModeBtn.textContent = state.isGuest ? "Guest: ON" : "Guest";
+		guestModeBtn.className = state.isGuest
+			? "rounded border border-emerald-400 bg-emerald-600 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-white hover:bg-emerald-500"
+			: "rounded border border-slate-500 bg-slate-800 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-slate-100 hover:bg-slate-700";
+	}
+
+	if (patientFieldsWrap) {
+		patientFieldsWrap.classList.toggle("hidden", state.isGuest);
+	}
+	if (pendingBalancesSection) {
+		pendingBalancesSection.classList.toggle("hidden", state.isGuest);
+	}
+
+	refreshUi();
 }
 
 function renderPendingBalancesPanel() {
 	if (!pendingBalancesList || !pendingBalancesTotal) return;
+	if (pendingBalancesSection) {
+		pendingBalancesSection.classList.toggle("hidden", state.isGuest);
+	}
+	if (state.isGuest) {
+		pendingBalancesList.innerHTML = '<p class="text-[10px] text-slate-400">No pending balances.</p>';
+		pendingBalancesTotal.textContent = formatPeso(0);
+		return;
+	}
 
 	if (!state.pendingBalances.length) {
 		pendingBalancesList.innerHTML = '<p class="text-[10px] text-slate-400">No pending balances.</p>';
@@ -1486,6 +1551,7 @@ function renderHistoryTable() {
 	historyTableBody.innerHTML = transactions
 		.map((txn) => {
 			const isVoided = txn.status === "VOIDED";
+			const isGuestTransaction = Boolean(txn.isGuest);
 			const { date, time } = formatDateTime(txn.dateTime);
 			const itemCount = txn.items?.reduce((sum, item) => sum + item.quantity, 0) || 0;
 			const rowClass = isVoided ? "bg-slate-100 text-slate-500" : "text-black";
@@ -1499,7 +1565,7 @@ function renderHistoryTable() {
 						<div>${time}</div>
 					</td>
 					<td class="px-2 py-2 ${cellClass}">${itemCount} item(s)</td>
-					<td class="px-2 py-2 ${cellClass}">${txn.patientName || "N/A"}</td>
+					<td class="px-2 py-2 ${cellClass}">${txn.patientName || "N/A"}${isGuestTransaction ? ' <span class="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700">GUEST</span>' : ""}</td>
 			<td class="px-2 py-2 ${cellClass}">${txn.patientId || "N/A"}</td>
 					<td class="px-2 py-2 font-medium ${cellClass}">
 						${isVoided ? formatPeso(0) : formatPeso(txn.totalAmount || 0)}
@@ -1535,7 +1601,7 @@ function renderHeldModalList() {
 				<div class="border border-slate-200 bg-slate-50 p-3">
 					<div class="flex items-center justify-between gap-3">
 						<div>
-							<p class="font-semibold text-slate-900">${entry.patientName || "Unknown Patient"}</p>
+							<p class="font-semibold text-slate-900">${entry.patientName || "Unknown Patient"}${entry.isGuest ? ' <span class="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700">GUEST</span>' : ""}</p>
 							<p class="text-[11px] text-slate-600">${entry.itemCount} item(s) • ${formatPeso(entry.totalDue)}</p>
 						</div>
 						<button type="button" data-resume-id="${entry.heldId}" class="min-w-20 border border-emerald-600 bg-emerald-500 px-3 py-1.5 text-[11px] font-semibold text-white hover:bg-emerald-400">
@@ -1574,6 +1640,18 @@ function refreshUi() {
 	txnIdElement.textContent = state.activeTransactionId ? String(state.activeTransactionId).slice(-8).toUpperCase() : "NEW";
 	patientIdInput.value = state.patientId;
 	if (patientNameInput) patientNameInput.value = state.patientName;
+	if (guestModeBtn) {
+		guestModeBtn.textContent = state.isGuest ? "Guest: ON" : "Guest";
+		guestModeBtn.className = state.isGuest
+			? "rounded border border-emerald-400 bg-emerald-600 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-white hover:bg-emerald-500"
+			: "rounded border border-slate-500 bg-slate-800 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-slate-100 hover:bg-slate-700";
+	}
+	if (patientFieldsWrap) {
+		patientFieldsWrap.classList.toggle("hidden", state.isGuest);
+	}
+	if (pendingBalancesSection) {
+		pendingBalancesSection.classList.toggle("hidden", state.isGuest);
+	}
 	reconcilePendingObligationsWithCart();
 	renderProductPanel();
 	renderSummaryPanel();
@@ -1612,7 +1690,7 @@ function setQuantity(itemId, nextQty) {
 	const { itemCount } = computeSaleTotals();
 	if (itemCount === 0 && state.pendingBalanceTotal <= 0 && state.pendingBalances.length === 0) {
 		state.patientId = "";
-		state.patientName = "";
+		state.patientName = state.isGuest ? "N/A" : "";
 		state.parmsIntent = null;
 		setPendingBalances([]);
 	}
@@ -1644,6 +1722,7 @@ function resetActiveSale() {
 	state.discountRate = 0;
 	state.patientId = "";
 	state.patientName = "";
+	state.isGuest = false;
 	state.parmsIntent = null;
 	setPendingBalances([]);
 	state.activeTransactionId = null;
@@ -1669,7 +1748,7 @@ function resetActiveSale() {
 async function handleProceedToPayment() {
 	reconcilePendingObligationsWithCart();
 	const totals = computeSaleTotals();
-	if (!state.patientId || (totals.itemCount === 0 && totals.pendingTotal <= 0)) return;
+	if ((!state.patientId && !state.isGuest) || (totals.itemCount === 0 && totals.pendingTotal <= 0)) return;
 
 	const { unresolvedRequired } = getPendingObligationStatus();
 	if (unresolvedRequired > 0) {
@@ -1690,6 +1769,7 @@ async function handleProceedToPayment() {
 		const result = await createTransaction({
 			patientId: state.patientId,
 			patientName: state.patientName,
+			isGuest: state.isGuest,
 			items,
 			discountRate: state.discountRate,
 			pendingBalances: state.pendingBalances,
@@ -1828,6 +1908,7 @@ function holdCurrentTransaction() {
 		heldId: generateHeldId(),
 		patientId: state.patientId,
 		patientName: state.patientName,
+		isGuest: state.isGuest,
 		parmsIntent: state.parmsIntent,
 		pendingBalances: [...state.pendingBalances],
 		pendingBalanceTotal: state.pendingBalanceTotal,
@@ -1858,6 +1939,7 @@ function resumeHeldTransaction(heldId) {
 	});
 	state.patientId = held.patientId;
 	state.patientName = held.patientName || "";
+	state.isGuest = Boolean(held.isGuest);
 	state.parmsIntent = held.parmsIntent || null;
 	setPendingBalances(held.pendingBalances || []);
 	state.heldTransactions.splice(index, 1);
@@ -2120,6 +2202,7 @@ function attachEvents() {
 	});
 
 	patientNameInput?.addEventListener("input", (event) => {
+		if (state.isGuest) return;
 		const patientNameValue = String(event.target.value || "").trim();
 		state.patientName = patientNameValue;
 		state.patientId = "";
@@ -2154,6 +2237,10 @@ function attachEvents() {
 			setPendingBalances(patientRecord.pendingBalances || []);
 			refreshUi();
 		}, 350);
+	});
+
+	guestModeBtn?.addEventListener("click", () => {
+		setGuestMode(!state.isGuest);
 	});
 
 	itemsTableBody.addEventListener("click", (event) => {

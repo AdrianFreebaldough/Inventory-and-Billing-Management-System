@@ -26,6 +26,8 @@ const API = {
     RESTORE: (id) => `/api/staff/inventory/items/${id}/restore`,
     RESTOCK_REQUEST: "/api/staff/inventory/requests/restock",
     ADD_ITEM_REQUEST: "/api/staff/inventory/requests/add-item",
+    PRICE_CHANGE_REQUEST: "/api/staff/inventory/requests/price-change",
+    PRICE_CHANGE_REQUEST_FOR_PRODUCT: (id) => `/api/staff/inventory/requests/price-change/product/${id}`,
     MY_REQUESTS: "/api/staff/inventory/requests/my",
     ACTIVITY_LOGS: "/api/staff/activity-logs",
     QUANTITY_ADJUSTMENT: "/api/staff/quantity-adjustments",
@@ -322,7 +324,7 @@ function mapBackendItemToUI(item) {
             createdAt: batch.createdAt || null,
             expiryRisk: mapExpiryRiskToUi(batch.expiryRisk || null),
             statusKey: batch.statusKey || String(batch.status || "").toLowerCase().replace(/\s+/g, "-"),
-            canDispose: batch.canDispose !== false,
+            canDispose: (Number(batch.currentQuantity ?? batch.quantity ?? 0) > 0) && (String(batch.status || "").toLowerCase().replace(/\s+/g, "-") !== "disposed") && (!batch.isPendingDisposal),
             isExpired: !!batch.isExpired,
             isPendingDisposal: !!batch.isPendingDisposal,
         }))
@@ -771,6 +773,22 @@ async function showItemDetails(item) {
     setText("detailsCategory", formatCategory(detailItem.category));
     setText("detailsSellingPrice", `₱${(detailItem.price || 0).toFixed(2)}`);
 
+    const requestedPricePreview = getElement(modal, '#detailsRequestedPricePreview');
+    if (requestedPricePreview) {
+        requestedPricePreview.classList.add('hidden');
+        requestedPricePreview.textContent = '';
+        try {
+            const pendingPriceResponse = await apiFetch(API.PRICE_CHANGE_REQUEST_FOR_PRODUCT(detailItem.id));
+            const pendingPriceRequest = pendingPriceResponse?.data || null;
+            if (pendingPriceRequest && String(pendingPriceRequest.status || '') === 'pending') {
+                requestedPricePreview.textContent = `Pending Approval · Requested: ₱${Number(pendingPriceRequest.requestedPrice || 0).toFixed(2)}`;
+                requestedPricePreview.classList.remove('hidden');
+            }
+        } catch {
+            // Keep details modal usable even if pending request lookup fails.
+        }
+    }
+
     // Medicine Information section
     setText("detailsMedicineName", detailItem.medicineName || detailItem.name);
     setText("detailsMedicineGeneric", detailItem.genericName || detailItem.generic);
@@ -805,7 +823,7 @@ async function showItemDetails(item) {
             if (batch.isPendingDisposal) {
                 actionHtml = `<span class="text-xs font-medium text-orange-600">Pending Approval</span>`;
             } else if (batch.canDispose) {
-                actionHtml = `<button class="staff-dispose-batch-btn inline-flex items-center rounded-md border border-red-200 bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-700 hover:bg-red-100 transition-colors" data-batch-id="${escapeHtml(batch.id || "")}">${batch.isExpired ? "Dispose Expired" : "Dispose"}</button>`;
+                actionHtml = `<button class="staff-dispose-batch-btn inline-flex items-center rounded-md border border-red-200 bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-700 hover:bg-red-100 transition-colors" data-batch-id="${escapeHtml(batch.id || "")}">Dispose</button>`;
             } else {
                 actionHtml = `<span class="text-xs text-slate-500">No Action</span>`;
             }
@@ -859,6 +877,8 @@ async function showItemDetails(item) {
     const btnCancel = getElement(modal, '#closeDetails');
     const btnRequestRestock = getElement(modal, '#detailsRequestRestockBtn');
     const btnReportDiscrepancy = getElement(modal, '#detailsReportDiscrepancyBtn');
+    const btnEditPrice = getElement(modal, '#detailsEditPriceBtn');
+    const btnEditPriceSecondary = getElement(modal, '#detailsEditPriceBtnSecondary');
 
     if (btnCloseTop) {
         const newBtn = btnCloseTop.cloneNode(true);
@@ -887,6 +907,102 @@ async function showItemDetails(item) {
             openQuantityAdjustmentModal(detailItem);
         };
     }
+
+    if (btnEditPrice) {
+        const newBtn = btnEditPrice.cloneNode(true);
+        btnEditPrice.parentNode.replaceChild(newBtn, btnEditPrice);
+        newBtn.onclick = (e) => {
+            e?.stopPropagation?.();
+            showStaffEditPriceRequestModal(detailItem);
+        };
+    }
+
+    if (btnEditPriceSecondary) {
+        const newBtn = btnEditPriceSecondary.cloneNode(true);
+        btnEditPriceSecondary.parentNode.replaceChild(newBtn, btnEditPriceSecondary);
+        newBtn.onclick = (e) => {
+            e?.stopPropagation?.();
+            showStaffEditPriceRequestModal(detailItem);
+        };
+    }
+
+    modal.classList.remove('hidden');
+    modal.style.display = 'flex';
+}
+
+function showStaffEditPriceRequestModal(item) {
+    const currentPrice = Number(item?.price ?? 0);
+    const content = `
+        <h3 class="text-lg font-semibold mb-1">Edit Price</h3>
+        <p class="text-sm text-gray-600 mb-4">Submit a price change request for <span class="font-semibold text-gray-800">${escapeHtml(item?.name || 'Item')}</span>.</p>
+        <div class="space-y-3 text-sm">
+            <div>
+                <label class="block text-xs text-gray-700 mb-1">Current Price</label>
+                <input type="text" value="₱${currentPrice.toFixed(2)}" class="w-full border border-gray-300 rounded px-3 py-2 bg-gray-50" readonly />
+            </div>
+            <div>
+                <label class="block text-xs text-gray-700 mb-1">New Price</label>
+                <input id="staffRequestedPriceInput" type="number" min="0.01" step="0.01" value="${currentPrice.toFixed(2)}" class="w-full border border-gray-300 rounded px-3 py-2" />
+            </div>
+            <div>
+                <label class="block text-xs text-gray-700 mb-1">Reason for Change <span class="text-red-600">*</span></label>
+                <textarea id="staffPriceChangeReasonInput" rows="3" class="w-full border border-gray-300 rounded px-3 py-2" placeholder="Explain why this price should change..."></textarea>
+            </div>
+        </div>
+        <div class="mt-5 grid grid-cols-2 gap-3">
+            <button id="staffPriceChangeCancelBtn" class="w-full border border-gray-300 py-2.5 rounded-lg bg-white text-sm font-semibold hover:bg-gray-50 text-gray-700">Cancel</button>
+            <button id="staffPriceChangeSubmitBtn" class="w-full bg-indigo-600 text-white py-2.5 rounded-lg text-sm font-semibold hover:bg-indigo-700">Submit Request</button>
+        </div>`;
+
+    const modal = createModal({ id: 'staffEditPriceModal', content, width: '480px' });
+
+    const hide = () => {
+        modal.classList.add('hidden');
+        modal.style.display = '';
+        setTimeout(() => modal.remove(), 200);
+    };
+
+    getElement(modal, '#closeStaffEditPriceModal')?.addEventListener('click', hide);
+    getElement(modal, '#staffPriceChangeCancelBtn')?.addEventListener('click', hide);
+
+    getElement(modal, '#staffPriceChangeSubmitBtn')?.addEventListener('click', async () => {
+        const newPrice = Number(getElement(modal, '#staffRequestedPriceInput')?.value || 0);
+        const reason = String(getElement(modal, '#staffPriceChangeReasonInput')?.value || '').trim();
+
+        if (!Number.isFinite(newPrice) || newPrice <= 0) {
+            showToast('Requested price must be greater than 0', 'error');
+            return;
+        }
+
+        if (newPrice === currentPrice) {
+            showToast('Requested price must be different from current price', 'error');
+            return;
+        }
+
+        if (!reason) {
+            showToast('Reason is required for staff price change requests', 'error');
+            return;
+        }
+
+        try {
+            await apiFetch(API.PRICE_CHANGE_REQUEST, {
+                method: 'POST',
+                body: JSON.stringify({
+                    productId: item.id,
+                    newPrice,
+                    reason,
+                }),
+            });
+
+            showToast('Price change request submitted for admin approval', 'success');
+            hide();
+            await fetchInventoryItems();
+            applyFilters();
+            await showItemDetails(item);
+        } catch (err) {
+            showToast(`Request failed: ${err.message}`, 'error');
+        }
+    });
 
     modal.classList.remove('hidden');
     modal.style.display = 'flex';

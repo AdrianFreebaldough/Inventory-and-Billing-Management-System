@@ -8,6 +8,8 @@ import {
 	STAFF_archiveItem,
 	STAFF_restoreItem,
 	STAFF_getMyRequests,
+	STAFF_createPriceChangeRequest,
+	STAFF_getPendingPriceChangeForProduct,
 } from "../controllers/STAFF_inventoryController.js";
 
 const STAFF_router = express.Router();
@@ -35,6 +37,18 @@ STAFF_router.post(
 	protect,
 	authorizeRoles("staff"),
 	STAFF_createRestockRequest
+);
+STAFF_router.post(
+	"/requests/price-change",
+	protect,
+	authorizeRoles("staff"),
+	STAFF_createPriceChangeRequest
+);
+STAFF_router.get(
+	"/requests/price-change/product/:productId",
+	protect,
+	authorizeRoles("staff"),
+	STAFF_getPendingPriceChangeForProduct
 );
 
 /* ===== Archive / Restore ===== */

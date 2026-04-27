@@ -43,7 +43,7 @@ const STAFF_expenseSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ["Pending", "Reviewed", "Approved"],
+      enum: ["Pending", "Reviewed", "Approved", "Rejected"],
       default: "Pending",
     },
     reviewedBy: {

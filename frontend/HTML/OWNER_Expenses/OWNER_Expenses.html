@@ -159,17 +159,39 @@
 				</div>
 
 				<div class="flex flex-wrap justify-end gap-2">
-					<button onclick="updateExpenseStatus('Reviewed')" class="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700">
-						Mark as Reviewed
-					</button>
-					<button onclick="updateExpenseStatus('Approved')" class="rounded bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700">
+					<button id="btnApprove" onclick="updateExpenseStatus('Approved')" class="rounded bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700">
 						Approve
+					</button>
+					<button id="btnReject" onclick="updateExpenseStatus('Rejected')" class="rounded bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700">
+						Reject
 					</button>
 					<button onclick="closeModal()" class="rounded bg-slate-600 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700">
 						Close
 					</button>
 				</div>
 			</div>
+		</div>
+	</div>
+
+	<!-- Custom Alert Modal -->
+	<div id="customAlertModal" class="hidden fixed inset-0 z-[10000] bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
+		<div class="bg-white rounded-xl shadow-2xl max-w-md w-full p-6 text-center transform transition-all">
+			<div id="alertIconContainer" class="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-green-100 text-green-600 mb-4">
+				<svg id="alertIconSuccess" class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+				</svg>
+				<svg id="alertIconError" class="h-6 w-6 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+				</svg>
+				<svg id="alertIconInfo" class="h-6 w-6 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+				</svg>
+			</div>
+			<h3 id="alertTitle" class="text-lg font-semibold text-slate-900 mb-2">Success</h3>
+			<p id="alertMessage" class="text-sm text-slate-600 mb-6">-</p>
+			<button onclick="closeAlertModal()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg transition duration-200">
+				Okay
+			</button>
 		</div>
 	</div>
 
@@ -192,6 +214,42 @@
 		const TOKEN_KEYS = ['token', 'authToken', 'jwtToken', 'ibmsToken'];
 		const token = TOKEN_KEYS.map(k => localStorage.getItem(k)).find(v => v && v.trim()) || '';
 		let currentExpenseId = null;
+
+		function showAlert(message, type = 'success') {
+			const modal = document.getElementById('customAlertModal');
+			const titleEl = document.getElementById('alertTitle');
+			const messageEl = document.getElementById('alertMessage');
+			const iconSuccess = document.getElementById('alertIconSuccess');
+			const iconError = document.getElementById('alertIconError');
+			const iconInfo = document.getElementById('alertIconInfo');
+			const iconContainer = document.getElementById('alertIconContainer');
+
+			messageEl.textContent = message;
+			
+			iconSuccess.classList.add('hidden');
+			iconError.classList.add('hidden');
+			iconInfo.classList.add('hidden');
+
+			if (type === 'success') {
+				titleEl.textContent = 'Success';
+				iconSuccess.classList.remove('hidden');
+				iconContainer.className = 'mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-green-100 text-green-600 mb-4';
+			} else if (type === 'error') {
+				titleEl.textContent = 'Error';
+				iconError.classList.remove('hidden');
+				iconContainer.className = 'mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-red-100 text-red-600 mb-4';
+			} else {
+				titleEl.textContent = 'Info';
+				iconInfo.classList.remove('hidden');
+				iconContainer.className = 'mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-blue-100 text-blue-600 mb-4';
+			}
+
+			modal.classList.remove('hidden');
+		}
+
+		function closeAlertModal() {
+			document.getElementById('customAlertModal').classList.add('hidden');
+		}
 
 		// Load summary
 		async function loadSummary() {
@@ -239,6 +297,11 @@
 					}
 
 					tbody.innerHTML = result.data.map(expense => {
+						const statusLower = String(expense.status || '').toLowerCase();
+						let btnColor = 'text-yellow-500 font-medium';
+						if (statusLower === 'approved') btnColor = 'text-blue-600';
+						if (statusLower === 'rejected') btnColor = 'text-red-600 font-semibold';
+						
 						return `
 							<tr class="border-b hover:bg-slate-50">
 								<td class="px-4 py-2">${expense.title}</td>
@@ -247,7 +310,7 @@
 								<td class="px-4 py-2">${expense.staffName}</td>
 								<td class="px-4 py-2">${new Date(expense.date).toLocaleDateString()}</td>
 								<td class="px-4 py-2 text-center">
-									<button onclick='showExpenseDetails(${JSON.stringify(expense)})' class="text-blue-600 hover:underline text-sm">
+									<button onclick='showExpenseDetails(${JSON.stringify(expense)})' class="${btnColor} hover:underline text-sm">
 										View
 									</button>
 								</td>
@@ -261,7 +324,7 @@
 		}
 
 		function openAddExpensePrompt() {
-			alert('Use the Staff Expenses module to create a new expense entry.');
+			showAlert('Use the Staff Expenses module to create a new expense entry.', 'info');
 		}
 
 		function getStatusBadgeClass(status) {
@@ -269,6 +332,7 @@
 			if (key === 'approved') return 'bg-green-100 text-green-700';
 			if (key === 'reviewed') return 'bg-blue-100 text-blue-700';
 			if (key === 'pending') return 'bg-yellow-100 text-yellow-700';
+			if (key === 'rejected') return 'bg-red-100 text-red-700';
 			return 'bg-slate-100 text-slate-700';
 		}
 
@@ -295,6 +359,19 @@
 				statusEl.textContent = expense.status || 'Unknown';
 			}
 
+			const btnApprove = document.getElementById('btnApprove');
+			const btnReject = document.getElementById('btnReject');
+			if (btnApprove && btnReject) {
+				const statusLower = String(expense.status || '').toLowerCase();
+				if (statusLower === 'approved' || statusLower === 'rejected') {
+					btnApprove.classList.add('hidden');
+					btnReject.classList.add('hidden');
+				} else {
+					btnApprove.classList.remove('hidden');
+					btnReject.classList.remove('hidden');
+				}
+			}
+
 			document.getElementById('expenseModal').classList.remove('hidden');
 		}
 
@@ -315,15 +392,15 @@
 				const result = await response.json();
 
 				if (response.ok) {
-					alert(`Expense ${status.toLowerCase()} successfully!`);
+					showAlert(`Expense ${status.toLowerCase()} successfully!`, 'success');
 					closeModal();
 					loadExpenses();
 					loadSummary();
 				} else {
-					alert(`Error: ${result.message}`);
+					showAlert(`Error: ${result.message}`, 'error');
 				}
 			} catch (error) {
-				alert(`Error: ${error.message}`);
+				showAlert(`Error: ${error.message}`, 'error');
 			}
 		}
 

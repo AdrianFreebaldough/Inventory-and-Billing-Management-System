@@ -29,6 +29,7 @@ const notificationSchema = new mongoose.Schema(
         "expense_submitted",
         "expense_reviewed",
         "expense_approved",
+        "expense_rejected",
         "low_stock",
         "expiry_risk_red",
         "promotion_candidate",

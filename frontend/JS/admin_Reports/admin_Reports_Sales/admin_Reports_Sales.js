@@ -1,4 +1,5 @@
 import { apiFetch } from "../../utils/apiClient.js";
+import { printStandardClinicReport } from "../../utils/reportPrintTemplate.js";
 
 const Charts = { revenue: null, services: null, topServices: null };
 const State = {
@@ -227,12 +228,77 @@ function bindExportToggle() {
 
   exportBtn.addEventListener("click", () => {
     const format = isPdf ? "pdf" : "csv";
+    
+    if (State.currentTab === "sales") {
+      exportSalesReport(format);
+      return;
+    }
+
     if (currentModule && typeof currentModule.exportReport === "function") {
       currentModule.exportReport(format);
       return;
     }
-    console.log("Export requested for tab without export handler:", State.currentTab, format);
   });
+}
+
+function exportSalesReport(format) {
+  if (format === "pdf") {
+    const revImg = document.getElementById("print-revenue-chart");
+    const svcImg = document.getElementById("print-services-chart");
+    const topImg = document.getElementById("print-top-services-chart");
+
+    if (revImg && Charts.revenue) revImg.src = Charts.revenue.toBase64Image();
+    if (svcImg && Charts.services) svcImg.src = Charts.services.toBase64Image();
+    if (topImg && Charts.topServices) topImg.src = Charts.topServices.toBase64Image();
+
+    printStandardClinicReport({
+      printRootId: "salesReportPrintLayout",
+      reportTitle: "Sales Reports Report",
+      moduleName: "Sales Reports Module",
+      clinicName: "ZCMMF Clinic",
+      systemName: "IBMS",
+      logoUrl: "../../assets/zealLogo.png",
+      filters: {
+        "Period": State.currentPeriod || "Last Week",
+        "Type Filter": State.currentFilter || "All Types"
+      },
+      recordCount: 0,
+      columnCount: 0,
+      orientation: "landscape",
+      onBeforePrint: () => {
+        if (revImg && Charts.revenue) revImg.src = Charts.revenue.toBase64Image();
+        if (svcImg && Charts.services) svcImg.src = Charts.services.toBase64Image();
+        if (topImg && Charts.topServices) topImg.src = Charts.topServices.toBase64Image();
+      }
+    });
+  } else if (format === "csv") {
+    const rows = getFilteredAndSortedData();
+    if (!rows || rows.length === 0) {
+      alert("No data available to export.");
+      return;
+    }
+    
+    let csvContent = "data:text/csv;charset=utf-8,";
+    csvContent += "Category,Sub-Category,Item/Service,Times Availed,Total Revenue\n";
+    
+    rows.forEach(item => {
+      const category = `"${String(item.category || '').replace(/"/g, '""')}"`;
+      const subCategory = `"${String(item.subCategory || '-').replace(/"/g, '""')}"`;
+      const name = `"${String(item.item || '-').replace(/"/g, '""')}"`;
+      const times = item.timesAvailed || 0;
+      const revenue = item.totalRevenue || 0;
+      
+      csvContent += `${category},${subCategory},${name},${times},${revenue}\n`;
+    });
+    
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `sales_report_${State.currentPeriod.toLowerCase().replace(/\s+/g, '_')}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
 }
 
 async function loadSales() {

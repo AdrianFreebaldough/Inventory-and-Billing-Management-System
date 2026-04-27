@@ -951,7 +951,7 @@ function showStaffEditPriceRequestModal(item) {
         </div>
         <div class="mt-5 grid grid-cols-2 gap-3">
             <button id="staffPriceChangeCancelBtn" class="w-full border border-gray-300 py-2.5 rounded-lg bg-white text-sm font-semibold hover:bg-gray-50 text-gray-700">Cancel</button>
-            <button id="staffPriceChangeSubmitBtn" class="w-full bg-indigo-600 text-white py-2.5 rounded-lg text-sm font-semibold hover:bg-indigo-700">Submit Request</button>
+            <button id="staffPriceChangeSubmitBtn" class="w-full bg-blue-600 text-white py-2.5 rounded-lg text-sm font-semibold hover:bg-blue-700">Submit Request</button>
         </div>`;
 
     const modal = createModal({ id: 'staffEditPriceModal', content, width: '480px' });
@@ -1345,7 +1345,7 @@ function openQuantityAdjustmentModal(item) {
 
             <div class="mt-5 grid grid-cols-2 gap-3">
                 <button id="adjustCancelBtn" class="w-full border border-gray-300 py-2.5 rounded-lg bg-white text-sm font-semibold hover:bg-gray-50 transition-colors text-gray-700">Cancel</button>
-                <button id="adjustSubmitBtn" class="w-full bg-amber-500 text-white py-2.5 rounded-lg text-sm font-semibold hover:bg-amber-600 transition-colors">Submit Discrepancy</button>
+                <button id="adjustSubmitBtn" class="w-full bg-blue-600 text-white py-2.5 rounded-lg text-sm font-semibold hover:bg-blue-700 transition-colors">Submit Discrepancy</button>
             </div>
         </div>
     `;
@@ -1460,7 +1460,7 @@ function requestRestock(item) {
         <textarea id="restockNotesInput" placeholder="Add any notes..." class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" rows="2"></textarea></div>
         <div class="flex gap-2">
             <button class="flex-1 border border-gray-300 py-2 rounded bg-white text-sm font-semibold hover:bg-gray-50 cancelRestockBtn">Cancel</button>
-            <button id="restockSubmitBtn" class="flex-1 bg-blue-700 text-white py-2 rounded text-sm font-semibold hover:bg-blue-800">Submit Request</button>
+            <button id="restockSubmitBtn" class="flex-1 bg-blue-600 text-white py-2 rounded text-sm font-semibold hover:bg-blue-700">Submit Request</button>
         </div>
     `;
 
@@ -1646,7 +1646,7 @@ function showBulkRestockModal() {
         </div>
         <div class="flex gap-2">
             <button id="bulkCancelBtn" class="flex-1 border border-gray-300 py-2 rounded bg-white text-sm font-semibold hover:bg-gray-50">Cancel</button>
-            <button id="bulkSubmitBtn" class="flex-1 bg-blue-700 text-white py-2 rounded text-sm font-semibold hover:bg-blue-800">Submit Request</button>
+            <button id="bulkSubmitBtn" class="flex-1 bg-blue-600 text-white py-2 rounded text-sm font-semibold hover:bg-blue-700">Submit Request</button>
         </div>
     `;
 

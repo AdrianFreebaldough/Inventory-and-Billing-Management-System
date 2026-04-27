@@ -132,7 +132,7 @@ export const OWNER_updateExpenseStatus = async (req, res) => {
     const { id } = req.params;
     const { status } = req.body;
 
-    if (!["Pending", "Reviewed", "Approved"].includes(status)) {
+    if (!["Pending", "Reviewed", "Approved", "Rejected"].includes(status)) {
       return res.status(400).json({ message: "Invalid status" });
     }
 
@@ -153,7 +153,7 @@ export const OWNER_updateExpenseStatus = async (req, res) => {
       userId: expense.staffId,
       role: "staff",
       message: `Your expense "${expense.title}" has been ${status.toLowerCase()}`,
-      type: status === "Approved" ? "expense_approved" : "expense_reviewed",
+      type: status === "Approved" ? "expense_approved" : (status === "Rejected" ? "expense_rejected" : "expense_reviewed"),
       redirectUrl: "expenses",
       relatedId: expense._id,
     });

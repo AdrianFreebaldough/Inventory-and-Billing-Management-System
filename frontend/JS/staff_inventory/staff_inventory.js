@@ -352,7 +352,7 @@ function mapBackendItemToUI(item) {
         status: uiStatus,
         description: item.description || "",
         genericName: item.genericName || item.generic || "",
-        brandName: item.brandName || item.brand || item.itemName || "",
+        brandName: item.brandName || item.brand || "",
         dosageForm: item.dosageForm || item.dosage || "",
         strength: item.strength || item.Strength || item.dose || item.dosageStrength || "",
         medicineName: item.medicineName || item.itemName || item.name || "",
@@ -685,8 +685,8 @@ function renderInventory() {
         card.innerHTML = `
             <div class="flex justify-between items-start mb-3 gap-2">
                 <div class="flex-1">
-                    <h3 class="font-semibold text-gray-800 text-sm">${item.name}</h3>
-                    <p class="text-xs text-gray-500">${item.type}</p>
+                    <h3 class="font-semibold text-gray-800 text-sm">${item.genericName || item.name}</h3>
+                    <p class="text-xs text-gray-500">${item.brandName || ""}</p>
                 </div>
                 <div class="flex items-center gap-2">
                     <span class="px-2 py-1 rounded text-xs font-medium ${colors.bg} ${colors.text} whitespace-nowrap border ${colors.border}">${statusText}</span>
@@ -943,6 +943,7 @@ function showStaffEditPriceRequestModal(item) {
             <div>
                 <label class="block text-xs text-gray-700 mb-1">New Price</label>
                 <input id="staffRequestedPriceInput" type="number" min="0.01" step="0.01" value="${currentPrice.toFixed(2)}" class="w-full border border-gray-300 rounded px-3 py-2" />
+                <p id="staffRequestedPriceError" class="text-red-600 text-xs mt-1 hidden"></p>
             </div>
             <div>
                 <label class="block text-xs text-gray-700 mb-1">Reason for Change <span class="text-red-600">*</span></label>
@@ -965,12 +966,56 @@ function showStaffEditPriceRequestModal(item) {
     getElement(modal, '#closeStaffEditPriceModal')?.addEventListener('click', hide);
     getElement(modal, '#staffPriceChangeCancelBtn')?.addEventListener('click', hide);
 
+    const priceInput = getElement(modal, "#staffRequestedPriceInput");
+    const priceError = getElement(modal, "#staffRequestedPriceError");
+    const saveBtn    = getElement(modal, "#staffPriceChangeSubmitBtn");
+
+    const validatePrice = () => {
+        const raw = (priceInput?.value || "").trim();
+        const p = raw === "" ? NaN : parseFloat(raw);
+        if (isNaN(p) || p <= 0) {
+            if (priceError) {
+                priceError.textContent = "Price must be greater than zero.";
+                priceError.classList.remove("hidden");
+            }
+            if (saveBtn) {
+                saveBtn.disabled = true;
+                saveBtn.classList.add("opacity-50", "cursor-not-allowed");
+            }
+        } else {
+            if (priceError) {
+                priceError.classList.add("hidden");
+            }
+            if (saveBtn) {
+                saveBtn.disabled = false;
+                saveBtn.classList.remove("opacity-50", "cursor-not-allowed");
+            }
+        }
+    };
+
+    priceInput?.addEventListener("input", validatePrice);
+    priceInput?.addEventListener("blur", validatePrice);
+
+    // Initial validation check
+    if (priceInput) {
+        validatePrice();
+    }
+
+    priceInput?.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") {
+            e.preventDefault();
+            if (saveBtn && !saveBtn.disabled) {
+                saveBtn.click();
+            }
+        }
+    });
+
     getElement(modal, '#staffPriceChangeSubmitBtn')?.addEventListener('click', async () => {
         const newPrice = Number(getElement(modal, '#staffRequestedPriceInput')?.value || 0);
         const reason = String(getElement(modal, '#staffPriceChangeReasonInput')?.value || '').trim();
 
         if (!Number.isFinite(newPrice) || newPrice <= 0) {
-            showToast('Requested price must be greater than 0', 'error');
+            showToast('Price must be greater than zero.', 'error');
             return;
         }
 
@@ -1862,6 +1907,41 @@ function showAddItemModal() {
     // Initialize voice recognition for the Description field
     initVoiceRecognitionForModal(addItemModal);
 
+    // Real-time price validation
+    const addPriceInput = getElement(addItemModal, '#addPrice');
+    const addPriceError = getElement(addItemModal, '#addPriceError');
+    const addSaveBtn = getElement(addItemModal, '#addSaveBtn');
+
+    const validateSellingPrice = () => {
+        const val = parseFloat(addPriceInput.value || 0);
+        if (isNaN(val) || val <= 0) {
+            addPriceError.classList.remove("hidden");
+            addPriceError.textContent = "Price must be greater than zero.";
+            if (addSaveBtn) {
+                addSaveBtn.disabled = true;
+                addSaveBtn.classList.add("opacity-50", "cursor-not-allowed");
+            }
+            return false;
+        } else {
+            addPriceError.classList.add("hidden");
+            if (addSaveBtn) {
+                addSaveBtn.disabled = false;
+                addSaveBtn.classList.remove("opacity-50", "cursor-not-allowed");
+            }
+            return true;
+        }
+    };
+
+    addPriceInput?.addEventListener("input", validateSellingPrice);
+    addPriceInput?.addEventListener("blur", validateSellingPrice);
+    
+    // Initial validation check if value is already set (e.g. 0 by default)
+    if (addPriceInput) {
+        // Set default value to 0 if empty to trigger validation
+        if (addPriceInput.value === "") addPriceInput.value = "0";
+        validateSellingPrice();
+    }
+
     if (save) {
         save.onclick = async () => {
             // Get all field values
@@ -1896,7 +1976,7 @@ function showAddItemModal() {
             const expiry = expiryEl?.value || '';
             const supplier = (supplierEl?.value || '').trim();
             const priceRaw = priceEl?.value ?? '';
-            const price = priceRaw === '' ? NaN : parseFloat(priceRaw);
+            const validatedPrice = priceRaw === '' ? NaN : parseFloat(priceRaw);
 
             /* Validate required fields */
             const requiredFields = {
@@ -1920,6 +2000,16 @@ function showAddItemModal() {
 
             if (hasError) return;
 
+            // Price validation (must be > 0)
+            if (isNaN(validatedPrice) || validatedPrice <= 0) {
+                const priceErrorEl = document.getElementById('addPriceError');
+                if (priceErrorEl) {
+                    priceErrorEl.textContent = "Price must be greater than zero.";
+                    priceErrorEl.classList.remove("hidden");
+                }
+                return;
+            }
+
             /* Submit add-item request to backend */
             try {
                 await apiFetch(API.ADD_ITEM_REQUEST, {
@@ -1939,7 +2029,7 @@ function showAddItemModal() {
                         batchNumber: batch || null,
                         expiryDate: expiry || null,
                         supplier: supplier,
-                        unitPrice: isNaN(price) ? 0 : price,
+                        unitPrice: isNaN(validatedPrice) ? 0 : validatedPrice,
                     }),
                 });
 
@@ -2000,6 +2090,13 @@ export async function initInventory() {
     /* ================= EVENT LISTENERS - SEARCH & FILTER ================= */
     const debouncedApplyFilters = debounce(applyFilters, 300);
     searchInput?.addEventListener("input", debouncedApplyFilters);
+
+    searchInput?.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") {
+            e.preventDefault();
+            applyFilters();
+        }
+    });
 
     categoryFilterSelect?.addEventListener("change", () => {
         currentCategoryFilter = categoryFilterSelect.value || ALL_CATEGORIES_LABEL;

@@ -21,7 +21,12 @@ const priceChangeRequestSchema = new mongoose.Schema(
     requestedPrice: {
       type: Number,
       required: true,
-      min: 0,
+      validate: {
+        validator: function (v) {
+          return v > 0;
+        },
+        message: "Price must be greater than zero.",
+      },
     },
     requestedBy: {
       type: mongoose.Schema.Types.ObjectId,

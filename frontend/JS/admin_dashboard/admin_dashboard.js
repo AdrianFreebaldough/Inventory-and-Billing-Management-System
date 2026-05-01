@@ -790,6 +790,27 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
+  /* ================= SERVICE MANAGEMENT ================= */
+  async function loadServiceManagement() {
+    setActive(navServiceManagement);
+    ensureOwnerLayoutShell();
+
+    try {
+      const res = await fetch("../../HTML/service_management/service_management.html");
+      if (!res.ok) throw new Error("ServiceManagement HTML not found");
+
+      mainContent.innerHTML = await res.text();
+      await new Promise((r) => setTimeout(r, 150));
+
+      const module = await import("../service_management/service_management.js");
+      if (typeof module.initServiceManagement !== "function") throw new Error("initServiceManagement() missing");
+      module.initServiceManagement();
+    } catch (error) {
+      console.error(error);
+      mainContent.innerHTML = `<div class="text-red-500 p-4 font-medium">Failed to load Service Management module: ${error.message}</div>`;
+    }
+  }
+
   /* ================= USER MANAGEMENT ================= */
   async function loadUserManagement() {
     setActive(navUserManagement);
@@ -947,6 +968,12 @@ document.addEventListener("DOMContentLoaded", () => {
   navInventory.addEventListener("click", (e) => {
     e.preventDefault();
     loadInventory();
+  });
+
+  const navServiceManagement = document.getElementById("navServiceManagement");
+  navServiceManagement?.addEventListener("click", (e) => {
+    e.preventDefault();
+    loadServiceManagement();
   });
 
   navUserManagement.addEventListener("click", (e) => {

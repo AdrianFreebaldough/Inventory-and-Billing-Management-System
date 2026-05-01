@@ -27,7 +27,16 @@ const inventoryRequestSchema = new mongoose.Schema(
     unitPrice: {
       type: Number,
       default: 0,
-      min: 0,
+      validate: {
+        validator: function (v) {
+          // unitPrice > 0 is only mandatory for ADD_ITEM requests
+          if (this.requestType === "ADD_ITEM") {
+            return v > 0;
+          }
+          return true;
+        },
+        message: "Price must be greater than zero.",
+      },
     },
     unit: {
       type: String,

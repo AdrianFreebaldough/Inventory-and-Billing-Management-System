@@ -25,7 +25,12 @@ const PARMS_serviceLineSchema = new mongoose.Schema(
     totalMinor: {
       type: Number,
       default: 0,
-      min: 0,
+      validate: {
+        validator: function (v) {
+          return v > 0;
+        },
+        message: "Total must be greater than zero.",
+      },
     },
     metadata: {
       type: mongoose.Schema.Types.Mixed,
@@ -70,7 +75,12 @@ const PARMS_prescriptionLineSchema = new mongoose.Schema(
     totalMinor: {
       type: Number,
       default: 0,
-      min: 0,
+      validate: {
+        validator: function (v) {
+          return v > 0;
+        },
+        message: "Total must be greater than zero.",
+      },
     },
     selectedBrand: {
       type: String,

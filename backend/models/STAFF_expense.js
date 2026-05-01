@@ -15,7 +15,12 @@ const STAFF_expenseSchema = new mongoose.Schema(
     amount: {
       type: Number,
       required: true,
-      min: 0,
+      validate: {
+        validator: function (v) {
+          return v > 0;
+        },
+        message: "Amount must be greater than zero.",
+      },
     },
     description: {
       type: String,

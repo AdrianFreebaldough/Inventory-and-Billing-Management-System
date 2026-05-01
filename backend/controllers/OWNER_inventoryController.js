@@ -602,9 +602,9 @@ export const OWNER_addProduct = async (req, res) => {
       });
     }
 
-    if (!Number.isFinite(parsedUnitPrice) || parsedUnitPrice < 0) {
+    if (!Number.isFinite(parsedUnitPrice) || parsedUnitPrice <= 0) {
       return res.status(400).json({
-        message: "unitPrice must be a valid non-negative number",
+        message: "Price must be greater than zero.",
       });
     }
 
@@ -753,13 +753,18 @@ export const OWNER_approveInventoryRequest = async (req, res) => {
             ? Number(approvedQuantity)
             : request.initialQuantity;
 
+        const parsedUnitPrice = Number(request.unitPrice ?? 0);
+        if (!Number.isFinite(parsedUnitPrice) || parsedUnitPrice <= 0) {
+          throw new Error("INVALID_UNIT_PRICE");
+        }
+
         const createdProduct = await Product.create(
           [
             {
               name: request.itemName,
               category: OWNER_normalizeCategory(request.category),
               quantity: finalQuantity,
-              unitPrice: Number(request.unitPrice ?? 0),
+              unitPrice: parsedUnitPrice,
               unit: request.unit || "pcs",
               minStock: Number(request.minStock ?? 10),
               description: request.description || "",
@@ -984,6 +989,10 @@ export const OWNER_approveInventoryRequest = async (req, res) => {
 
     if (error.message === "INVALID_BATCH_EXPIRATION") {
       return res.status(400).json({ message: "Valid expirationDate is required for restock batch approval" });
+    }
+
+    if (error.message === "INVALID_UNIT_PRICE") {
+      return res.status(400).json({ message: "Requested item has an invalid unit price (must be > 0)." });
     }
 
     return res.status(500).json({ message: error.message });
@@ -1490,7 +1499,7 @@ export const OWNER_updateProductPrice = async (req, res) => {
   try {
     const parsedNewPrice = Number(newPrice);
     if (!Number.isFinite(parsedNewPrice) || parsedNewPrice <= 0) {
-      return res.status(400).json({ message: "newPrice must be a valid number greater than 0" });
+      return res.status(400).json({ message: "Price must be greater than zero." });
     }
 
     const product = await Product.findOne({
@@ -1609,7 +1618,7 @@ export const OWNER_approvePriceChangeRequest = async (req, res) => {
     const targetPrice = Number(request.requestedPrice ?? 0);
 
     if (!Number.isFinite(targetPrice) || targetPrice <= 0) {
-      return res.status(400).json({ message: "Requested price is invalid" });
+      return res.status(400).json({ message: "Price must be greater than zero." });
     }
 
     if (currentPrice !== targetPrice) {

@@ -8,8 +8,13 @@ export const STAFF_createExpense = async (req, res) => {
   try {
     const { title, category, amount, description, date, receiptImage } = req.body;
 
-    if (!title || !category || !amount) {
+    if (!title || !category || amount === undefined || amount === null) {
       return res.status(400).json({ message: "Title, category, and amount are required" });
+    }
+
+    const parsedAmount = Number(amount);
+    if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
+      return res.status(400).json({ message: "Expense amount must be greater than zero." });
     }
 
     const expense = await STAFF_Expense.create({

@@ -160,7 +160,7 @@ function mapBackendItemToUI(p) {
   return {
     id:              String(p._id || p.itemId || ""),
     name:            p.name || p.itemName || "",
-    type:            p.name || "",              // brand column – use name
+    type:            p.brandName || p.brand || "",              // brand column
     category:        toCanonicalInventoryCategory(p.category || ""),
     currentQuantity: p.currentQuantity ?? p.quantity ?? 0,
     minStock:        p.minStock ?? 10,
@@ -177,7 +177,7 @@ function mapBackendItemToUI(p) {
     price:           p.unitPrice ?? 0,
     description:     p.description || "",
     genericName:     p.genericName || p.generic || "",
-    brandName:       p.brandName || p.brand || p.name || p.itemName || "",
+    brandName:       p.brandName || p.brand || "",
     medicineName:    p.medicineName || p.name || p.itemName || "",
     dosageForm:      p.dosageForm || p.dosage || "",
     strength:        p.strength || p.Strength || p.dose || p.dosageStrength || "",
@@ -932,8 +932,8 @@ function renderInventory() {
     card.innerHTML = `
       <div class="flex justify-between items-start mb-3 gap-2">
         <div class="flex-1">
-          <h3 class="font-semibold text-gray-800 text-sm">${item.name}</h3>
-          <p class="text-xs text-gray-500">${item.type}</p>
+          <h3 class="font-semibold text-gray-800 text-sm">${item.genericName || item.name}</h3>
+          <p class="text-xs text-gray-500">${item.brandName || ""}</p>
         </div>
         <div class="flex items-center gap-2">
           <span class="px-2 py-1 rounded text-xs font-medium ${colors.bg} ${colors.text} whitespace-nowrap border ${colors.border}">${statusText}</span>
@@ -1720,6 +1720,7 @@ function showAdminEditPriceModal(item) {
       <div>
         <label class="block text-xs text-gray-700 mb-1">New Price</label>
         <input id="adminNewPriceInput" type="number" min="0.01" step="0.01" value="${currentPrice.toFixed(2)}" class="w-full border border-gray-300 rounded px-3 py-2" />
+        <p id="adminNewPriceError" class="text-red-600 text-xs mt-1 hidden"></p>
       </div>
     </div>
     <div class="mt-5 grid grid-cols-2 gap-3">
@@ -1736,10 +1737,50 @@ function showAdminEditPriceModal(item) {
 
   getElement(modal, "#closeAdminEditPriceModal")?.addEventListener("click", hide);
   getElement(modal, "#adminEditPriceCancelBtn")?.addEventListener("click", hide);
+
+  const priceInput = getElement(modal, "#adminNewPriceInput");
+  const priceError = getElement(modal, "#adminNewPriceError");
+  const saveBtn    = getElement(modal, "#adminEditPriceSaveBtn");
+
+  const validatePrice = () => {
+    const raw = (priceInput?.value || "").trim();
+    const p = raw === "" ? NaN : parseFloat(raw);
+    if (isNaN(p) || p <= 0) {
+      if (priceError) {
+        priceError.textContent = "Price must be greater than zero.";
+        priceError.classList.remove("hidden");
+      }
+      if (saveBtn) {
+        saveBtn.disabled = true;
+        saveBtn.classList.add("opacity-50", "cursor-not-allowed");
+      }
+    } else {
+      if (priceError) {
+        priceError.classList.add("hidden");
+      }
+      if (saveBtn) {
+        saveBtn.disabled = false;
+        saveBtn.classList.remove("opacity-50", "cursor-not-allowed");
+      }
+    }
+  };
+
+  priceInput?.addEventListener("input", validatePrice);
+  priceInput?.addEventListener("blur", validatePrice);
+
+  priceInput?.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      if (saveBtn && !saveBtn.disabled) {
+        saveBtn.click();
+      }
+    }
+  });
+
   getElement(modal, "#adminEditPriceSaveBtn")?.addEventListener("click", async () => {
     const newPrice = Number(getElement(modal, "#adminNewPriceInput")?.value || 0);
     if (!Number.isFinite(newPrice) || newPrice <= 0) {
-      showToast("New price must be greater than 0", "error");
+      showToast("Price must be greater than zero.", "error");
       return;
     }
     if (newPrice === currentPrice) {
@@ -2150,6 +2191,55 @@ function showAddItemModal() {
   getElement(addItemModal, "#closeAddItemModal")?.addEventListener("click", hide);
   getElement(addItemModal, "#addCancelBtn")?.addEventListener("click", hide);
 
+  const addPriceInput = getElement(addItemModal, "#addPrice");
+  const addPriceError = getElement(addItemModal, "#addPriceError");
+  const addSaveBtn    = getElement(addItemModal, "#addSaveBtn");
+
+  const validateAddPrice = () => {
+    const raw = (addPriceInput?.value || "").trim();
+    const p = raw === "" ? NaN : parseFloat(raw);
+    if (isNaN(p) || p <= 0) {
+      if (addPriceError) {
+        addPriceError.textContent = "Price must be greater than zero.";
+        addPriceError.classList.remove("hidden");
+      }
+      if (addSaveBtn) {
+        addSaveBtn.disabled = true;
+        addSaveBtn.classList.add("opacity-50", "cursor-not-allowed");
+      }
+    } else {
+      if (addPriceError) {
+        addPriceError.classList.add("hidden");
+      }
+      if (addSaveBtn) {
+        addSaveBtn.disabled = false;
+        addSaveBtn.classList.remove("opacity-50", "cursor-not-allowed");
+      }
+    }
+  };
+
+  addPriceInput?.addEventListener("input", validateAddPrice);
+  addPriceInput?.addEventListener("blur", validateAddPrice);
+
+  // Initial validation check
+  if (addPriceInput) {
+    if ((addPriceInput.value || "").trim() === "") {
+      addPriceInput.value = "0";
+    }
+    validateAddPrice();
+  }
+
+  addItemModal.querySelectorAll("input").forEach(inp => {
+    inp.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        if (addSaveBtn && !addSaveBtn.disabled) {
+          addSaveBtn.click();
+        }
+      }
+    });
+  });
+
   // Initialize voice recognition for the Description field
   initVoiceRecognitionForModal(addItemModal);
 
@@ -2193,6 +2283,11 @@ function showAddItemModal() {
       else { errEl?.classList.add("hidden"); }
     });
     if (hasError) return;
+
+    if (!Number.isFinite(price) || price <= 0) {
+      showToast("Price must be greater than zero.", "error");
+      return;
+    }
 
     try {
       await apiFetch(API.addProduct, {
@@ -2495,7 +2590,23 @@ export async function initAdminInventory() {
     currentInventoryPage = 1;
     applyFilters();
   }, 300));
+
+  document.getElementById("searchInventory")?.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      currentInventoryPage = 1;
+      applyFilters();
+    }
+  });
+
   document.getElementById("searchRestock")?.addEventListener("input", debounce(applyRestockFilters, 300));
+
+  document.getElementById("searchRestock")?.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      applyRestockFilters();
+    }
+  });
 
   /* ---- Archived toggle ---- */
   const archivedBtn = document.getElementById("archivedBtn");

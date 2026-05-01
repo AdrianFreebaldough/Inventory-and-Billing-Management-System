@@ -79,6 +79,7 @@ const state = {
 	searchTerm: "",
 	quantities: {},
 	discountRate: 0,
+	discountName: "None",
 	patientId: "",
 	patientName: "",
 	isGuest: false,
@@ -96,7 +97,10 @@ const state = {
 	lastCompletedSale: null,
 	pendingVoidTransactionId: null,
 	lastAutoScrolledCartLineCount: 0,
+	manualCartAction: false,
 	isLoading: false,
+	historySearchTerm: "",
+	isResolvingPatient: false,
 };
 
 /* ===== DOM Elements ===== */
@@ -115,12 +119,16 @@ const cartTopSection = document.getElementById("cartTopSection");
 const posView = document.getElementById("posView");
 const historyView = document.getElementById("historyView");
 const historyTableBody = document.getElementById("historyTableBody");
+const historySearchInput = document.getElementById("historySearchInput");
 
 const itemsCountElement = document.getElementById("itemsCount");
 const subtotalElement = document.getElementById("subtotalValue");
 const discountElement = document.getElementById("discountValue");
 const vatElement = document.getElementById("vatValue");
 const totalDueElement = document.getElementById("totalDueValue");
+const appliedDiscountLabelRow = document.getElementById("appliedDiscountLabelRow");
+const appliedDiscountLabel = document.getElementById("appliedDiscountLabel");
+const discountSelector = document.getElementById("discountSelector");
 
 const txnIdElement = document.getElementById("txnId");
 const txnStatusElement = document.getElementById("txnStatus");
@@ -138,10 +146,8 @@ const patientInfoSection = document.getElementById("patientInfoSection");
 const menuPosButton = document.getElementById("menuPosBtn");
 const holdTopButton = document.getElementById("holdTopBtn");
 const holdSummaryButton = document.getElementById("holdSummaryBtn");
-const removeAllItemsButton = document.getElementById("removeAllItemsBtn");
 const newSaleButton = document.getElementById("newSaleBtn");
 const historyButton = document.getElementById("historyBtn");
-const discountButton = document.getElementById("discountBtn");
 const clearAllButton = document.getElementById("clearAllBtn");
 const cartActionSection = document.getElementById("cartActionSection");
 const paymentSection = document.getElementById("paymentSection");
@@ -693,8 +699,10 @@ function formatDateTime(isoString) {
 
 function closeAllModals() {
 	[successModal, heldModal, historyViewModal, voidConfirmModal, itemDetailsModal].forEach((modal) => {
-		modal.classList.add("hidden");
-		modal.classList.remove("flex");
+		if (modal) {
+			modal.classList.add("hidden");
+			modal.classList.remove("flex");
+		}
 	});
 	modalOverlay.classList.add("hidden");
 	document.body.classList.remove("overflow-hidden");
@@ -877,7 +885,7 @@ function openItemDetailsModal(itemId) {
 
 	if (modalItemName) modalItemName.textContent = item.name || "N/A";
 	if (modalGenericName) modalGenericName.textContent = String(item.genericName || item.generic_name || item.generic || "").trim() || "N/A";
-	if (modalBrandName) modalBrandName.textContent = String(item.brandName || item.brand_name || item.brand || item.medicineName || item.name || "").trim() || "N/A";
+	if (modalBrandName) modalBrandName.textContent = String(item.brandName || item.brand_name || item.brand || item.medicineName || "").trim() || "N/A";
 	if (modalCategory) modalCategory.textContent = item.category || "N/A";
 	if (modalStrength) modalStrength.textContent = String(item.strength || item.Strength || item.dose || item.dosageStrength || "").trim() || "N/A";
 	if (modalDosageForm) modalDosageForm.textContent = String(item.dosageForm || item.dosage_form || item.dosage || "").trim() || "N/A";
@@ -1424,12 +1432,21 @@ function updatePatientInfoVisibility(selectedLineCount = getSelectedItems().leng
 
 function updateCartTopAutoScroll(selectedLineCount = 0) {
 	if (!cartTopSection) return;
-	const hasReachedThreshold = selectedLineCount >= CART_ITEM_AUTO_SCROLL_THRESHOLD;
+	const transactionPanel = document.getElementById("transactionPanel");
+	const hasItems = selectedLineCount >= 1;
 	const lineCountChanged = selectedLineCount !== state.lastAutoScrolledCartLineCount;
-	if (hasReachedThreshold && lineCountChanged) {
-		cartTopSection.scrollTop = cartTopSection.scrollHeight;
+
+	if (hasItems && lineCountChanged && transactionPanel && state.manualCartAction) {
+		setTimeout(() => {
+			cartTopSection.scrollTop = transactionPanel.offsetHeight;
+		}, 50);
+	} else if (!hasItems && lineCountChanged && state.manualCartAction) {
+		setTimeout(() => {
+			cartTopSection.scrollTop = 0;
+		}, 50);
 	}
 	state.lastAutoScrolledCartLineCount = selectedLineCount;
+	state.manualCartAction = false;
 }
 
 function renderSummaryPanel() {
@@ -1450,30 +1467,50 @@ function renderSummaryPanel() {
 		return;
 	}
 
-	selectedItemsPanel.innerHTML = selected
+	const itemsHtml = selected
 		.map((item) => {
 			const lineTotal = item.subtotal;
 			const isLockedForCheckout = state.checkoutMode;
 			return `
 				<div class="mb-2 border-b border-slate-200 pb-2 text-sm last:mb-0 last:border-b-0 last:pb-0" data-cart-item-id="${item.id}">
 					<div class="flex items-start justify-between gap-2">
-						<p class="min-w-0 flex-1 break-words pr-1 font-medium text-slate-800">${item.name}</p>
+						<p class="min-w-0 flex-1 break-words pr-1 font-medium text-slate-800">${item.genericName || item.name}</p>
 						<button type="button" data-action="remove-cart-item" data-id="${item.id}" ${isLockedForCheckout ? "disabled" : ""} class="shrink-0 rounded border border-rose-300 px-2 py-0.5 text-[10px] font-semibold ${
 							isLockedForCheckout ? "cursor-not-allowed text-rose-300" : "text-rose-700 hover:bg-rose-50"
 						}">Remove</button>
 					</div>
-					<p class="text-xs text-slate-500">Price: ${formatPeso(item.price)}</p>
-					<p class="mt-1 text-xs font-semibold text-slate-700">Subtotal: ${formatPeso(lineTotal)}</p>
+					${item.type === 'item' && (item.brandName || item.brand) ? `<p class="text-xs text-slate-500 mb-0.5">${item.brandName || item.brand}</p>` : ''}
+					<p class="text-xs text-slate-500">Price: ${formatPeso(item.price)} | Qty: ${item.qty}</p>
 				</div>
 			`;
 		})
 		.join("");
+
+	if (selected.length > 0 && cartTopSection) {
+		const spacerHeight = cartTopSection.offsetHeight || 400;
+		selectedItemsPanel.innerHTML = itemsHtml + `<div id="cartSpacer" style="height: ${spacerHeight}px;"></div>`;
+	} else {
+		selectedItemsPanel.innerHTML = itemsHtml;
+	}
 
 	itemsCountElement.textContent = String(itemCount);
 	subtotalElement.textContent = formatPeso(subtotal);
 	discountElement.textContent = formatPeso(discount);
 	vatElement.textContent = formatPeso(vat);
 	totalDueElement.textContent = formatPeso(totalDue);
+
+	if (state.discountRate > 0 && state.discountName && state.discountName !== "None") {
+		appliedDiscountLabelRow?.classList.remove("hidden");
+		if (appliedDiscountLabel) {
+			appliedDiscountLabel.textContent = `${state.discountName}`;
+		}
+	} else {
+		appliedDiscountLabelRow?.classList.add("hidden");
+		if (appliedDiscountLabel) {
+			appliedDiscountLabel.textContent = "None";
+		}
+	}
+
 	renderPendingBalancesPanel();
 	renderInlinePayment();
 }
@@ -1498,6 +1535,20 @@ function renderInlinePayment() {
 	const showPayment = state.checkoutMode;
 	cartActionSection.classList.toggle("hidden", showPayment);
 	paymentSection.classList.toggle("hidden", !showPayment);
+
+	const upperSummaryPanel = document.getElementById("upperSummaryPanel");
+	if (upperSummaryPanel) {
+		upperSummaryPanel.classList.toggle("hidden", showPayment);
+	}
+
+	const paymentItemsCount = document.getElementById("paymentItemsCount");
+	const paymentDiscountValue = document.getElementById("paymentDiscountValue");
+	const paymentVatValue = document.getElementById("paymentVatValue");
+
+	if (paymentItemsCount) paymentItemsCount.textContent = String(totals.itemCount);
+	if (paymentDiscountValue) paymentDiscountValue.textContent = formatPeso(totals.discount);
+	if (paymentVatValue) paymentVatValue.textContent = formatPeso(totals.vat);
+
 	paymentTotalDue.textContent = formatPeso(totals.totalDue);
 	paymentCashValue.textContent = formatPeso(state.cashTendered || 0);
 	const change = Math.max((state.cashTendered || 0) - totals.totalDue, 0);
@@ -1533,11 +1584,20 @@ function renderInlinePayment() {
 }
 
 function renderHistoryTable() {
-	const transactions = [...state.transactionLog].sort((a, b) => {
-		const dateA = new Date(a.dateTime).getTime();
-		const dateB = new Date(b.dateTime).getTime();
-		return dateB - dateA;
-	});
+	const term = (state.historySearchTerm || "").trim().toLowerCase();
+	const transactions = [...state.transactionLog]
+		.filter((txn) => {
+			if (!term) return true;
+			const pName = String(txn.patientName || "").toLowerCase();
+			const pId = String(txn.patientId || "").toLowerCase();
+			const txnId = String(txn.transactionId || "").toLowerCase();
+			return pName.includes(term) || pId.includes(term) || txnId.includes(term);
+		})
+		.sort((a, b) => {
+			const dateA = new Date(a.dateTime).getTime();
+			const dateB = new Date(b.dateTime).getTime();
+			return dateB - dateA;
+		});
 
 	if (!transactions.length) {
 		historyTableBody.innerHTML = `
@@ -1548,43 +1608,86 @@ function renderHistoryTable() {
 		return;
 	}
 
-	historyTableBody.innerHTML = transactions
-		.map((txn) => {
-			const isVoided = txn.status === "VOIDED";
-			const isGuestTransaction = Boolean(txn.isGuest);
-			const { date, time } = formatDateTime(txn.dateTime);
-			const itemCount = txn.items?.reduce((sum, item) => sum + item.quantity, 0) || 0;
-			const rowClass = isVoided ? "bg-slate-100 text-slate-500" : "text-black";
-			const cellClass = isVoided ? "text-slate-500" : "text-black";
+	// Grouping Logic
+	const today = new Date();
+	today.setHours(0, 0, 0, 0);
+	const yesterday = new Date(today);
+	yesterday.setDate(yesterday.getDate() - 1);
 
-			return `
-				<tr class="text-xs ${rowClass}">
-					<td class="px-2 py-2 font-semibold ${cellClass}">${String(txn.transactionId).slice(-8).toUpperCase()}</td>
-					<td class="px-2 py-2 ${cellClass}">
-						<div>${date}</div>
-						<div>${time}</div>
-					</td>
-					<td class="px-2 py-2 ${cellClass}">${itemCount} item(s)</td>
-					<td class="px-2 py-2 ${cellClass}">${txn.patientName || "N/A"}${isGuestTransaction ? ' <span class="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700">GUEST</span>' : ""}</td>
-			<td class="px-2 py-2 ${cellClass}">${txn.patientId || "N/A"}</td>
-					<td class="px-2 py-2 font-medium ${cellClass}">
-						${isVoided ? formatPeso(0) : formatPeso(txn.totalAmount || 0)}
-						<div class="text-[10px] ${isVoided ? "text-rose-600" : "text-emerald-600"}">${txn.status}</div>
-					</td>
-					<td class="px-2 py-2">
-						<div class="flex items-center justify-end gap-2">
-							<button type="button" data-action="view" data-transaction-id="${txn.transactionId}" class="min-w-14 border border-slate-400 bg-slate-100 px-2 py-1 text-[10px] font-semibold text-slate-700 hover:bg-slate-200">
-								VIEW
-							</button>
-							${
-								isVoided
-									? '<span class="min-w-14 border border-rose-300 bg-rose-100 px-2 py-1 text-center text-[10px] font-semibold text-rose-600">VOIDED</span>'
-									: `<button type="button" data-action="void" data-transaction-id="${txn.transactionId}" class="min-w-14 border border-rose-700 bg-rose-700 px-2 py-1 text-[10px] font-semibold text-white hover:bg-rose-600">VOID</button>`
-							}
-						</div>
+	const groups = [];
+	let currentGroup = null;
+
+	for (const txn of transactions) {
+		const d = new Date(txn.dateTime);
+		const dStart = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+		let label = "";
+
+		if (dStart.getTime() === today.getTime()) {
+			label = "Today";
+		} else if (dStart.getTime() === yesterday.getTime()) {
+			label = "Yesterday";
+		} else {
+			label = dStart.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+		}
+
+		if (!currentGroup || currentGroup.label !== label) {
+			currentGroup = { label, transactions: [] };
+			groups.push(currentGroup);
+		}
+		currentGroup.transactions.push(txn);
+	}
+
+	historyTableBody.innerHTML = groups
+		.map((group) => {
+			const headerRow = `
+				<tr class="bg-slate-100/80">
+					<td colspan="7" class="px-2 py-3 text-[11px] font-bold uppercase tracking-wider text-slate-700 border-y border-slate-300">
+						${group.label}
 					</td>
 				</tr>
 			`;
+
+			const rows = group.transactions.map((txn) => {
+				const isVoided = txn.status === "VOIDED";
+				const isGuestTransaction = Boolean(txn.isGuest);
+				const { date, time } = formatDateTime(txn.dateTime);
+				const itemCount = txn.items?.reduce((sum, item) => sum + item.quantity, 0) || 0;
+				const rowClass = isVoided ? "bg-slate-50 text-slate-400" : "text-black bg-white";
+				const cellClass = isVoided ? "text-slate-400" : "text-black";
+
+				return `
+					<tr class="text-xs transition hover:bg-slate-50 ${rowClass}">
+						<td class="px-2 py-3 font-semibold ${cellClass}">${String(txn.transactionId).slice(-8).toUpperCase()}</td>
+						<td class="px-2 py-3 ${cellClass}">
+							<div class="font-medium">${time}</div>
+						</td>
+						<td class="px-2 py-3 ${cellClass}">${itemCount} item(s)</td>
+						<td class="px-2 py-3 ${cellClass}">
+							<div class="font-medium">${txn.patientName || "N/A"}</div>
+							${isGuestTransaction ? '<span class="rounded bg-emerald-100 px-1.5 py-0.5 text-[9px] font-bold text-emerald-700 uppercase tracking-tight">GUEST</span>' : ""}
+						</td>
+						<td class="px-2 py-3 ${cellClass}">${txn.patientId || "N/A"}</td>
+						<td class="px-2 py-3 font-semibold ${cellClass}">
+							${isVoided ? formatPeso(0) : formatPeso(txn.totalAmount || 0)}
+							<div class="text-[10px] ${isVoided ? "text-rose-500" : "text-emerald-600"} font-bold uppercase tracking-tighter">${txn.status}</div>
+						</td>
+						<td class="px-2 py-3">
+							<div class="flex items-center justify-end gap-2">
+								<button type="button" data-action="view" data-transaction-id="${txn.transactionId}" class="min-w-[56px] border border-slate-300 bg-white px-2 py-1 text-[10px] font-bold text-slate-700 transition hover:bg-slate-100 shadow-sm">
+									VIEW
+								</button>
+								${
+									isVoided
+										? '<span class="min-w-[56px] border border-rose-200 bg-rose-50 px-2 py-1 text-center text-[10px] font-bold text-rose-500">VOIDED</span>'
+										: `<button type="button" data-action="void" data-transaction-id="${txn.transactionId}" class="min-w-[56px] border border-rose-700 bg-rose-700 px-2 py-1 text-[10px] font-bold text-white transition hover:bg-rose-800 shadow-sm">VOID</button>`
+								}
+							</div>
+						</td>
+					</tr>
+				`;
+			}).join("");
+
+			return headerRow + rows;
 		})
 		.join("");
 }
@@ -1652,12 +1755,35 @@ function refreshUi() {
 	if (pendingBalancesSection) {
 		pendingBalancesSection.classList.toggle("hidden", state.isGuest);
 	}
+	if (discountSelector) {
+		discountSelector.value = state.discountName || "None";
+	}
 	reconcilePendingObligationsWithCart();
 	renderProductPanel();
 	renderSummaryPanel();
 	updatePaymentLockStatus();
 	renderActiveView();
 	renderHeldModalList();
+	if (historySearchInput) {
+		historySearchInput.value = state.historySearchTerm || "";
+	}
+
+	// Update patient search hint
+	if (patientIdHint && !state.isGuest) {
+		if (state.isResolvingPatient) {
+			patientIdHint.className = "mt-1 text-[10px] text-cyan-400 animate-pulse";
+			patientIdHint.textContent = "Searching for patient record...";
+		} else if (state.patientName && !state.patientId && state.patientName.trim().length > 0) {
+			patientIdHint.className = "mt-1 text-[10px] text-rose-400";
+			patientIdHint.textContent = "No patient found. Please check name or register as guest.";
+		} else if (state.patientId) {
+			patientIdHint.className = "mt-1 text-[10px] text-emerald-400 font-medium";
+			patientIdHint.textContent = "Patient resolved. You can proceed to payment.";
+		} else {
+			patientIdHint.className = "mt-1 text-[10px] text-slate-400";
+			patientIdHint.textContent = "Type patient name to resolve patient ID and PARMS balances.";
+		}
+	}
 }
 
 /* ===== Cart Actions ===== */
@@ -1665,6 +1791,7 @@ function refreshUi() {
 function setQuantity(itemId, nextQty) {
 	const item = state.products.find((entry) => entry.id === itemId);
 	if (!item) return;
+	state.manualCartAction = true;
 	const currentQty = Number(state.quantities[itemId] || 0);
 	if (nextQty > currentQty && !hasResolvedPatientForCart()) {
 		showToast("Type and resolve patient name before adding to cart.", "warning");
@@ -1703,6 +1830,7 @@ function removeCartItem(itemId) {
 }
 
 function removeAllCartItemsOnly() {
+	state.manualCartAction = true;
 	Object.keys(state.quantities).forEach((key) => {
 		state.quantities[key] = 0;
 	});
@@ -1720,6 +1848,8 @@ function resetActiveSale() {
 	state.checkoutMode = false;
 	state.cashTendered = 0;
 	state.discountRate = 0;
+	state.discountName = "None";
+	if (discountSelector) discountSelector.value = "None";
 	state.patientId = "";
 	state.patientName = "";
 	state.isGuest = false;
@@ -1729,6 +1859,8 @@ function resetActiveSale() {
 	state.activeProductType = "item";
 	searchInput.value = "";
 	state.searchTerm = "";
+	state.historySearchTerm = "";
+	if (historySearchInput) historySearchInput.value = "";
 	state.activeCategory = ALL_CATEGORIES_LABEL;
 	if (cashTenderedInlineInput) {
 		cashTenderedInlineInput.value = "";
@@ -1902,8 +2034,10 @@ function showSuccessModal() {
 
 function holdCurrentTransaction() {
 	const totals = computeSaleTotals();
-	if (!totals.itemCount) return;
-
+	if (totals.itemCount === 0 && totals.pendingTotal <= 0) {
+		showToast("Create a transaction first", "warning");
+		return;
+	}
 	state.heldTransactions.push({
 		heldId: generateHeldId(),
 		patientId: state.patientId,
@@ -1929,6 +2063,7 @@ function holdCurrentTransaction() {
 function resumeHeldTransaction(heldId) {
 	const index = state.heldTransactions.findIndex((entry) => entry.heldId === heldId);
 	if (index < 0) return;
+	state.manualCartAction = true;
 
 	const held = state.heldTransactions[index];
 	resetActiveSale();
@@ -2145,6 +2280,7 @@ function attachEvents() {
 
 		if (action !== "mark-prescription-bought" && action !== "mark-prescription-not-bought") return;
 
+		state.manualCartAction = true;
 		let addedInCart = false;
 		let unresolvedMatches = 0;
 
@@ -2208,35 +2344,39 @@ function attachEvents() {
 		state.patientId = "";
 		state.parmsIntent = null;
 		setPendingBalances([]);
-		updatePaymentLockStatus();
+		state.isResolvingPatient = true; // Start loading state
+		refreshUi();
 
 		if (patientLookupDebounceTimer) {
 			clearTimeout(patientLookupDebounceTimer);
 		}
 
 		if (!patientNameValue) {
+			state.isResolvingPatient = false;
 			refreshUi();
 			return;
 		}
 
 		patientLookupDebounceTimer = setTimeout(async () => {
-			const patientRecord = await resolvePatientByName(patientNameValue);
-			if (state.patientName !== patientNameValue) return;
+			try {
+				const patientRecord = await resolvePatientByName(patientNameValue);
+				if (state.patientName !== patientNameValue) return;
 
-			if (!patientRecord) {
-				state.patientId = "";
-				state.parmsIntent = null;
-				setPendingBalances([]);
+				if (!patientRecord) {
+					state.patientId = "";
+					state.parmsIntent = null;
+					setPendingBalances([]);
+				} else {
+					state.patientId = patientRecord.patientId;
+					state.patientName = patientRecord.patientName;
+					state.parmsIntent = patientRecord.parmsIntent || null;
+					setPendingBalances(patientRecord.pendingBalances || []);
+				}
+			} finally {
+				state.isResolvingPatient = false; // End loading state
 				refreshUi();
-				return;
 			}
-
-			state.patientId = patientRecord.patientId;
-			state.patientName = patientRecord.patientName;
-			state.parmsIntent = patientRecord.parmsIntent || null;
-			setPendingBalances(patientRecord.pendingBalances || []);
-			refreshUi();
-		}, 350);
+		}, 600); // Increased debounce slightly for better UX with loading state
 	});
 
 	guestModeBtn?.addEventListener("click", () => {
@@ -2334,7 +2474,6 @@ function attachEvents() {
 	});
 
 	holdSummaryButton.addEventListener("click", holdCurrentTransaction);
-	removeAllItemsButton?.addEventListener("click", removeAllCartItemsOnly);
 	heldCloseBtn.addEventListener("click", closeAllModals);
 
 	heldList.addEventListener("click", (event) => {
@@ -2362,11 +2501,13 @@ function attachEvents() {
 	});
 
 	historyTableBody.addEventListener("click", (event) => {
-		const target = event.target;
-		if (!(target instanceof HTMLButtonElement)) return;
+		const target = event.target.closest("button[data-action]");
+		if (!target) return;
+		
 		const action = target.dataset.action;
 		const transactionId = target.dataset.transactionId;
 		if (!action || !transactionId) return;
+		
 		if (action === "view") {
 			openHistoryTransactionModal(transactionId);
 			return;
@@ -2388,17 +2529,27 @@ function attachEvents() {
 
 	voidConfirmBtn.addEventListener("click", handleVoidTransaction);
 
-	discountButton.addEventListener("click", () => {
-		const input = prompt("Enter discount percentage (0-100):", String(state.discountRate * 100));
-		if (input === null) return;
-		const percent = parseFloat(input);
-		if (isNaN(percent) || percent < 0 || percent > 100) {
-			showToast("Invalid discount percentage", "error");
+	discountSelector?.addEventListener("change", (event) => {
+		const val = event.target.value;
+		if (val === "None") {
+			state.discountRate = 0;
+			state.discountName = "None";
+			renderSummaryPanel();
+			showToast("Discount removed", "info");
 			return;
 		}
-		state.discountRate = percent / 100;
-		refreshUi();
-		showToast(`Discount set to ${percent}%`, "info");
+		
+		let rate = 0.20;
+		const match = val.match(/\((\d+)%\)/);
+		if (match && match[1]) {
+			rate = parseFloat(match[1]) / 100;
+		}
+		
+		state.discountRate = rate;
+		state.discountName = val;
+		
+		renderSummaryPanel();
+		showToast(`Applied ${val}`, "success");
 	});
 
 	clearAllButton.addEventListener("click", () => {
@@ -2459,6 +2610,71 @@ function attachEvents() {
 			closeAllModals();
 		}
 	});
+
+	historySearchInput?.addEventListener("input", (e) => {
+		state.historySearchTerm = e.target.value;
+		renderHistoryTable();
+	});
+
+	historySearchInput?.addEventListener("keydown", (e) => {
+		if (e.key === "Enter") {
+			e.preventDefault();
+			state.historySearchTerm = historySearchInput.value;
+			renderHistoryTable();
+		}
+	});
+
+	searchInput?.addEventListener("keydown", (e) => {
+		if (e.key === "Enter") {
+			e.preventDefault();
+			state.searchTerm = searchInput.value;
+			renderProductPanel();
+		}
+	});
+
+	patientIdInput?.addEventListener("keydown", (e) => {
+		if (e.key === "Enter") {
+			e.preventDefault();
+			if (proceedButton && !proceedButton.disabled) {
+				proceedButton.click();
+			}
+		}
+	});
+
+	patientNameInput?.addEventListener("keydown", (e) => {
+		if (e.key === "Enter") {
+			e.preventDefault();
+			if (proceedButton && !proceedButton.disabled) {
+				proceedButton.click();
+			}
+		}
+	});
+
+	cashTenderedInlineInput?.addEventListener("keydown", (e) => {
+		if (e.key === "Enter") {
+			e.preventDefault();
+			if (finalizeBtn && !finalizeBtn.disabled) {
+				finalizeBtn.click();
+			}
+		}
+	});
+}
+
+async function loadBillingSettings() {
+	try {
+		const response = await apiFetch('/api/settings');
+		if (response && response.success && response.data) {
+			const billingConfig = response.data.billing || {};
+			const discountOption = document.getElementById('loyaltyDiscountOption');
+			if (discountOption && billingConfig.loyaltyDiscount) {
+				const ratePercent = billingConfig.loyaltyDiscount;
+				discountOption.value = `Loyalty Discount (${ratePercent}%)`;
+				discountOption.textContent = `Loyalty Discount (${ratePercent}%)`;
+			}
+		}
+	} catch (error) {
+		console.error("Failed to load dynamic billing discount settings", error);
+	}
 }
 
 /* ===== Initialization ===== */
@@ -2469,7 +2685,7 @@ async function init() {
 	showLoading("Loading billing system...");
 
 	try {
-		await Promise.all([loadProducts(), loadHistory()]);
+		await Promise.all([loadProducts(), loadHistory(), loadBillingSettings()]);
 		hideLoading();
 		refreshUi();
 		attachEvents();

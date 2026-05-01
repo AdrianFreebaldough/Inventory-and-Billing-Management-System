@@ -1,4 +1,5 @@
 import { inventoryConfig } from './data/admin_Settings_Inventory_data.js';
+import { apiFetch } from '../../utils/apiClient.js';
 
 const DOM = {};
 let isEditing = false;
@@ -12,10 +13,10 @@ const fields = [
     'invWarningPeriod'
 ];
 
-export function initInventory(api) {
+export async function initInventory(api) {
     callbacks = api || {};
     cacheDOM();
-    loadData();
+    await loadData();
     callbacks.onEditStateChange?.(false);
     setupGlobalButton();
 }
@@ -32,21 +33,31 @@ function cacheDOM() {
 }
 
 // ================= LOAD DATA =================
-function loadData() {
+async function loadData() {
+    let backendInventory = {};
+    try {
+        const response = await apiFetch('/api/settings');
+        if (response && response.success && response.data) {
+            backendInventory = response.data.inventory || {};
+        }
+    } catch (err) {
+        console.error('Failed to load inventory settings from backend', err);
+    }
+
     const defaults = {
         invLowStockThreshold: 10,
         invWarningPeriod: 90
     };
 
     const data = {
-        invLowStockThreshold: inventoryConfig?.lowStockThreshold ?? defaults.invLowStockThreshold,
-        invWarningPeriod: inventoryConfig?.warningPeriod ?? defaults.invWarningPeriod
+        invLowStockThreshold: backendInventory.invLowStockThreshold ?? inventoryConfig?.lowStockThreshold ?? defaults.invLowStockThreshold,
+        invWarningPeriod: backendInventory.invWarningPeriod ?? inventoryConfig?.warningPeriod ?? defaults.invWarningPeriod
     };
 
     originalData = { ...data };
 
     // Load categories
-    categories = inventoryConfig?.categories ?? [
+    categories = backendInventory.categories ?? inventoryConfig?.categories ?? [
         'Medications',
         'Medical Supplies',
         'Vaccines',
@@ -192,18 +203,37 @@ function enableEditMode() {
 }
 
 // ================= SAVE CHANGES =================
-function saveChanges() {
+async function saveChanges() {
     const newData = Object.fromEntries(
-        DOM.inputs.map(input => [input.id.replace('inv','').toLowerCase(), parseFloat(input.value) || 0])
+        DOM.inputs.map(input => [input.id, parseFloat(input.value) || 0])
     );
 
-    const payload = { ...newData, categories: categories };
+    const payload = { 
+        invLowStockThreshold: newData.invLowStockThreshold,
+        invWarningPeriod: newData.invWarningPeriod,
+        categories: categories 
+    };
 
-    originalData = { ...newData };
+    try {
+        const result = await apiFetch('/api/settings', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ inventory: payload })
+        });
+        if (result && result.success) {
+            originalData = { ...newData };
+            callbacks.showToast?.('Saved Changes Successfully', 'success');
+        } else {
+            callbacks.showToast?.(result.message || 'Failed to save changes', 'error');
+        }
+    } catch (err) {
+        console.error('Error updating inventory controls', err);
+        callbacks.showToast?.('Network or system error occurred', 'error');
+    }
+
     isEditing = false;
     toggleInputs(false);
     callbacks.onEditStateChange?.(false);
-    callbacks.showToast?.('Saved Changes Successfully');
 
     if (DOM.invAddCategoryBtn) {
         DOM.invAddCategoryBtn.removeEventListener('click', handleAddCategory);

@@ -137,7 +137,7 @@ export const STAFF_getInventoryAlerts = async (req, res) => {
     })
       .sort({ status: 1, quantity: 1, name: 1 })
       .limit(limit)
-      .select("name status quantity category")
+      .select("name status quantity category genericName brandName")
       .lean();
 
     const filteredProducts = products.filter(
@@ -146,6 +146,8 @@ export const STAFF_getInventoryAlerts = async (req, res) => {
 
     const data = filteredProducts.map((product) => ({
       itemName: product.name,
+      genericName: product.genericName || "",
+      brandName: product.brandName || "",
       stockStatus: product.status,
       remainingQuantity: product.quantity,
     }));
@@ -178,6 +180,8 @@ export const STAFF_getTopItemsToday = async (req, res) => {
         $group: {
           _id: "$items.productId",
           itemName: { $first: "$items.name" },
+          genericName: { $first: "$items.genericName" },
+          brandName: { $first: "$items.brandName" },
           quantityDispensed: { $sum: "$items.quantity" },
           totalSalesValue: { $sum: "$items.lineTotal" },
         },
@@ -189,6 +193,8 @@ export const STAFF_getTopItemsToday = async (req, res) => {
           _id: 0,
           productId: "$_id",
           itemName: 1,
+          genericName: 1,
+          brandName: 1,
           quantityDispensed: 1,
           totalSalesValue: 1,
         },
@@ -223,6 +229,8 @@ export const STAFF_getRecentItemUsage = async (req, res) => {
         $group: {
           _id: "$items.productId",
           itemName: { $first: "$items.name" },
+          genericName: { $first: "$items.genericName" },
+          brandName: { $first: "$items.brandName" },
           quantity: { $sum: "$items.quantity" },
         },
       },
@@ -247,6 +255,8 @@ export const STAFF_getRecentItemUsage = async (req, res) => {
           _id: 0,
           productId: "$_id",
           itemName: 1,
+          genericName: 1,
+          brandName: 1,
           quantity: 1,
           unitType: { $ifNull: ["$product.unit", "pcs"] },
         },

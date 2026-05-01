@@ -1,13 +1,14 @@
 import { clinicProfile } from './data/admin_Settings_Profile_data.js';
+import { apiFetch } from '../../utils/apiClient.js';
 
 const DOM = {};
 let isEditing = false;
 let callbacks = {};
 
-export function initClinicProfile(api) {
+export async function initClinicProfile(api) {
     callbacks = api || {};
     cacheDOM();
-    loadData();
+    await loadData();
     callbacks.onEditStateChange?.(false);
 }
 
@@ -26,14 +27,24 @@ function cacheDOM() {
     DOM.uploadLogoBtn = document.getElementById('uploadLogoBtn');
 }
 
-function loadData() {
+async function loadData() {
+    let backendProfile = {};
+    try {
+        const response = await apiFetch('/api/settings');
+        if (response && response.success && response.data) {
+            backendProfile = response.data.profile || {};
+        }
+    } catch (err) {
+        console.error('Failed to load clinic profile from backend', err);
+    }
+
     const saved = JSON.parse(localStorage.getItem('clinicProfile')) || clinicProfile;
 
     const data = {
-        clinicName: saved?.clinicName ?? 'General Medicine Clinic',
-        address: saved?.address ?? '123 Main Street, Quezon City',
-        telephone: saved?.telephone ?? '(02) 8123-4567',
-        email: saved?.email ?? 'contact@clinic.com'
+        clinicName: backendProfile.clinicName ?? saved?.clinicName ?? 'General Medicine Clinic',
+        address: backendProfile.clinicAddress ?? saved?.address ?? '123 Main Street, Quezon City',
+        telephone: backendProfile.clinicPhone ?? saved?.telephone ?? '(02) 8123-4567',
+        email: backendProfile.clinicEmail ?? saved?.email ?? 'contact@clinic.com'
     };
 
     if (DOM.inputs[0]) DOM.inputs[0].value = data.clinicName;
@@ -62,12 +73,12 @@ function enableEdit() {
     callbacks.onEditStateChange?.(true);
 }
 
-function saveChanges() {
+async function saveChanges() {
     const data = {
         clinicName: DOM.inputs[0]?.value.trim(),
-        address: DOM.inputs[1]?.value.trim(),
-        telephone: DOM.inputs[2]?.value.trim(),
-        email: DOM.inputs[3]?.value.trim()
+        clinicAddress: DOM.inputs[1]?.value.trim(),
+        clinicPhone: DOM.inputs[2]?.value.trim(),
+        clinicEmail: DOM.inputs[3]?.value.trim()
     };
 
     if (!data.clinicName) {
@@ -76,7 +87,27 @@ function saveChanges() {
         return;
     }
 
-    localStorage.setItem('clinicProfile', JSON.stringify(data));
+    try {
+        const result = await apiFetch('/api/settings', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ profile: data })
+        });
+        if (result && result.success) {
+            localStorage.setItem('clinicProfile', JSON.stringify({
+                clinicName: data.clinicName,
+                address: data.clinicAddress,
+                telephone: data.clinicPhone,
+                email: data.clinicEmail
+            }));
+            callbacks.showToast?.('Saved Changes Successfully', 'success');
+        } else {
+            callbacks.showToast?.(result.message || 'Failed to save changes', 'error');
+        }
+    } catch (err) {
+        console.error('Error updating clinic profile', err);
+        callbacks.showToast?.('Network or system error occurred', 'error');
+    }
 
     isEditing = false;
     

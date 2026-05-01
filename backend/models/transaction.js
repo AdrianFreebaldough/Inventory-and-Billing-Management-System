@@ -23,7 +23,12 @@ const transactionSchema = new mongoose.Schema(
         price: {
           type: Number,
           required: true,
-          min: 0,
+          validate: {
+            validator: function (v) {
+              return v > 0;
+            },
+            message: "Price must be greater than zero.",
+          },
         },
       },
     ],
@@ -31,7 +36,12 @@ const transactionSchema = new mongoose.Schema(
     totalAmount: {
       type: Number,
       required: true,
-      min: 0,
+      validate: {
+        validator: function (v) {
+          return v > 0;
+        },
+        message: "Total amount must be greater than zero.",
+      },
     },
 
     processedBy: {

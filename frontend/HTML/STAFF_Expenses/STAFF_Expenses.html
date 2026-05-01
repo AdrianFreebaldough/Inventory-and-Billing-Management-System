@@ -166,10 +166,17 @@
 		document.getElementById('expenseForm').addEventListener('submit', async (e) => {
 			e.preventDefault();
 
+			const amount = parseFloat(document.getElementById('expenseAmount').value);
+
+			if (isNaN(amount) || amount <= 0) {
+				showAlert('Expense amount must be greater than zero.', 'error');
+				return;
+			}
+
 			const formData = {
 				title: document.getElementById('expenseTitle').value,
 				category: document.getElementById('expenseCategory').value,
-				amount: parseFloat(document.getElementById('expenseAmount').value),
+				amount: amount,
 				date: document.getElementById('expenseDate').value,
 				description: document.getElementById('expenseDescription').value,
 			};

@@ -10,6 +10,7 @@ import {
 import Product from "../models/product.js";
 import InventoryRequest from "../models/InventoryRequest.js";
 import InventoryBatch from "../models/InventoryBatch.js";
+import Service from "../models/Service.js";
 import { classifyExpiryRisk, toUiExpiryRiskKey } from "../services/fefoService.js";
 import { BATCH_EFFECTIVE_STATUS, getBatchEffectiveStatus, isBatchEligibleForBilling } from "../services/batchLifecycleService.js";
 
@@ -402,6 +403,8 @@ export const STAFF_getBillingProducts = async (req, res) => {
       .select("_id name category quantity unitPrice strength expiryDate supplier genericName brandName dosageForm unit description medicineName status")
       .lean();
 
+    const activeServices = await Service.find({ status: 'active' }).lean();
+
     const productIds = products.map((product) => product._id);
     const batches = await InventoryBatch.find({
       product: { $in: productIds },
@@ -448,16 +451,13 @@ export const STAFF_getBillingProducts = async (req, res) => {
       }
     }
 
-    const data = products.map((product) => {
-      const fallback = fallbackMap.get(String(product._id));
-      const isService = STAFF_isServiceCategoryValue(product.category);
-      const serviceClassification = isService
-        ? STAFF_deriveServiceClassification({
-          name: product.name,
-          category: product.category,
-        })
-        : null;
-      const productBatches = batchesByProduct.get(String(product._id)) || [];
+    const data = products
+      .filter(product => !STAFF_isServiceCategoryValue(product.category))
+      .map((product) => {
+        const fallback = fallbackMap.get(String(product._id));
+        const isService = false;
+        const serviceClassification = null;
+        const productBatches = batchesByProduct.get(String(product._id)) || [];
       const effectiveStatuses = productBatches.map((batch) => getBatchEffectiveStatus(batch));
       const eligibleBatches = productBatches.filter((batch) => {
         const quantity = Number(batch?.currentQuantity ?? batch?.quantity ?? 0);
@@ -549,15 +549,47 @@ export const STAFF_getBillingProducts = async (req, res) => {
       };
     });
 
+    // Append active services mapped from DB
+    activeServices.forEach(service => {
+      const serviceClassification = STAFF_deriveServiceClassification({
+        name: service.name,
+        category: service.category || "Services",
+      });
+      data.push({
+        id: service._id,
+        type: "service",
+        name: service.name,
+        category: serviceClassification?.category || service.category || "Services",
+        subclassification: serviceClassification?.subclassification || "General",
+        genericName: null,
+        brandName: null,
+        medicineName: null,
+        strength: null,
+        dosageForm: null,
+        unit: "session",
+        branchName: null,
+        description: "Procedure",
+        expiryDate: null,
+        nearestExpiryDate: null,
+        expiryRisk: "safe",
+        expiryRiskKey: "safe",
+        inventoryStatus: "In Stock",
+        isImmediateReview: false,
+        billingDisabled: false,
+        supplier: null,
+        stock: 9999,
+        sellableStock: 9999,
+        pendingDisposalOnly: false,
+        totalStock: 9999,
+        price: service.price ?? 0,
+      });
+    });
+
     const requestedType = String(type || "").trim().toLowerCase();
     const typedData = ["item", "service"].includes(requestedType)
       ? data.filter((row) => row.type === requestedType)
       : data;
-    const filteredData = typedData.filter((service) => (
-      service.type !== "service" ||
-      service.category !== "Lab Test" ||
-      service.subclassification !== null
-    ));
+    const filteredData = typedData;
 
     return res.status(200).json({
       count: filteredData.length,

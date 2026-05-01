@@ -1,4 +1,5 @@
 import { systemSecurityConfig } from './data/admin_Settings_SystemSecurity_data.js';
+import { apiFetch } from '../../utils/apiClient.js';
 
 const DOM = {};
 let isEditing = false;
@@ -10,11 +11,11 @@ const fields = [
     'sessionTimeout'
 ];
 
-export function initSystemSecurity(api) {
+export async function initSystemSecurity(api) {
     callbacks = api || {};
     
     cacheDOM();
-    loadData();
+    await loadData();
     toggleInputs(false);
     callbacks.onEditStateChange?.(false);
 }
@@ -34,7 +35,17 @@ function cacheDOM() {
     DOM.inputs = fields.map(f => DOM[f]).filter(Boolean);
 }
 
-function loadData() {
+async function loadData() {
+    let backendSecurity = {};
+    try {
+        const response = await apiFetch('/api/settings');
+        if (response && response.success && response.data) {
+            backendSecurity = response.data.security || {};
+        }
+    } catch (err) {
+        console.error('Failed to load security settings from backend', err);
+    }
+
     const defaults = {
         retentionPeriod: '1 year',
         sessionTimeout: '30 minutes'
@@ -42,7 +53,7 @@ function loadData() {
 
     const data = {};
     fields.forEach(key => {
-        data[key] = systemSecurityConfig?.[key] ?? defaults[key];
+        data[key] = backendSecurity[key] ?? systemSecurityConfig?.[key] ?? defaults[key];
     });
 
     originalData = { ...data };
@@ -74,20 +85,32 @@ function enableEditMode() {
     callbacks.onEditStateChange?.(true);
 }
 
-function saveChanges() {
+async function saveChanges() {
     const newData = {};
     DOM.inputs.forEach(select => {
         if (select) newData[select.id] = select.value;
     });
 
-    // API call here
-
-    originalData = { ...newData };
+    try {
+        const result = await apiFetch('/api/settings', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ security: newData })
+        });
+        if (result && result.success) {
+            originalData = { ...newData };
+            callbacks.showToast?.('Saved Changes Successfully', 'success');
+        } else {
+            callbacks.showToast?.(result.message || 'Failed to save changes', 'error');
+        }
+    } catch (err) {
+        console.error('Error updating security controls', err);
+        callbacks.showToast?.('Network or system error occurred', 'error');
+    }
 
     isEditing = false;
     toggleInputs(false);
     callbacks.onEditStateChange?.(false);
-    callbacks.showToast?.('Saved Changes Successfully');
 }
 
 export function cleanup() {

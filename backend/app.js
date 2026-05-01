@@ -31,6 +31,8 @@ import OWNER_disposalRoutes from "./routes/OWNER_disposalRoutes.js";
 import STAFF_disposalRoutes from "./routes/STAFF_disposalRoutes.js";
 import OWNER_reportRoutes from "./routes/OWNER_reportRoutes.js";
 import billingIntegrationRoutes from "./routes/billing.js";
+import settingsRoutes from "./routes/settingsRoutes.js";
+import serviceRoutes from "./routes/serviceRoutes.js";
 
 const app = express(); // ✅ CREATE APP FIRST
 
@@ -162,6 +164,8 @@ app.use("/api/owner/reports", OWNER_reportRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/patients", patientRoutes);
 app.use("/api/v1/integrations/parms", billingIntegrationRoutes);
+app.use("/api/settings", settingsRoutes);
+app.use("/api/services", serviceRoutes);
 
 app.use(notFoundHandler);
 app.use(globalErrorHandler);

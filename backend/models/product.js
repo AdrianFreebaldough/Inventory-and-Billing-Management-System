@@ -22,8 +22,13 @@ const productSchema = new mongoose.Schema(
 
     unitPrice: {
       type: Number,
-      min: 0,
-      default: 0,
+      validate: {
+        validator: function (v) {
+          return v > 0;
+        },
+        message: "Price must be greater than zero.",
+      },
+      default: 0.01,
     },
 
     unit: {

@@ -211,6 +211,16 @@ function initializeLoginPage() {
   liveHide("loginPassword", "loginPasswordWarning");
   liveHide("resetUsername", "resetUsernameWarning");
 
+  const handleEnterKey = (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      validateLogin();
+    }
+  };
+
+  $("loginUsername")?.addEventListener("keydown", handleEnterKey);
+  $("loginPassword")?.addEventListener("keydown", handleEnterKey);
+
   // =========================
   // Password Validation
   // =========================
@@ -524,7 +534,11 @@ function resolveApiBaseUrl() {
   return "";
 }
 
+let isLoginSubmitting = false;
+
 function validateLogin() {
+  if (isLoginSubmitting) return;
+
   const $ = (id) => document.getElementById(id);
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -549,6 +563,7 @@ function validateLogin() {
     return;
   }
 
+  isLoginSubmitting = true;
   const API_BASE_URL = resolveApiBaseUrl();
 
   fetch(`${API_BASE_URL}/api/auth/login`, {
@@ -571,6 +586,7 @@ function validateLogin() {
       return payload;
     })
     .then((payload) => {
+      isLoginSubmitting = false;
       if (payload?.requiresPasswordChange && payload?.challengeToken) {
         clearAuthSessionData();
         setFirstLoginChallengeToken(payload.challengeToken);
@@ -587,6 +603,7 @@ function validateLogin() {
       redirectToDashboardByRole(payload?.user?.role);
     })
     .catch((error) => {
+      isLoginSubmitting = false;
       const message = String(error.message || "Invalid email or password");
 
       if (userWarn) {

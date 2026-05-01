@@ -560,9 +560,9 @@ export const STAFF_createAddItemRequest = async (req, res) => {
       });
     }
 
-    if (!Number.isFinite(parsedUnitPrice) || parsedUnitPrice < 0) {
+    if (!Number.isFinite(parsedUnitPrice) || parsedUnitPrice <= 0) {
       return res.status(400).json({
-        message: "unitPrice must be a valid non-negative number",
+        message: "Price must be greater than zero.",
       });
     }
 
@@ -913,7 +913,7 @@ export const STAFF_createPriceChangeRequest = async (req, res) => {
     }
 
     if (!Number.isFinite(parsedPrice) || parsedPrice <= 0) {
-      return res.status(400).json({ message: "newPrice must be a valid number greater than 0" });
+      return res.status(400).json({ message: "Price must be greater than zero." });
     }
 
     if (!normalizedReason) {

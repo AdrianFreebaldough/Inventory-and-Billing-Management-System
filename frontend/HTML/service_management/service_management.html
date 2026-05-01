@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Service Management</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="../../JS/utils/authSession.js"></script>
+  <style>
+    .modal {
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    body.modal-active {
+      /* Remove overflow:hidden to prevent layout jump */
+    }
+    .premium-glass {
+      background: rgba(255, 255, 255, 0.95);
+      backdrop-filter: blur(10px);
+    }
+    .custom-shadow {
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.05);
+    }
+  </style>
+</head>
+<body class="bg-gray-50 text-slate-800 font-sans antialiased">
+  <div class="container mx-auto p-4 md:p-8 max-w-7xl">
+    
+    <!-- Header Section -->
+    <div class="flex flex-col sm:flex-row justify-between sm:items-center gap-4 mb-8 animate-fade-in">
+      <div>
+        <h1 class="text-3xl font-extrabold text-slate-900 tracking-tight flex items-center gap-3">
+          Clinic Services
+        </h1>
+      </div>
+      </div>
+    <!-- Tab Navigation -->
+    <div class="flex border-b border-slate-200 mb-6">
+      <button id="tabServices" class="py-3 px-6 font-bold text-sm text-blue-600 border-b-2 border-blue-600 outline-none transition-all flex items-center gap-2">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"></path></svg>
+        Services List
+      </button>
+      <button id="tabRequests" class="py-3 px-6 font-bold text-sm text-slate-500 hover:text-slate-700 border-b-2 border-transparent hover:border-slate-300 outline-none transition-all flex items-center gap-2">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path></svg>
+        Requests Queue
+      </button>
+      <button id="tabHistory" class="py-3 px-6 font-bold text-sm text-slate-500 hover:text-slate-700 border-b-2 border-transparent hover:border-slate-300 outline-none transition-all flex items-center gap-2">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+        Audit History
+      </button>
+    </div>
+
+    <!-- VIEW: Services List -->
+    <div id="viewServices" class="block animate-fade-in">
+      <!-- Search & Filters Panel -->
+      <div class="premium-glass bg-white border border-slate-100 rounded-2xl p-5 mb-8 custom-shadow flex flex-wrap gap-4 items-end">
+        
+        <!-- Search Box -->
+        <div class="flex-1 min-w-[260px] relative">
+          <label for="searchInput" class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Search Service Name</label>
+          <div class="relative">
+            <span class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-slate-400">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+              </svg>
+            </span>
+            <input type="text" id="searchInput" placeholder="Search for tests, consultation types..." 
+                   class="w-full bg-slate-50/50 border border-slate-200 rounded-xl pl-10 pr-4 py-3 text-sm text-slate-800 placeholder-slate-400 focus:bg-white focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition-all" />
+          </div>
+        </div>
+        
+        <!-- Category Filter -->
+        <div class="w-full sm:w-auto min-w-[160px]">
+          <label for="categoryFilter" class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Category</label>
+          <div class="relative">
+            <select id="categoryFilter" class="w-full appearance-none bg-slate-50/50 border border-slate-200 rounded-xl px-4 py-3 pr-10 text-sm font-medium text-slate-700 focus:bg-white focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition-all">
+              <option value="all">All Categories</option>
+              <option value="Health Packages">Health Packages</option>
+              <option value="Blood Test">Blood Test</option>
+              <option value="Follow-up">Follow-up</option>
+              <option value="General Consultation">General Consultation</option>
+              <option value="Laboratory">Laboratory</option>
+              <option value="Routine Checkup">Routine Checkup</option>
+              <option value="Urine Test">Urine Test</option>
+              <option value="Vaccination">Vaccination</option>
+            </select>
+            <span class="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-slate-400">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+            </span>
+          </div>
+        </div>
+
+        <!-- Status Filter -->
+        <div class="w-full sm:w-auto min-w-[160px]">
+          <label for="statusFilter" class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Status</label>
+          <div class="relative">
+            <select id="statusFilter" class="w-full appearance-none bg-slate-50/50 border border-slate-200 rounded-xl px-4 py-3 pr-10 text-sm font-medium text-slate-700 focus:bg-white focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition-all">
+              <option value="active">Active Only</option>
+              <option value="archived">Archived Only</option>
+              <option value="all">All Statuses</option>
+            </select>
+            <span class="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-slate-400">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+            </span>
+          </div>
+        </div>
+
+        <!-- Add Services Button -->
+        <div class="w-full sm:w-auto">
+          <button id="openAddModalBtn" class="w-full sm:w-auto flex items-center justify-center gap-2 bg-blue-600 text-white font-bold px-4 py-2.5 text-sm rounded-xl shadow-lg shadow-blue-100 hover:bg-blue-700 hover:shadow-blue-200 active:scale-95 transition-all duration-150">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+            </svg>
+            <span>Add Services</span>
+          </button>
+        </div>
+
+      </div>
+
+      <!-- Central Service Groupings Container -->
+      <div id="servicesContainer" class="space-y-8 mb-8 animate-fade-in">
+        <div class="flex flex-col items-center justify-center py-16 text-slate-400 bg-white border border-slate-100 rounded-2xl custom-shadow gap-3">
+          <div class="animate-spin rounded-full h-8 w-8 border-2 border-slate-300 border-t-blue-600"></div>
+          <span>Loading clinic services...</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- VIEW: Requests Queue -->
+    <div id="viewRequests" class="hidden animate-fade-in">
+      <!-- ADMIN APPROVAL PANEL -->
+      <div id="adminPanel" class="bg-white rounded-2xl border border-slate-100 p-6 custom-shadow">
+      <h2 class="text-xl font-bold text-slate-900 mb-6 flex items-center gap-3">
+        <span class="relative flex h-3 w-3">
+          <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+          <span class="relative inline-flex rounded-full h-3 w-3 bg-amber-500"></span>
+        </span>
+        Pending Staff Review Queue
+      </h2>
+      
+      <div class="overflow-x-auto">
+        <table class="w-full text-left text-sm border-collapse">
+          <thead>
+            <tr class="bg-slate-50/80 text-slate-400 font-bold text-xs uppercase tracking-wider border-b border-slate-100">
+              <th class="px-4 py-4">Workflow</th>
+              <th class="px-4 py-4">Service Context</th>
+              <th class="px-4 py-4">Changes</th>
+              <th class="px-4 py-4">Submitted By</th>
+              <th class="px-4 py-4">Date</th>
+              <th class="px-4 py-4 text-center">Decision</th>
+            </tr>
+          </thead>
+          <tbody id="requestTableBody" class="divide-y divide-slate-50">
+            <tr>
+              <td colspan="6" class="text-center py-8 text-slate-400">No submissions currently awaiting audit.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    </div>
+
+    <!-- VIEW: History -->
+    <div id="viewHistory" class="hidden animate-fade-in">
+      <div class="bg-white rounded-2xl border border-slate-100 p-6 custom-shadow">
+        <div class="flex flex-col sm:flex-row justify-between sm:items-center gap-4 mb-6">
+          <h2 class="text-xl font-bold text-slate-900 flex items-center gap-3">
+            <svg class="w-6 h-6 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+            Request Audit History
+          </h2>
+          <div class="relative w-full sm:w-64">
+            <span class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-slate-400">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+            </span>
+            <input type="text" id="historySearchInput" placeholder="Search submitted by..." 
+                   class="w-full bg-slate-50/50 border border-slate-200 rounded-lg pl-9 pr-4 py-2 text-xs text-slate-800 placeholder-slate-400 focus:bg-white focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition-all" />
+          </div>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-sm border-collapse">
+            <thead>
+              <tr class="bg-slate-50/80 text-slate-400 font-bold text-xs uppercase tracking-wider border-b border-slate-100">
+                <th class="px-4 py-4">Workflow</th>
+                <th class="px-4 py-4">Service Context</th>
+                <th class="px-4 py-4">Changes</th>
+                <th class="px-4 py-4">Submitted By</th>
+                <th class="px-4 py-4">Status</th>
+                <th class="px-4 py-4">Date</th>
+              </tr>
+            </thead>
+            <tbody id="historyTableBody" class="divide-y divide-slate-50">
+              <tr>
+                <td colspan="6" class="text-center py-8 text-slate-400">No historical audit records found.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ================= CRUD DIALOG MODAL ================= -->
+  <div id="serviceModal" class="modal opacity-0 pointer-events-none fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50 transition-all duration-300">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 p-6 border border-slate-100 transform scale-95 transition-all duration-300">
+      
+      <div class="flex justify-between items-center mb-6">
+        <h3 id="modalTitle" class="text-xl font-bold text-slate-900 flex items-center gap-2">
+          Create Procedure
+        </h3>
+        <button id="closeModalBtn" class="p-2 text-slate-400 hover:bg-slate-50 rounded-xl transition-colors">&times;</button>
+      </div>
+
+      <form id="serviceForm" class="space-y-5">
+        <input type="hidden" id="serviceId" />
+        
+        <!-- Service Name -->
+        <div>
+          <label for="serviceName" class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Procedure Name</label>
+          <input type="text" id="serviceName" required 
+                 class="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-800 placeholder-slate-400 focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition-all" 
+                 placeholder="e.g., Diagnostic Consultation" />
+        </div>
+
+        <!-- Category Dropdown -->
+        <div>
+          <label for="serviceCategory" class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Classification Category</label>
+          <div class="relative">
+            <select id="serviceCategory" required 
+                    class="w-full appearance-none border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-800 focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition-all">
+              <option value="Health Packages">Health Packages</option>
+              <option value="Blood Test">Blood Test</option>
+              <option value="Follow-up">Follow-up</option>
+              <option value="General Consultation">General Consultation</option>
+              <option value="Laboratory">Laboratory</option>
+              <option value="Routine Checkup">Routine Checkup</option>
+              <option value="Urine Test">Urine Test</option>
+              <option value="Vaccination">Vaccination</option>
+            </select>
+            <span class="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-slate-400">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+            </span>
+          </div>
+        </div>
+
+        <!-- Price Input -->
+        <div>
+          <label for="servicePrice" class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Standard Price Rate (₱)</label>
+          <div class="relative">
+            <span class="absolute inset-y-0 left-0 flex items-center pl-4 pointer-events-none font-medium text-slate-400">₱</span>
+            <input type="number" id="servicePrice" required min="1" step="0.01" 
+                   class="w-full border border-slate-200 rounded-xl pl-8 pr-4 py-3 text-sm text-slate-800 placeholder-slate-400 focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition-all" 
+                   placeholder="0.00" />
+          </div>
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="flex justify-end gap-3 pt-4">
+          <button type="button" id="cancelModalBtn" class="px-5 py-3 text-sm font-bold text-slate-500 hover:bg-slate-50 rounded-xl transition-all">Cancel</button>
+          <button type="submit" id="submitModalBtn" class="px-5 py-3 text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl shadow-lg shadow-blue-100 hover:shadow-blue-200 transition-all">Submit Request</button>
+        </div>
+      </form>
+
+    </div>
+  </div>
+
+  <!-- Archive Reason Modal -->
+  <div id="archiveModal" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[1000] flex items-center justify-center opacity-0 pointer-events-none transition-all duration-300 ease-out">
+    <div class="bg-white w-full max-w-md p-6 rounded-2xl border border-slate-100 custom-shadow transform scale-95 transition-all duration-300 ease-out">
+      <h3 class="text-base font-bold text-slate-900 mb-4">Reason for Archival</h3>
+      <form id="archiveForm">
+        <input type="hidden" id="archiveServiceId" />
+        
+        <div class="mb-4">
+          <label for="archiveReason" class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Provide Reason</label>
+          <textarea id="archiveReason" required rows="3"
+                    class="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-800 placeholder-slate-400 focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition-all" 
+                    placeholder="e.g., Service no longer offered at the clinic."></textarea>
+        </div>
+
+        <div class="flex justify-end gap-3 pt-2">
+          <button type="button" id="cancelArchiveModalBtn" class="px-4 py-2 text-sm font-bold text-slate-500 hover:bg-slate-50 rounded-xl transition-all">Cancel</button>
+          <button type="submit" id="submitArchiveModalBtn" class="px-4 py-2 text-sm font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-xl shadow-lg shadow-rose-100 hover:shadow-rose-200 transition-all">Submit</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Custom script -->
+  <script type="module" src="../../JS/service_management/service_management.js"></script>
+</body>
+</html>

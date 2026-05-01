@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 import Product from "../models/product.js";
+import Service from "../models/Service.js";
 import InventoryBatch from "../models/InventoryBatch.js";
 import STAFF_ActivityLog from "../models/STAFF_activityLog.js";
 import STAFF_BillingTransaction from "../models/STAFF_billingTransaction.js";
@@ -273,11 +274,13 @@ const STAFF_buildItemsSnapshot = async (itemsPayload, session = null) => {
   }, new Map());
 
   const productIds = [...groupedItems.keys()];
+  
+  // Try finding in Products first
   const productsQuery = Product.find({
     _id: { $in: productIds },
     isArchived: { $ne: true },
   })
-    .select("_id name quantity unitPrice expiryDate")
+    .select("_id name quantity unitPrice expiryDate genericName brandName")
     .lean();
 
   if (session) {
@@ -285,47 +288,88 @@ const STAFF_buildItemsSnapshot = async (itemsPayload, session = null) => {
   }
 
   const products = await productsQuery;
+  const productsById = new Map(products.map((product) => [String(product._id), product]));
 
-  if (products.length !== productIds.length) {
-    throw new STAFF_BillingError("One or more products were not found", 404);
+  // Find remaining in Services
+  const foundProductIds = new Set(products.map(p => String(p._id)));
+  const remainingIds = productIds.filter(id => !foundProductIds.has(id));
+  
+  let services = [];
+  if (remainingIds.length > 0) {
+    const servicesQuery = Service.find({
+      _id: { $in: remainingIds },
+      status: { $ne: "archived" },
+    }).lean();
+    
+    if (session) {
+      servicesQuery.session(session);
+    }
+    services = await servicesQuery;
+  }
+  const servicesById = new Map(services.map((service) => [String(service._id), service]));
+
+  if (products.length + services.length !== productIds.length) {
+    throw new STAFF_BillingError("One or more items (products or services) were not found", 404);
   }
 
-  const productsById = new Map(products.map((product) => [String(product._id), product]));
-  const batchesByProductId = await STAFF_getLiveBatchStateByProductIds(productIds, session);
+  const batchesByProductId = await STAFF_getLiveBatchStateByProductIds(Array.from(foundProductIds), session);
 
   const items = [];
   let totalAmount = 0;
 
   for (const [productId, quantity] of groupedItems.entries()) {
     const product = productsById.get(productId);
-    const productBatches = batchesByProductId.get(productId) || [];
+    const service = servicesById.get(productId);
 
-    if (!product) {
-      throw new STAFF_BillingError("One or more products were not found", 404);
+    if (product) {
+      const productBatches = batchesByProductId.get(productId) || [];
+      const sellableQuantity = STAFF_getEligibleSellableQuantity({ product, batches: productBatches });
+
+      if (sellableQuantity < quantity) {
+        throw new STAFF_BillingError(`Insufficient stock for ${product.name}`, 400);
+      }
+
+      const unitPrice = Number(product.unitPrice ?? 0);
+      if (!Number.isFinite(unitPrice) || unitPrice <= 0) {
+        throw new STAFF_BillingError(`Invalid unit price configuration for ${product.name}. Price must be greater than zero.`, 400);
+      }
+
+      const lineTotal = STAFF_roundCurrency(unitPrice * quantity);
+
+      items.push({
+        productId: product._id,
+        name: product.name,
+        genericName: product.genericName || "",
+        brandName: product.brandName || "",
+        unitPrice,
+        quantity,
+        lineTotal,
+        type: "item",
+      });
+
+      totalAmount += lineTotal;
+    } else if (service) {
+      const unitPrice = Number(service.price ?? 0);
+      if (!Number.isFinite(unitPrice) || unitPrice <= 0) {
+        throw new STAFF_BillingError(`Invalid unit price configuration for ${service.name}. Price must be greater than zero.`, 400);
+      }
+      const lineTotal = STAFF_roundCurrency(unitPrice * quantity);
+
+      items.push({
+        productId: service._id,
+        name: service.name,
+        genericName: "", // Services don't have generics
+        brandName: "",
+        unitPrice,
+        quantity,
+        lineTotal,
+        type: "service",
+      });
+
+      totalAmount += lineTotal;
+    } else {
+      throw new STAFF_BillingError("One or more items were not found", 404);
     }
-
-    const sellableQuantity = STAFF_getEligibleSellableQuantity({ product, batches: productBatches });
-
-    if (sellableQuantity < quantity) {
-      throw new STAFF_BillingError(`Insufficient stock for ${product.name}`, 400);
-    }
-
-    const unitPrice = Number(product.unitPrice ?? 0);
-    if (!Number.isFinite(unitPrice) || unitPrice < 0) {
-      throw new STAFF_BillingError(`Invalid unit price configuration for ${product.name}`, 400);
-    }
-
-    const lineTotal = STAFF_roundCurrency(unitPrice * quantity);
-
-    items.push({
-      productId: product._id,
-      name: product.name,
-      unitPrice,
-      quantity,
-      lineTotal,
-    });
-
-    totalAmount += lineTotal;
   }
 
   return {
@@ -659,6 +703,10 @@ export const STAFF_completeBillingTransaction = async ({ transactionId, staffId,
     }
 
     for (const item of transaction.items) {
+      if (item.type === "service") {
+        continue;
+      }
+
       const productQuery = Product.findById(item.productId).select("_id name quantity isArchived expiryDate");
       if (session) {
         productQuery.session(session);
@@ -719,6 +767,7 @@ export const STAFF_completeBillingTransaction = async ({ transactionId, staffId,
         unitPrice: item.unitPrice,
         quantity: item.quantity,
         lineTotal: item.lineTotal,
+        type: item.type,
         batchAllocations: (item.batchAllocations || []).map((allocation) => ({
           batchId: allocation.batchId,
           batchNumber: allocation.batchNumber,
@@ -842,6 +891,9 @@ export const STAFF_voidBillingTransaction = async ({ transactionId, staffId, rea
 
     // Restore inventory quantities
     for (const item of transaction.items) {
+      if (item.type === "service") {
+        continue;
+      }
       const productQuery = Product.findById(item.productId);
       if (session) {
         productQuery.session(session);

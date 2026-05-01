@@ -1,7 +1,6 @@
 export const billingConfig = {
     vatRate: 12,
-    seniorDiscount: 20,
-    pwdDiscount: 20,
+    loyaltyDiscount: 20,
     markupRate: 0,
     minimumProfitMargin: 10,
     priceMode: 'cost_markup',

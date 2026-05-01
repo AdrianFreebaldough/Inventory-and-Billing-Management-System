@@ -42,10 +42,25 @@ const STAFF_billingItemSchema = new mongoose.Schema(
       required: true,
       trim: true,
     },
+    genericName: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    brandName: {
+      type: String,
+      trim: true,
+      default: "",
+    },
     unitPrice: {
       type: Number,
       required: true,
-      min: 0,
+      validate: {
+        validator: function (v) {
+          return v > 0;
+        },
+        message: "Price must be greater than zero.",
+      },
     },
     quantity: {
       type: Number,
@@ -55,11 +70,21 @@ const STAFF_billingItemSchema = new mongoose.Schema(
     lineTotal: {
       type: Number,
       required: true,
-      min: 0,
+      validate: {
+        validator: function (v) {
+          return v > 0;
+        },
+        message: "Line total must be greater than zero.",
+      },
     },
     batchAllocations: {
       type: [STAFF_batchAllocationSchema],
       default: [],
+    },
+    type: {
+      type: String,
+      enum: ["item", "service"],
+      default: "item",
     },
   },
   { _id: false }
@@ -85,7 +110,12 @@ const STAFF_parmsPendingBalanceSchema = new mongoose.Schema(
     amount: {
       type: Number,
       required: true,
-      min: 0,
+      validate: {
+        validator: function (v) {
+          return v > 0;
+        },
+        message: "Amount must be greater than zero.",
+      },
     },
   },
   { _id: false }
@@ -284,7 +314,12 @@ const STAFF_billingTransactionSchema = new mongoose.Schema(
     subtotal: {
       type: Number,
       required: true,
-      min: 0,
+      validate: {
+        validator: function (v) {
+          return v > 0;
+        },
+        message: "Subtotal must be greater than zero.",
+      },
     },
     discountRate: {
       type: Number,
@@ -319,7 +354,12 @@ const STAFF_billingTransactionSchema = new mongoose.Schema(
     totalAmount: {
       type: Number,
       required: true,
-      min: 0,
+      validate: {
+        validator: function (v) {
+          return v > 0;
+        },
+        message: "Total amount must be greater than zero.",
+      },
     },
     editedPatientId: {
       type: String,

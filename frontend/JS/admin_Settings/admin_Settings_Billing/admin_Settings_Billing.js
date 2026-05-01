@@ -1,4 +1,5 @@
 import { billingConfig } from './data/admin_Settings_Billing_data.js';
+import { apiFetch } from '../../utils/apiClient.js';
 
 const DOM = {};
 let isEditing = false;
@@ -7,8 +8,7 @@ let callbacks = {};
 
 const numericFields = [
     'vatRate',
-    'seniorDiscount',
-    'pwdDiscount',
+    'loyaltyDiscount',
     'markupRate',
     'minimumProfitMargin'
 ];
@@ -19,11 +19,11 @@ const controlFields = [
     'autoPriceRecalculation'
 ];
 
-export function initBilling(api) {
+export async function initBilling(api) {
     callbacks = api || {};
     cacheDOM();
     setupEvents();
-    loadData();
+    await loadData();
     
     // Notify parent of initial state
     callbacks.onEditStateChange?.(false);
@@ -47,11 +47,20 @@ function setupEvents() {
     DOM.priceModeManual?.addEventListener('change', applyPriceModeUI);
 }
 
-function loadData() {
+async function loadData() {
+    let backendConfig = {};
+    try {
+        const response = await apiFetch('/api/settings');
+        if (response && response.success && response.data) {
+            backendConfig = response.data.billing || {};
+        }
+    } catch (err) {
+        console.error('Failed to load settings from backend', err);
+    }
+
     const defaults = {
         vatRate: 12,
-        seniorDiscount: 20,
-        pwdDiscount: 20,
+        loyaltyDiscount: 20,
         markupRate: 0,
         minimumProfitMargin: 10,
         priceMode: 'cost_markup',
@@ -59,11 +68,11 @@ function loadData() {
     };
 
     const data = Object.fromEntries(
-        numericFields.map(key => [key, billingConfig?.[key] ?? defaults[key]])
+        numericFields.map(key => [key, backendConfig[key] ?? billingConfig?.[key] ?? defaults[key]])
     );
 
-    data.priceMode = billingConfig?.priceMode ?? defaults.priceMode;
-    data.autoPriceRecalculation = billingConfig?.autoPriceRecalculation ?? defaults.autoPriceRecalculation;
+    data.priceMode = backendConfig.priceMode ?? billingConfig?.priceMode ?? defaults.priceMode;
+    data.autoPriceRecalculation = backendConfig.autoPriceRecalculation ?? billingConfig?.autoPriceRecalculation ?? defaults.autoPriceRecalculation;
 
     originalData = { ...data };
 
@@ -137,21 +146,33 @@ function enableEditMode() {
     callbacks.onEditStateChange?.(true);
 }
 
-function saveChanges() {
+async function saveChanges() {
     const newData = {
         ...Object.fromEntries(DOM.inputs.map(input => [input.id, parseFloat(input.value) || 0])),
         priceMode: DOM.priceModeManual?.checked ? 'manual' : 'cost_markup',
         autoPriceRecalculation: Boolean(DOM.autoPriceRecalculation?.checked)
     };
 
-    // API call here
-
-    originalData = { ...newData };
+    try {
+        const result = await apiFetch('/api/settings', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ billing: newData })
+        });
+        if (result && result.success) {
+            originalData = { ...newData };
+            callbacks.showToast?.('Saved Changes Successfully', 'success');
+        } else {
+            callbacks.showToast?.(result.message || 'Failed to save changes', 'error');
+        }
+    } catch (err) {
+        console.error('Error updating billing controls', err);
+        callbacks.showToast?.('Network or system error occurred', 'error');
+    }
 
     isEditing = false;
     toggleInputs(false);
     callbacks.onEditStateChange?.(false);
-    callbacks.showToast?.('Saved Changes Successfully');
 }
 
 export function cleanup() {

@@ -5,11 +5,11 @@ import { NotificationWidget } from "../components/notificationWidget.js";
    API endpoints
    ════════════════════════════════════════════════════════════════ */
 const STAFF_DASHBOARD_API = {
-  summary:            "/api/staff/dashboard/summary",
+  summary: "/api/staff/dashboard/summary",
   recentTransactions: "/api/staff/dashboard/recent-transactions",
-  inventoryAlerts:    "/api/staff/dashboard/inventory-alerts",
-  topItemsToday:      "/api/staff/dashboard/top-items-today",
-  recentItemUsage:    "/api/staff/dashboard/recent-item-usage",
+  inventoryAlerts: "/api/staff/dashboard/inventory-alerts",
+  topItemsToday: "/api/staff/dashboard/top-items-today",
+  recentItemUsage: "/api/staff/dashboard/recent-item-usage",
 };
 
 const REFRESH_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
@@ -28,11 +28,11 @@ async function STAFF_fetchDashboardData() {
   ]);
 
   return {
-    summary:      summary.status      === "fulfilled" ? summary.value      : null,
+    summary: summary.status === "fulfilled" ? summary.value : null,
     transactions: transactions.status === "fulfilled" ? transactions.value : null,
-    alerts:       alerts.status       === "fulfilled" ? alerts.value       : null,
-    topItems:     topItems.status     === "fulfilled" ? topItems.value     : null,
-    usage:        usage.status        === "fulfilled" ? usage.value        : null,
+    alerts: alerts.status === "fulfilled" ? alerts.value : null,
+    topItems: topItems.status === "fulfilled" ? topItems.value : null,
+    usage: usage.status === "fulfilled" ? usage.value : null,
   };
 }
 
@@ -42,53 +42,53 @@ async function STAFF_fetchDashboardData() {
 function mapSummary(raw) {
   if (!raw) return { revenueToday: 0, transactionsToday: 0, itemsIssuedToday: 0, pendingRestock: 0 };
   return {
-    revenueToday:      raw.todaysRevenue          ?? 0,
-    transactionsToday: raw.todaysTransactions      ?? 0,
-    itemsIssuedToday:  raw.itemsIssuedToday        ?? 0,
-    pendingRestock:    raw.pendingRestockRequests   ?? 0,
+    revenueToday: raw.todaysRevenue ?? 0,
+    transactionsToday: raw.todaysTransactions ?? 0,
+    itemsIssuedToday: raw.itemsIssuedToday ?? 0,
+    pendingRestock: raw.pendingRestockRequests ?? 0,
   };
 }
 
 function mapTransactions(raw) {
   if (!raw?.data) return [];
   return raw.data.map(tx => ({
-    id:      tx.transactionId ? String(tx.transactionId).slice(-6).toUpperCase() : "—",
+    id: tx.transactionId ? String(tx.transactionId).slice(-6).toUpperCase() : "—",
     patient: tx.patientId || "Walk-in",
-    time:    tx.dateTime
-               ? new Date(tx.dateTime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-               : "",
-    amount:  tx.totalAmount ?? 0,
-    items:   tx.itemCount   ?? 0,
-    status:  tx.status      ?? "",
+    time: tx.dateTime
+      ? new Date(tx.dateTime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+      : "",
+    amount: tx.totalAmount ?? 0,
+    items: tx.itemCount ?? 0,
+    status: tx.status ?? "",
   }));
 }
 
 function mapAlerts(raw) {
   if (!raw?.data) return [];
   return raw.data.map(item => ({
-    name:      item.itemName          ?? "",
-    status:    item.stockStatus       ?? "low",
+    name: item.genericName || item.itemName || "",
+    status: item.stockStatus ?? "low",
     remaining: item.stockStatus === "out"
-                 ? "Out of stock"
-                 : `${item.remainingQuantity ?? 0} left`,
+      ? "Out of stock"
+      : `${item.remainingQuantity ?? 0} left`,
   }));
 }
 
 function mapTopItems(raw) {
   if (!raw?.data) return [];
   return raw.data.map(item => ({
-    name:  item.itemName          ?? "",
-    sold:  item.quantityDispensed ?? 0,
-    price: item.totalSalesValue   ?? 0,
+    name: item.genericName || item.itemName || "",
+    sold: item.quantityDispensed ?? 0,
+    price: item.totalSalesValue ?? 0,
   }));
 }
 
 function mapUsage(raw) {
   if (!raw?.data) return [];
   return raw.data.map(item => ({
-    name:     item.itemName ?? "",
+    name: item.genericName || item.itemName || "",
     quantity: item.quantity ?? 0,
-    unit:     item.unitType ?? "pcs",
+    unit: item.unitType ?? "pcs",
   }));
 }
 
@@ -197,17 +197,17 @@ document.addEventListener("DOMContentLoaded", () => {
   const BILLING_MODE_RETURN_KEY = "lastStaffRoute";
   const STAFF_CURRENT_ROUTE_KEY = "staffCurrentRoute";
 
-  const mainContent      = document.getElementById("mainContent");
-  const navDashboard     = document.getElementById("navDashboard");
-  const navBilling       = document.getElementById("navBilling");
-  const navInventory     = document.getElementById("navInventory");
-  const navStockRequest  = document.getElementById("navStockRequest");
-  const navExpenses      = document.getElementById("navExpenses");
-  const navActivityLog   = document.getElementById("navActivityLog");
-  const staffNameEl      = document.getElementById("staffName");
-  const staffUsernameEl  = document.getElementById("staffUsername");
-  const staffAvatarEl    = document.getElementById("staffAvatar");
-  const profileBtn       = document.getElementById("profileBtn");
+  const mainContent = document.getElementById("mainContent");
+  const navDashboard = document.getElementById("navDashboard");
+  const navBilling = document.getElementById("navBilling");
+  const navInventory = document.getElementById("navInventory");
+  const navStockRequest = document.getElementById("navStockRequest");
+  const navExpenses = document.getElementById("navExpenses");
+  const navActivityLog = document.getElementById("navActivityLog");
+  const staffNameEl = document.getElementById("staffName");
+  const staffUsernameEl = document.getElementById("staffUsername");
+  const staffAvatarEl = document.getElementById("staffAvatar");
+  const profileBtn = document.getElementById("profileBtn");
   const menuPosHeaderBtn = document.getElementById("menuPosHeaderBtn");
 
   /* ── Staff header display ── */
@@ -394,15 +394,15 @@ document.addEventListener("DOMContentLoaded", () => {
 
       /* ── Summary cards ── */
       const stats = mapSummary(raw.summary);
-      const revenueEl       = document.getElementById("revenueToday");
-      const transactionsEl  = document.getElementById("transactionsToday");
-      const itemsIssuedEl   = document.getElementById("itemsIssuedToday");
-      const pendingEl       = document.getElementById("pendingRestock");
+      const revenueEl = document.getElementById("revenueToday");
+      const transactionsEl = document.getElementById("transactionsToday");
+      const itemsIssuedEl = document.getElementById("itemsIssuedToday");
+      const pendingEl = document.getElementById("pendingRestock");
 
-      if (revenueEl)      { revenueEl.textContent      = formatCurrency(stats.revenueToday);      revenueEl.className      = "mt-2 text-4xl font-bold tracking-tight text-gray-900"; }
-      if (transactionsEl) { transactionsEl.textContent = stats.transactionsToday;                  transactionsEl.className = "mt-2 text-4xl font-bold tracking-tight text-gray-900"; }
-      if (itemsIssuedEl)  { itemsIssuedEl.textContent  = stats.itemsIssuedToday;                   itemsIssuedEl.className  = "mt-2 text-4xl font-bold tracking-tight text-gray-900"; }
-      if (pendingEl)      { pendingEl.textContent      = stats.pendingRestock;                     pendingEl.className      = "mt-2 text-4xl font-bold tracking-tight text-gray-900"; }
+      if (revenueEl) { revenueEl.textContent = formatCurrency(stats.revenueToday); revenueEl.className = "mt-2 text-4xl font-bold tracking-tight text-gray-900"; }
+      if (transactionsEl) { transactionsEl.textContent = stats.transactionsToday; transactionsEl.className = "mt-2 text-4xl font-bold tracking-tight text-gray-900"; }
+      if (itemsIssuedEl) { itemsIssuedEl.textContent = stats.itemsIssuedToday; itemsIssuedEl.className = "mt-2 text-4xl font-bold tracking-tight text-gray-900"; }
+      if (pendingEl) { pendingEl.textContent = stats.pendingRestock; pendingEl.className = "mt-2 text-4xl font-bold tracking-tight text-gray-900"; }
 
       /* ── Recent Transactions ── */
       const transactions = mapTransactions(raw.transactions);
@@ -479,11 +479,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
     alertsEl.innerHTML = filtered.length
       ? filtered.map(item => {
-          const isOut       = item.status === "out";
-          const statusText  = isOut ? "Out of Stock" : "Low Stock";
-          const statusClass = isOut ? "text-red-600"  : "text-orange-500";
+        const isOut = item.status === "out";
+        const statusText = isOut ? "Out of Stock" : "Low Stock";
+        const statusClass = isOut ? "text-red-600" : "text-orange-500";
 
-          return `
+        return `
             <div class="flex items-center justify-between gap-4 py-3">
               <div>
                 <p class="text-sm font-medium text-gray-900">${item.name}</p>
@@ -498,7 +498,7 @@ document.addEventListener("DOMContentLoaded", () => {
               </button>
             </div>
           `;
-        }).join("")
+      }).join("")
       : `<p class="py-3 text-sm text-gray-500">No items for this filter.</p>`;
 
     /* Wire restock buttons → navigate to inventory */
@@ -611,6 +611,29 @@ document.addEventListener("DOMContentLoaded", () => {
     `;
   }
 
+  async function loadServiceManagement() {
+    stopAutoRefresh();
+    setCurrentStaffRoute("service-management");
+    const navServiceManagement = document.getElementById("navServiceManagement");
+    if (navServiceManagement) setActive(navServiceManagement);
+
+    try {
+      const res = await fetch("../../HTML/service_management/service_management.html");
+      if (!res.ok) throw new Error("ServiceManagement HTML not found");
+
+      mainContent.innerHTML = await res.text();
+      await new Promise(r => setTimeout(r, 150));
+
+      const module = await import("../service_management/service_management.js");
+      if (typeof module.initServiceManagement !== "function") {
+        throw new Error("initServiceManagement() missing");
+      }
+      module.initServiceManagement();
+    } catch (error) {
+      mainContent.innerHTML = `<div class="text-red-500 p-4 font-medium">Failed to load Service Management module: ${error.message}</div>`;
+    }
+  }
+
   function loadExpenses() {
     stopAutoRefresh();
     setCurrentStaffRoute("expenses");
@@ -665,6 +688,12 @@ document.addEventListener("DOMContentLoaded", () => {
     loadInventory();
   });
 
+  const navServiceManagement = document.getElementById("navServiceManagement");
+  navServiceManagement?.addEventListener("click", e => {
+    e.preventDefault();
+    loadServiceManagement();
+  });
+
   navStockRequest?.addEventListener("click", e => {
     e.preventDefault();
     loadRequestStock();
@@ -710,11 +739,13 @@ document.addEventListener("DOMContentLoaded", () => {
   /* ─────────────────────────────────────────────
      Initial route resolution
      ───────────────────────────────────────────── */
-  const hashRoute  = window.location.hash.replace("#", "").toLowerCase();
+  const hashRoute = window.location.hash.replace("#", "").toLowerCase();
   const storedRoute = (sessionStorage.getItem(STAFF_CURRENT_ROUTE_KEY) || "").toLowerCase();
-  const initialRoute = ["dashboard", "inventory", "profile", "stock-request", "expenses", "activity-log"].includes(hashRoute)
+  const validRoutes = ["dashboard", "inventory", "profile", "stock-request", "expenses", "activity-log", "service-management"];
+
+  const initialRoute = validRoutes.includes(hashRoute)
     ? hashRoute
-    : ["dashboard", "inventory", "profile", "stock-request", "expenses", "activity-log"].includes(storedRoute)
+    : validRoutes.includes(storedRoute)
       ? storedRoute
       : "dashboard";
 
@@ -722,6 +753,8 @@ document.addEventListener("DOMContentLoaded", () => {
     loadInventory();
   } else if (initialRoute === "stock-request") {
     loadRequestStock();
+  } else if (initialRoute === "service-management") {
+    loadServiceManagement();
   } else if (initialRoute === "expenses") {
     loadExpenses();
   } else if (initialRoute === "activity-log") {

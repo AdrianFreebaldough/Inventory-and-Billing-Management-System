@@ -15,18 +15,18 @@ import {
 
 /* ================= API ENDPOINTS ================= */
 const API = {
-  activeInventory:   "/api/owner/inventory",
-  itemDetails:       (id) => `/api/owner/inventory/items/${id}`,
+  activeInventory: "/api/owner/inventory",
+  itemDetails: (id) => `/api/owner/inventory/items/${id}`,
   archivedInventory: "/api/owner/inventory/archived",
-  addProduct:        "/api/owner/inventory",
-  pendingRequests:   "/api/owner/inventory/requests/pending",
-  allRequests:       "/api/owner/inventory/requests/all",
-  approveRequest:    (id) => `/api/owner/inventory/requests/${id}/approve`,
-  rejectRequest:     (id) => `/api/owner/inventory/requests/${id}/reject`,
+  addProduct: "/api/owner/inventory",
+  pendingRequests: "/api/owner/inventory/requests/pending",
+  allRequests: "/api/owner/inventory/requests/all",
+  approveRequest: (id) => `/api/owner/inventory/requests/${id}/approve`,
+  rejectRequest: (id) => `/api/owner/inventory/requests/${id}/reject`,
   updateProductPrice: (id) => `/api/owner/inventory/${id}/price`,
-  archiveProduct:    (id) => `/api/owner/inventory/${id}/archive`,
-  restoreProduct:    (id) => `/api/owner/inventory/${id}/restore`,
-  adjustStock:       (id) => `/api/owner/inventory/${id}/adjust-stock`,
+  archiveProduct: (id) => `/api/owner/inventory/${id}/archive`,
+  restoreProduct: (id) => `/api/owner/inventory/${id}/restore`,
+  adjustStock: (id) => `/api/owner/inventory/${id}/adjust-stock`,
   updateDiscrepancy: (id) => `/api/owner/inventory/${id}/discrepancy`,
   priceChangeRequests: "/api/owner/inventory/price-change-requests",
   priceChangeRequestForProduct: (id) => `/api/owner/inventory/price-change-requests/product/${id}`,
@@ -60,8 +60,8 @@ let requestsAutoRefreshTimer = null;
 /* ================= STATUS MAPS  (DB → UI) ================= */
 const DB_STATUS_TO_UI = {
   available: "in-stock",
-  low:       "low-stock",
-  out:       "out-of-stock",
+  low: "low-stock",
+  out: "out-of-stock",
 };
 
 const API_STATUS_TO_UI = {
@@ -71,7 +71,7 @@ const API_STATUS_TO_UI = {
 };
 
 const DB_REQUEST_STATUS_TO_UI = {
-  pending:  "pending",
+  pending: "pending",
   approved: "approved",
   rejected: "denied",
 };
@@ -84,26 +84,26 @@ const DB_ADJUSTMENT_STATUS_TO_UI = {
 
 /* ================= FILTER & COLOR CONFIGS ================= */
 const FILTER_CONFIG = {
-  all:           { activeBg:'bg-blue-600',   activeText:'text-white', activeBorder:'border-blue-600',   hoverBg:'hover:bg-blue-50',   hoverBorder:'hover:border-blue-500',   hoverText:'hover:text-blue-700' },
-  'in-stock':    { activeBg:'bg-green-600',  activeText:'text-white', activeBorder:'border-green-600',  hoverBg:'hover:bg-green-50',  hoverBorder:'hover:border-green-500',  hoverText:'hover:text-green-700' },
-  safe:          { activeBg:'bg-emerald-600',activeText:'text-white', activeBorder:'border-emerald-600',hoverBg:'hover:bg-emerald-50',hoverBorder:'hover:border-emerald-500',hoverText:'hover:text-emerald-700' },
-  'near-expiry': { activeBg:'bg-amber-500',  activeText:'text-white', activeBorder:'border-amber-500',  hoverBg:'hover:bg-amber-50',  hoverBorder:'hover:border-amber-500',  hoverText:'hover:text-amber-700' },
-  'at-risk':     { activeBg:'bg-red-600',    activeText:'text-white', activeBorder:'border-red-600',    hoverBg:'hover:bg-red-50',    hoverBorder:'hover:border-red-500',    hoverText:'hover:text-red-700' },
-  pending:       { activeBg:'bg-yellow-500', activeText:'text-white', activeBorder:'border-yellow-500', hoverBg:'hover:bg-yellow-50', hoverBorder:'hover:border-yellow-500', hoverText:'hover:text-yellow-700' },
-  'low-stock':   { activeBg:'bg-orange-500', activeText:'text-white', activeBorder:'border-orange-500', hoverBg:'hover:bg-orange-50', hoverBorder:'hover:border-orange-500', hoverText:'hover:text-orange-700' },
-  'out-of-stock':{ activeBg:'bg-red-700',    activeText:'text-white', activeBorder:'border-red-700',    hoverBg:'hover:bg-red-50',    hoverBorder:'hover:border-red-600',    hoverText:'hover:text-red-700' },
-  approved:      { activeBg:'bg-green-600',  activeText:'text-white', activeBorder:'border-green-600',  hoverBg:'hover:bg-green-50',  hoverBorder:'hover:border-green-500',  hoverText:'hover:text-green-700' },
-  denied:        { activeBg:'bg-red-600',    activeText:'text-white', activeBorder:'border-red-600',    hoverBg:'hover:bg-red-50',    hoverBorder:'hover:border-red-500',    hoverText:'hover:text-red-700' },
+  all: { activeBg: 'bg-blue-600', activeText: 'text-white', activeBorder: 'border-blue-600', hoverBg: 'hover:bg-blue-50', hoverBorder: 'hover:border-blue-500', hoverText: 'hover:text-blue-700' },
+  'in-stock': { activeBg: 'bg-green-600', activeText: 'text-white', activeBorder: 'border-green-600', hoverBg: 'hover:bg-green-50', hoverBorder: 'hover:border-green-500', hoverText: 'hover:text-green-700' },
+  safe: { activeBg: 'bg-emerald-600', activeText: 'text-white', activeBorder: 'border-emerald-600', hoverBg: 'hover:bg-emerald-50', hoverBorder: 'hover:border-emerald-500', hoverText: 'hover:text-emerald-700' },
+  'near-expiry': { activeBg: 'bg-amber-500', activeText: 'text-white', activeBorder: 'border-amber-500', hoverBg: 'hover:bg-amber-50', hoverBorder: 'hover:border-amber-500', hoverText: 'hover:text-amber-700' },
+  'at-risk': { activeBg: 'bg-red-600', activeText: 'text-white', activeBorder: 'border-red-600', hoverBg: 'hover:bg-red-50', hoverBorder: 'hover:border-red-500', hoverText: 'hover:text-red-700' },
+  pending: { activeBg: 'bg-yellow-500', activeText: 'text-white', activeBorder: 'border-yellow-500', hoverBg: 'hover:bg-yellow-50', hoverBorder: 'hover:border-yellow-500', hoverText: 'hover:text-yellow-700' },
+  'low-stock': { activeBg: 'bg-orange-500', activeText: 'text-white', activeBorder: 'border-orange-500', hoverBg: 'hover:bg-orange-50', hoverBorder: 'hover:border-orange-500', hoverText: 'hover:text-orange-700' },
+  'out-of-stock': { activeBg: 'bg-red-700', activeText: 'text-white', activeBorder: 'border-red-700', hoverBg: 'hover:bg-red-50', hoverBorder: 'hover:border-red-600', hoverText: 'hover:text-red-700' },
+  approved: { activeBg: 'bg-green-600', activeText: 'text-white', activeBorder: 'border-green-600', hoverBg: 'hover:bg-green-50', hoverBorder: 'hover:border-green-500', hoverText: 'hover:text-green-700' },
+  denied: { activeBg: 'bg-red-600', activeText: 'text-white', activeBorder: 'border-red-600', hoverBg: 'hover:bg-red-50', hoverBorder: 'hover:border-red-500', hoverText: 'hover:text-red-700' },
 };
 
 const STATUS_COLORS = {
-  'in-stock':     { bg:'bg-green-100',  text:'text-green-800',  border:'border-green-500',  quantity:'text-green-700' },
-  pending:        { bg:'bg-yellow-100', text:'text-yellow-800', border:'border-yellow-500', quantity:'text-yellow-700' },
-  'low-stock':    { bg:'bg-orange-100', text:'text-orange-800', border:'border-orange-500', quantity:'text-orange-700' },
-  'out-of-stock': { bg:'bg-red-100',    text:'text-red-800',    border:'border-red-500',    quantity:'text-red-700' },
-  archived:       { bg:'bg-gray-400',   text:'text-white',      border:'border-gray-500',   quantity:'text-gray-700' },
-  approved:       { bg:'bg-blue-100',   text:'text-blue-800',   border:'border-blue-500',   quantity:'text-blue-700' },
-  denied:         { bg:'bg-red-100',    text:'text-red-800',    border:'border-red-500',    quantity:'text-red-700' },
+  'in-stock': { bg: 'bg-green-100', text: 'text-green-800', border: 'border-green-500', quantity: 'text-green-700' },
+  pending: { bg: 'bg-yellow-100', text: 'text-yellow-800', border: 'border-yellow-500', quantity: 'text-yellow-700' },
+  'low-stock': { bg: 'bg-orange-100', text: 'text-orange-800', border: 'border-orange-500', quantity: 'text-orange-700' },
+  'out-of-stock': { bg: 'bg-red-100', text: 'text-red-800', border: 'border-red-500', quantity: 'text-red-700' },
+  archived: { bg: 'bg-gray-400', text: 'text-white', border: 'border-gray-500', quantity: 'text-gray-700' },
+  approved: { bg: 'bg-blue-100', text: 'text-blue-800', border: 'border-blue-500', quantity: 'text-blue-700' },
+  denied: { bg: 'bg-red-100', text: 'text-red-800', border: 'border-red-500', quantity: 'text-red-700' },
 };
 
 const STATUS_DISPLAY = {
@@ -131,23 +131,23 @@ const EXPIRY_WARNING_DAYS = 7;
 function mapBackendItemToUI(p) {
   const batches = Array.isArray(p.batches)
     ? p.batches.map((batch) => ({
-        id: batch._id,
-        batchNumber: batch.batchNumber || "—",
-        quantity: Number(batch.quantity ?? 0),
-        currentQuantity: Number(batch.currentQuantity ?? batch.quantity ?? 0),
-        originalQuantity: Number(batch.originalQuantity ?? batch.quantity ?? 0),
-        supplier: batch.supplier || "—",
-        createdAt: batch.createdAt || null,
-        expiryDateISO: batch.expiryDate ? new Date(batch.expiryDate).toISOString().split("T")[0] : "",
-        expiryDate: batch.expiryDate ? formatDateDisplay(batch.expiryDate, "N/A") : "N/A",
-        expiryRisk: mapExpiryRiskToUi(batch.expiryRisk || null),
-        status: batch.status || null,
-        statusKey: batch.statusKey || "active",
-        canDispose: (Number(batch.currentQuantity ?? batch.quantity ?? 0) > 0) && (batch.statusKey !== "disposed") && (!batch.isPendingDisposal),
-        isExpired: !!batch.isExpired,
-        isImmediateReview: !!batch.isImmediateReview,
-        isPendingDisposal: !!batch.isPendingDisposal,
-      }))
+      id: batch._id,
+      batchNumber: batch.batchNumber || "—",
+      quantity: Number(batch.quantity ?? 0),
+      currentQuantity: Number(batch.currentQuantity ?? batch.quantity ?? 0),
+      originalQuantity: Number(batch.originalQuantity ?? batch.quantity ?? 0),
+      supplier: batch.supplier || "—",
+      createdAt: batch.createdAt || null,
+      expiryDateISO: batch.expiryDate ? new Date(batch.expiryDate).toISOString().split("T")[0] : "",
+      expiryDate: batch.expiryDate ? formatDateDisplay(batch.expiryDate, "N/A") : "N/A",
+      expiryRisk: mapExpiryRiskToUi(batch.expiryRisk || null),
+      status: batch.status || null,
+      statusKey: batch.statusKey || "active",
+      canDispose: (Number(batch.currentQuantity ?? batch.quantity ?? 0) > 0) && (batch.statusKey !== "disposed") && (!batch.isPendingDisposal),
+      isExpired: !!batch.isExpired,
+      isImmediateReview: !!batch.isImmediateReview,
+      isPendingDisposal: !!batch.isPendingDisposal,
+    }))
     : [];
 
   const nearestExpiry = p.nearestExpiryDate || p.expiryDate || null;
@@ -158,29 +158,29 @@ function mapBackendItemToUI(p) {
     : (API_STATUS_TO_UI[apiStockStatus] || DB_STATUS_TO_UI[p.status] || "in-stock");
 
   return {
-    id:              String(p._id || p.itemId || ""),
-    name:            p.name || p.itemName || "",
-    type:            p.brandName || p.brand || "",              // brand column
-    category:        toCanonicalInventoryCategory(p.category || ""),
+    id: String(p._id || p.itemId || ""),
+    name: p.name || p.itemName || "",
+    type: p.brandName || p.brand || "",              // brand column
+    category: toCanonicalInventoryCategory(p.category || ""),
     currentQuantity: p.currentQuantity ?? p.quantity ?? 0,
-    minStock:        p.minStock ?? 10,
-    unit:            p.unit || "pcs",
-    supplier:        p.nearestBatchSupplier || p.supplier || p.supplierName || "—",
-    status:          resolvedStatus,
-    expiryDate:      nearestExpiry ? formatDateDisplay(nearestExpiry, "—") : "—",
-    expiryDateISO:   nearestExpiry ? new Date(nearestExpiry).toISOString().split("T")[0] : "",
-    batchNumber:     p.nearestBatchNumber || p.batchNumber || "—",
+    minStock: p.minStock ?? 10,
+    unit: p.unit || "pcs",
+    supplier: p.nearestBatchSupplier || p.supplier || p.supplierName || "—",
+    status: resolvedStatus,
+    expiryDate: nearestExpiry ? formatDateDisplay(nearestExpiry, "—") : "—",
+    expiryDateISO: nearestExpiry ? new Date(nearestExpiry).toISOString().split("T")[0] : "",
+    batchNumber: p.nearestBatchNumber || p.batchNumber || "—",
     batchCount,
     batches,
-    expiryRisk:      mapExpiryRiskToUi(p.expiryRisk || p.expiryRiskKey || null),
-    archived:        !!p.isArchived,
-    price:           p.unitPrice ?? 0,
-    description:     p.description || "",
-    genericName:     p.genericName || p.generic || "",
-    brandName:       p.brandName || p.brand || "",
-    medicineName:    p.medicineName || p.name || p.itemName || "",
-    dosageForm:      p.dosageForm || p.dosage || "",
-    strength:        p.strength || p.Strength || p.dose || p.dosageStrength || "",
+    expiryRisk: mapExpiryRiskToUi(p.expiryRisk || p.expiryRiskKey || null),
+    archived: !!p.isArchived,
+    price: p.unitPrice ?? 0,
+    description: p.description || "",
+    genericName: p.genericName || p.generic || "",
+    brandName: p.brandName || p.brand || "",
+    medicineName: p.medicineName || p.name || p.itemName || "",
+    dosageForm: p.dosageForm || p.dosage || "",
+    strength: p.strength || p.Strength || p.dose || p.dosageStrength || "",
     expectedRemaining: Number.isFinite(Number(p.expectedRemaining))
       ? Number(p.expectedRemaining)
       : Number(p.quantity ?? 0),
@@ -250,32 +250,32 @@ function mapBackendRequestToUI(r) {
   const submittedAt = r.date_requested || r.createdAt || null;
   const requestDate = submittedAt
     ? new Date(submittedAt).toLocaleString("en-US", {
-        month: "2-digit",
-        day: "2-digit",
-        year: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-        hour12: true,
-      })
+      month: "2-digit",
+      day: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: true,
+    })
     : "-";
 
   const product = r.product || {};
   return {
-    id:              r._id,
-    requestType:     r.requestType,
-    itemName:        isRestock ? (product.name || "Unknown") : (r.itemName || "Unknown"),
-    type:            isRestock ? (product.name || "Unknown") : (r.itemName || "Unknown"),
-    category:        toCanonicalInventoryCategory(isRestock ? (product.category || "") : (r.category || "")),
+    id: r._id,
+    requestType: r.requestType,
+    itemName: isRestock ? (product.name || "Unknown") : (r.itemName || "Unknown"),
+    type: isRestock ? (product.name || "Unknown") : (r.itemName || "Unknown"),
+    category: toCanonicalInventoryCategory(isRestock ? (product.category || "") : (r.category || "")),
     currentQuantity: isRestock ? (product.quantity ?? 0) : 0,
-    minStock:        isRestock ? 10 : 10,       // product minStock not populated; safe default
-    unit:            r.unit || "pcs",
+    minStock: isRestock ? 10 : 10,       // product minStock not populated; safe default
+    unit: r.unit || "pcs",
     requestQuantity: isRestock ? (r.requestedQuantity ?? 0) : (r.initialQuantity ?? 0),
-    requestedBy:     r.requestedBy?.name || r.requestedByName || "Staff",
+    requestedBy: r.requestedBy?.name || r.requestedByName || "Staff",
     requestDate,
-    status:          DB_REQUEST_STATUS_TO_UI[r.status] || r.status,
-    supplier:        "",
-    productId:       isRestock ? (product._id || null) : null,
-    notes:           r.rejectionReason || "",
+    status: DB_REQUEST_STATUS_TO_UI[r.status] || r.status,
+    supplier: "",
+    productId: isRestock ? (product._id || null) : null,
+    notes: r.rejectionReason || "",
     submittedAt,
   };
 }
@@ -284,13 +284,13 @@ function mapBackendDiscrepancyToUI(r) {
   const submittedAt = r.date_requested || r.createdAt || null;
   const requestDate = submittedAt
     ? new Date(submittedAt).toLocaleString("en-US", {
-        month: "2-digit",
-        day: "2-digit",
-        year: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-        hour12: true,
-      })
+      month: "2-digit",
+      day: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: true,
+    })
     : "—";
 
   return {
@@ -322,13 +322,13 @@ function mapBackendDisposalToUI(r) {
   const submittedAt = r.date_requested || r.dateRequested || r.createdAt || null;
   const requestDate = submittedAt
     ? new Date(submittedAt).toLocaleString("en-US", {
-        month: "2-digit",
-        day: "2-digit",
-        year: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-        hour12: true,
-      })
+      month: "2-digit",
+      day: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: true,
+    })
     : "-";
 
   const normalizedStatus = String(r.status || "").trim().toLowerCase();
@@ -513,14 +513,14 @@ function getRequestStatusSortPriority(status) {
     ? REQUEST_STATUS_SORT_PRIORITY[normalized]
     : Number.MAX_SAFE_INTEGER;
 }
-function getFilterConfig(status)     { return FILTER_CONFIG[normalizeStatus(status)]  || FILTER_CONFIG["all"]; }
-function getStatusColors(status)     { return STATUS_COLORS[normalizeStatus(status)]  || STATUS_COLORS["in-stock"]; }
-function getStatusDisplayText(status){ return STATUS_DISPLAY[normalizeStatus(status)] || "In Stock"; }
+function getFilterConfig(status) { return FILTER_CONFIG[normalizeStatus(status)] || FILTER_CONFIG["all"]; }
+function getStatusColors(status) { return STATUS_COLORS[normalizeStatus(status)] || STATUS_COLORS["in-stock"]; }
+function getStatusDisplayText(status) { return STATUS_DISPLAY[normalizeStatus(status)] || "In Stock"; }
 function formatCategory(cat) {
   if (!cat) return "";
   return toCanonicalInventoryCategory(cat);
 }
-function getStatusSortPriority(status){
+function getStatusSortPriority(status) {
   const normalized = normalizeStatus(status);
   return Object.prototype.hasOwnProperty.call(STATUS_SORT_PRIORITY, normalized)
     ? STATUS_SORT_PRIORITY[normalized]
@@ -849,10 +849,10 @@ function applyFilters() {
   const riskFilters = new Set(["safe", "near-expiry", "at-risk"]);
   filteredItems = inventoryItems.filter(item => {
     if (showArchivedItems) { if (!item.archived) return false; }
-    else                   { if (item.archived)  return false; }
+    else { if (item.archived) return false; }
     const matchSearch = (item.name || "").toLowerCase().includes(search) ||
-                        (item.type || "").toLowerCase().includes(search) ||
-                        (item.id   || "").toLowerCase().includes(search);
+      (item.type || "").toLowerCase().includes(search) ||
+      (item.id || "").toLowerCase().includes(search);
     const matchStatus = (() => {
       if (currentStatusFilter === "all") return true;
       if (riskFilters.has(currentStatusFilter)) return item.expiryRisk === currentStatusFilter;
@@ -879,9 +879,9 @@ function applyRestockFilters() {
   const search = (document.getElementById("searchRestock")?.value || "").toLowerCase();
   filteredRestockRequests = restockRequests.filter(req => {
     const matchSearch = (req.itemName || "").toLowerCase().includes(search) ||
-                        (req.id   || "").toLowerCase().includes(search) ||
-                        (req.type || "").toLowerCase().includes(search);
-    const matchStatus   = currentRestockStatusFilter   === "all" || req.status   === currentRestockStatusFilter;
+      (req.id || "").toLowerCase().includes(search) ||
+      (req.type || "").toLowerCase().includes(search);
+    const matchStatus = currentRestockStatusFilter === "all" || req.status === currentRestockStatusFilter;
     const requestCategoryKey = normalizeCategoryKey(req.category);
     const activeCategoryKey = normalizeCategoryKey(currentRestockCategoryFilter);
     const matchCategory = isAllCategories(currentRestockCategoryFilter) || requestCategoryKey === activeCategoryKey;
@@ -917,7 +917,7 @@ function renderInventory() {
   }
 
   pagedItems.forEach(item => {
-      const hasBatchWarning = hasExpiringSoonBatch(item.batches || []);
+    const hasBatchWarning = hasExpiringSoonBatch(item.batches || []);
     const riskPill = getExpiryRiskPill(item.expiryRisk, {
       pendingDisposalOnly: item.hasPendingDisposalOnlyStock === true,
     });
@@ -962,14 +962,14 @@ function renderInventory() {
         <div class="flex gap-2">
           <button class="view-details-btn flex-1 border border-gray-300 py-2 rounded text-xs font-medium hover:bg-gray-100 transition-colors">View Details</button>
           ${item.archived
-            ? `<button class="restore-btn flex-1 bg-emerald-600 text-white py-2 rounded text-xs font-medium hover:bg-emerald-700 transition-colors" data-item-id="${item.id}">Restore</button>`
-            : `<button class="edit-discrepancy-btn flex-1 bg-amber-500 text-white py-2 rounded text-xs font-medium hover:bg-amber-600 transition-colors" data-item-id="${item.id}">Edit Discrepancy</button>`
-          }
+        ? `<button class="restore-btn flex-1 bg-emerald-600 text-white py-2 rounded text-xs font-medium hover:bg-emerald-700 transition-colors" data-item-id="${item.id}">Restore</button>`
+        : `<button class="edit-discrepancy-btn flex-1 bg-amber-500 text-white py-2 rounded text-xs font-medium hover:bg-amber-600 transition-colors" data-item-id="${item.id}">Edit Discrepancy</button>`
+      }
         </div>
         ${!item.archived
-          ? `<button class="archive-btn w-full border border-gray-400 bg-gray-50 text-gray-700 py-2 rounded text-xs font-medium hover:bg-gray-100 transition-colors" data-item-id="${item.id}">Archive</button>`
-          : ''
-        }
+        ? `<button class="archive-btn w-full border border-gray-400 bg-gray-50 text-gray-700 py-2 rounded text-xs font-medium hover:bg-gray-100 transition-colors" data-item-id="${item.id}">Archive</button>`
+        : ''
+      }
       </div>`;
     grid.appendChild(card);
   });
@@ -1011,7 +1011,7 @@ function renderRestockRequests() {
   filteredRestockRequests.forEach(req => {
     const colors = getStatusColors(req.status);
     const stockColor = req.currentQuantity === 0 ? "text-red-700"
-                     : req.currentQuantity <= req.minStock ? "text-orange-700" : "text-green-700";
+      : req.currentQuantity <= req.minStock ? "text-orange-700" : "text-green-700";
 
     const isPending = req.status === "pending";
     const reviewBtnHtml = isPending
@@ -1031,13 +1031,13 @@ function renderRestockRequests() {
           <div class="flex justify-between"><span class="text-gray-600">Quantity Requested</span><span class="font-semibold text-red-700">${req.requestQuantity} ${req.unit}</span></div>
           <div class="text-gray-500 border-t pt-2 mt-1"><span class="font-medium text-gray-700">Reason:</span> ${escapeHtml(req.reason || "No reason provided")}</div>
         `
-      : req.requestType === "PRICE_CHANGE"
-        ? `
+        : req.requestType === "PRICE_CHANGE"
+          ? `
           <div class="flex justify-between"><span class="text-gray-600">Current Price</span><span class="font-semibold text-gray-900">P${Number(req.oldPrice || 0).toFixed(2)}</span></div>
           <div class="flex justify-between"><span class="text-gray-600">Requested Price</span><span class="font-semibold text-indigo-700">P${Number(req.requestedPrice || 0).toFixed(2)}</span></div>
           <div class="text-gray-500 border-t pt-2 mt-1"><span class="font-medium text-gray-700">Reason:</span> ${escapeHtml(req.reason || "No reason provided")}</div>
         `
-      : `
+          : `
         <div class="flex justify-between"><span class="text-gray-600">Current Stock</span><span class="font-semibold ${stockColor}">${req.currentQuantity} ${req.unit}</span></div>
         <div class="flex justify-between"><span class="text-gray-600">Requested</span><span class="font-semibold text-blue-700">${req.requestQuantity} ${req.unit}</span></div>
       `;
@@ -1481,16 +1481,16 @@ async function showItemDetails(item) {
 
   /* ---- Detail modal buttons ---- */
   const btnCloseTop = getElement(modal, "#closeItemDetails");
-  const btnCancel   = getElement(modal, "#closeDetails");
+  const btnCancel = getElement(modal, "#closeDetails");
   const btnEditDiscrepancy = getElement(modal, "#detailsEditDiscrepancyBtn");
   const btnEditPrice = getElement(modal, "#detailsEditPriceBtn");
   const btnEditPriceSecondary = getElement(modal, "#detailsEditPriceBtnSecondary");
-  const btnRestock     = getElement(modal, "#restockItemBtn");
+  const btnRestock = getElement(modal, "#restockItemBtn");
 
   const hideDetails = () => { modal.classList.add("hidden"); modal.style.display = ""; };
 
   if (btnCloseTop) { const n = btnCloseTop.cloneNode(true); btnCloseTop.parentNode.replaceChild(n, btnCloseTop); n.onclick = hideDetails; }
-  if (btnCancel)   { const n = btnCancel.cloneNode(true); btnCancel.parentNode.replaceChild(n, btnCancel); n.onclick = hideDetails; }
+  if (btnCancel) { const n = btnCancel.cloneNode(true); btnCancel.parentNode.replaceChild(n, btnCancel); n.onclick = hideDetails; }
   if (btnEditDiscrepancy) {
     const n = btnEditDiscrepancy.cloneNode(true);
     btnEditDiscrepancy.parentNode.replaceChild(n, btnEditDiscrepancy);
@@ -1626,7 +1626,7 @@ function showReviewRestockModal(request) {
   /* APPROVE */
   getElement(reviewModal, "#reviewApproveBtn")?.addEventListener("click", () => {
     const approvedQty = parseInt(getElement(reviewModal, "#approvedQuantity")?.value || request.requestQuantity, 10);
-    const adminNotes  = getElement(reviewModal, "#adminNotesInput")?.value || "";
+    const adminNotes = getElement(reviewModal, "#adminNotesInput")?.value || "";
     const approvalBatchNumber = (getElement(reviewModal, "#approvalBatchNumber")?.value || "").trim();
     const approvalExpirationDate = (getElement(reviewModal, "#approvalExpirationDate")?.value || "").trim();
     const approvalSupplier = (getElement(reviewModal, "#approvalSupplier")?.value || "").trim();
@@ -1740,7 +1740,7 @@ function showAdminEditPriceModal(item) {
 
   const priceInput = getElement(modal, "#adminNewPriceInput");
   const priceError = getElement(modal, "#adminNewPriceError");
-  const saveBtn    = getElement(modal, "#adminEditPriceSaveBtn");
+  const saveBtn = getElement(modal, "#adminEditPriceSaveBtn");
 
   const validatePrice = () => {
     const raw = (priceInput?.value || "").trim();
@@ -2193,7 +2193,7 @@ function showAddItemModal() {
 
   const addPriceInput = getElement(addItemModal, "#addPrice");
   const addPriceError = getElement(addItemModal, "#addPriceError");
-  const addSaveBtn    = getElement(addItemModal, "#addSaveBtn");
+  const addSaveBtn = getElement(addItemModal, "#addSaveBtn");
 
   const validateAddPrice = () => {
     const raw = (addPriceInput?.value || "").trim();
@@ -2245,22 +2245,22 @@ function showAddItemModal() {
 
   getElement(addItemModal, "#addSaveBtn")?.addEventListener("click", async () => {
     const val = (id) => (getElement(addItemModal, id)?.value || "").trim();
-    const brand      = val("#addBrand");
-    const generic    = val("#addGeneric");
-    const category   = val("#addCategory");
+    const brand = val("#addBrand");
+    const generic = val("#addGeneric");
+    const category = val("#addCategory");
     const dosageForm = val("#addDosageForm");
-    const strength   = val("#addStrength");
-    const qtyRaw     = val("#addQuantity");
-    const qty        = qtyRaw === "" ? NaN : parseInt(qtyRaw, 10);
-    const unit       = val("#addUnit");
+    const strength = val("#addStrength");
+    const qtyRaw = val("#addQuantity");
+    const qty = qtyRaw === "" ? NaN : parseInt(qtyRaw, 10);
+    const unit = val("#addUnit");
     const minStockRaw = val("#addMinStock");
-    const minStock    = minStockRaw === "" ? NaN : parseInt(minStockRaw, 10);
-    const priceRaw   = val("#addPrice");
-    const price      = priceRaw === "" ? NaN : parseFloat(priceRaw);
-    const expiry     = val("#addExpiry");
-    const batch      = val("#addBatch");
-    const supplier   = val("#addSupplier");
-    const desc       = val("#addDescription");
+    const minStock = minStockRaw === "" ? NaN : parseInt(minStockRaw, 10);
+    const priceRaw = val("#addPrice");
+    const price = priceRaw === "" ? NaN : parseFloat(priceRaw);
+    const expiry = val("#addExpiry");
+    const batch = val("#addBatch");
+    const supplier = val("#addSupplier");
+    const desc = val("#addDescription");
 
     const required = {
       generic: "#addGeneric",
@@ -2293,19 +2293,19 @@ function showAddItemModal() {
       await apiFetch(API.addProduct, {
         method: "POST",
         body: JSON.stringify({
-          name:        generic || brand,
+          name: generic || brand,
           genericName: generic,
-          brandName:   brand,
-          category:    category || "general",
-          dosageForm:  dosageForm,
-          strength:    strength,
-          quantity:    isNaN(qty) ? 0 : qty,
-          unit:        unit || "pcs",
-          unitPrice:   isNaN(price) ? 0 : price,
-          minStock:    isNaN(minStock) ? 10 : minStock,
-          expiryDate:  expiry || null,
+          brandName: brand,
+          category: category || "general",
+          dosageForm: dosageForm,
+          strength: strength,
+          quantity: isNaN(qty) ? 0 : qty,
+          unit: unit || "pcs",
+          unitPrice: isNaN(price) ? 0 : price,
+          minStock: isNaN(minStock) ? 10 : minStock,
+          expiryDate: expiry || null,
           batchNumber: batch || null,
-          supplier:    supplier || null,
+          supplier: supplier || null,
           description: desc || "",
         }),
       });
@@ -2367,7 +2367,7 @@ function showRestoreConfirm(item) {
 /* ================= ADMIN RESTOCK MODAL ================= */
 function showAdminRestockModal(item) {
   const detailsModal = document.getElementById("itemDetailsModal");
-  
+
   const defaultBatchNumber = generateBatchNumber(item);
   const defaultExpiryDate = (() => {
     const plusMonth = new Date();
@@ -2447,7 +2447,7 @@ function showAdminRestockModal(item) {
     const expiryInput = getElement(modal, "#adminRestockExpiryDate");
     const quantityErrorEl = getElement(modal, "#restockQuantityError");
     const expiryErrorEl = getElement(modal, "#expiryDateError");
-    
+
     let hasError = false;
 
     // Clear previous errors
@@ -2504,7 +2504,7 @@ function showAdminRestockModal(item) {
 
 /* ================= CLOSE ALL MODALS ================= */
 function closeAllModals() {
-  ["itemDetailsModal","reviewRestockModal","addItemModal","archiveConfirmModal","restoreConfirmModal","approveConfirmModal","denyConfirmModal","editDiscrepancyModal","ownerDirectDisposalModal","adminRestockModal"]
+  ["itemDetailsModal", "reviewRestockModal", "addItemModal", "archiveConfirmModal", "restoreConfirmModal", "approveConfirmModal", "denyConfirmModal", "editDiscrepancyModal", "ownerDirectDisposalModal", "adminRestockModal"]
     .forEach(id => { const m = document.getElementById(id); if (m) m.classList.add("hidden"); });
 }
 
@@ -2524,10 +2524,10 @@ export async function initAdminInventory() {
     requestsAutoRefreshTimer = null;
   }
 
-  const tabInventory    = document.getElementById("tabInventory");
-  const tabRestock      = document.getElementById("tabRestock");
+  const tabInventory = document.getElementById("tabInventory");
+  const tabRestock = document.getElementById("tabRestock");
   const inventorySection = document.getElementById("inventorySection");
-  const restockSection   = document.getElementById("restockSection");
+  const restockSection = document.getElementById("restockSection");
 
   /* ---- Tab switching ---- */
   function switchTab(tab) {
@@ -2690,7 +2690,7 @@ export async function initAdminInventory() {
 
   /* ---- Grid delegation: Inventory ---- */
   document.getElementById("inventoryGrid")?.addEventListener("click", (e) => {
-    const viewBtn    = e.target.closest(".view-details-btn");
+    const viewBtn = e.target.closest(".view-details-btn");
     const restoreBtn = e.target.closest(".restore-btn");
     const editDiscrepancyBtn = e.target.closest(".edit-discrepancy-btn");
     const archiveBtn = e.target.closest(".archive-btn");

@@ -113,7 +113,6 @@ export const createStockLog = async ({
   }
 
   const performer = await Owner_resolvePerformer({ performedBy, session });
-  const referenceId = providedReferenceId || await Owner_generateReferenceId(session);
 
   const [stockLog] = await Owner_StockLog.create(
     [
@@ -124,7 +123,7 @@ export const createStockLog = async ({
         beforeQuantity,
         afterQuantity,
         performedBy: performer,
-        referenceId,
+        referenceId: providedReferenceId || null,
         batchNumber: batchNumber ? String(batchNumber).trim() : null,
         source,
         notes: notes || null,
@@ -156,7 +155,7 @@ const Owner_buildStockLogFilters = async ({
   productId,
   movementType,
   performedBy,
-  referenceId,
+  search,
 }) => {
   const filters = {};
 
@@ -203,8 +202,25 @@ const Owner_buildStockLogFilters = async ({
     }
   }
 
-  if (referenceId) {
-    filters.referenceId = { $regex: new RegExp(`^${Owner_escapeRegex(String(referenceId).trim())}$`, "i") };
+  if (search) {
+    const searchRegex = new RegExp(Owner_escapeRegex(String(search).trim()), "i");
+
+    // We can't easily search across populated fields in a single .find() without aggregation
+    // So we'll fetch matching product and user IDs first
+    const matchingProducts = await Product.find({ name: searchRegex }).select("_id").lean();
+    const productIds = matchingProducts.map((p) => p._id);
+
+    const matchingUsers = await User.find({
+      $or: [{ name: searchRegex }, { email: searchRegex }],
+    })
+      .select("_id")
+      .lean();
+    const userIds = matchingUsers.map((u) => u._id);
+
+    filters.$or = [
+      { product: { $in: productIds } },
+      { performedBy: { $in: userIds } },
+    ];
   }
 
   return filters;
@@ -275,7 +291,6 @@ const Owner_normalizeStockLog = (stockLog) => {
       _id: stockLog?.performedBy?._id || null,
       name: performerName,
     },
-    referenceId: stockLog.referenceId,
     createdAt: stockLog.createdAt,
   };
 };
@@ -286,7 +301,7 @@ export const getStockLogs = async ({
   productId,
   movementType,
   performedBy,
-  referenceId,
+  search,
 }) => {
   const filters = await Owner_buildStockLogFilters({
     startDate,
@@ -294,7 +309,7 @@ export const getStockLogs = async ({
     productId,
     movementType,
     performedBy,
-    referenceId,
+    search,
   });
 
   const rawData = await Owner_StockLog.find(filters)
@@ -364,7 +379,7 @@ export const getStockLogSummary = async ({
   productId,
   movementType,
   performedBy,
-  referenceId,
+  search,
 }) => {
   const filters = await Owner_buildStockLogFilters({
     startDate,
@@ -372,7 +387,7 @@ export const getStockLogSummary = async ({
     productId,
     movementType,
     performedBy,
-    referenceId,
+    search,
   });
 
   return Owner_getStockLogSummaryTotals(filters);

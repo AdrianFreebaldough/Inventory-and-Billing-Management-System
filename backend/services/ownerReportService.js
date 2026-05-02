@@ -116,6 +116,26 @@ const resolvePeriodConfig = (period) => {
   const monthLabel = (dateValue) =>
     dateValue.toLocaleString("en-US", { month: "short" });
 
+  if (requested === "Today") {
+    const start = toStartOfDay(now);
+    const end = toEndOfDay(now);
+    const labels = ["12AM", "3AM", "6AM", "9AM", "12PM", "3PM", "6PM", "9PM"];
+
+    return {
+      period: requested,
+      start,
+      end,
+      previousStart: toStartOfDay(addDays(now, -1)),
+      previousEnd: toEndOfDay(addDays(now, -1)),
+      labels,
+      bucketIndexFromDate(dateValue) {
+        const date = new Date(dateValue);
+        const hour = date.getHours();
+        return Math.min(7, Math.floor(hour / 3));
+      },
+    };
+  }
+
   if (requested === "Last Month") {
     const start = toStartOfDay(addDays(now, -27));
     const end = toEndOfDay(now);

@@ -2,10 +2,12 @@
   <!-- Tab Navigation -->
   <div class="border-b border-slate-200">
     <nav class="flex gap-6">
-      <button id="tabMovementLogs" class="tab-button border-b-2 border-blue-600 px-1 py-3 text-sm font-medium text-blue-600 transition-colors">
+      <button id="tabMovementLogs"
+        class="tab-button border-b-2 border-blue-600 px-1 py-3 text-sm font-medium text-blue-600 transition-colors">
         Inventory Movement Logs
       </button>
-      <button id="tabLogsReport" class="tab-button border-b-2 border-transparent px-1 py-3 text-sm font-medium text-slate-500 hover:border-slate-300 hover:text-slate-700 transition-colors">
+      <button id="tabLogsReport"
+        class="tab-button border-b-2 border-transparent px-1 py-3 text-sm font-medium text-slate-500 hover:border-slate-300 hover:text-slate-700 transition-colors">
         Logs Report
       </button>
     </nav>
@@ -37,81 +39,83 @@
     </div>
 
     <section class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-    <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-600">Filters</h2>
-    <div class="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-6">
-      <label class="text-sm">
-        <span class="mb-1 block text-xs font-medium text-slate-500">Start Date</span>
-        <input id="filterStartDate" type="date" class="w-full rounded-lg border border-slate-300 px-3 py-2" />
-      </label>
+      <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-600">Filters</h2>
+      <div class="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-6">
+        <label class="text-sm">
+          <span class="mb-1 block text-xs font-medium text-slate-500">Start Date</span>
+          <input id="filterStartDate" type="date" class="w-full rounded-lg border border-slate-300 px-3 py-2" />
+        </label>
 
-      <label class="text-sm">
-        <span class="mb-1 block text-xs font-medium text-slate-500">End Date</span>
-        <input id="filterEndDate" type="date" class="w-full rounded-lg border border-slate-300 px-3 py-2" />
-      </label>
+        <label class="text-sm">
+          <span class="mb-1 block text-xs font-medium text-slate-500">End Date</span>
+          <input id="filterEndDate" type="date" class="w-full rounded-lg border border-slate-300 px-3 py-2" />
+        </label>
 
-      <label class="text-sm">
-        <span class="mb-1 block text-xs font-medium text-slate-500">Product</span>
-        <select id="filterProduct" class="w-full rounded-lg border border-slate-300 px-3 py-2">
-          <option value="">All Products</option>
-        </select>
-      </label>
+        <label class="text-sm">
+          <span class="mb-1 block text-xs font-medium text-slate-500">Product</span>
+          <select id="filterProduct" class="w-full rounded-lg border border-slate-300 px-3 py-2">
+            <option value="">All Products</option>
+          </select>
+        </label>
 
-      <label class="text-sm">
-        <span class="mb-1 block text-xs font-medium text-slate-500">Movement Type</span>
-        <select id="filterMovementType" class="w-full rounded-lg border border-slate-300 px-3 py-2">
-          <option value="">All Types</option>
-          <option value="SALE">SALE</option>
-          <option value="RESTOCK">RESTOCK</option>
-          <option value="ADJUST">ADJUST</option>
-          <option value="ADJUSTMENT">ADJUSTMENT</option>
-          <option value="ITEM_CREATED">ITEM_CREATED</option>
-          <option value="DISPOSAL">DISPOSAL</option>
-        </select>
-      </label>
+        <label class="text-sm">
+          <span class="mb-1 block text-xs font-medium text-slate-500">Movement Type</span>
+          <select id="filterMovementType" class="w-full rounded-lg border border-slate-300 px-3 py-2">
+            <option value="">All Types</option>
+            <option value="SALE">SALE</option>
+            <option value="RESTOCK">RESTOCK</option>
+            <option value="ADJUST">ADJUST</option>
+            <option value="ADJUSTMENT">ADJUSTMENT</option>
+            <option value="ITEM_CREATED">ITEM_CREATED</option>
+            <option value="DISPOSAL">DISPOSAL</option>
+          </select>
+        </label>
 
-      <label class="text-sm">
-        <span class="mb-1 block text-xs font-medium text-slate-500">Performed By</span>
-        <select id="filterPerformedBy" class="w-full rounded-lg border border-slate-300 px-3 py-2">
-          <option value="">All Users</option>
-        </select>
-      </label>
+        <label class="text-sm">
+          <span class="mb-1 block text-xs font-medium text-slate-500">Performed By</span>
+          <select id="filterPerformedBy" class="w-full rounded-lg border border-slate-300 px-3 py-2">
+            <option value="">All Users</option>
+          </select>
+        </label>
 
-      <label class="text-sm">
-        <span class="mb-1 block text-xs font-medium text-slate-500">Reference ID</span>
-        <input id="filterReferenceId" type="search" placeholder="Search reference..." class="w-full rounded-lg border border-slate-300 px-3 py-2" />
-      </label>
-    </div>
+        <label class="text-sm">
+          <span class="mb-1 block text-xs font-medium text-slate-500">Search</span>
+          <input id="searchLogs" type="search" placeholder="Search product or performer..."
+            class="w-full rounded-lg border border-slate-300 px-3 py-2" />
+        </label>
+      </div>
 
-    <div class="mt-4 flex justify-end">
-      <button id="resetFilters" class="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100">Reset Filters</button>
-    </div>
-  </section>
+      <div class="mt-4 flex justify-end">
+        <button id="resetFilters"
+          class="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100">Reset
+          Filters</button>
+      </div>
+    </section>
 
-  <section class="rounded-xl border border-slate-200 bg-white shadow-sm">
-    <div class="flex items-center justify-between border-b px-4 py-3">
-      <h2 class="font-semibold">Inventory Movement Logs</h2>
-      <span id="resultCount" class="text-xs text-slate-500">0 log(s)</span>
-    </div>
+    <section class="rounded-xl border border-slate-200 bg-white shadow-sm">
+      <div class="flex items-center justify-between border-b px-4 py-3">
+        <h2 class="font-semibold">Inventory Movement Logs</h2>
+        <span id="resultCount" class="text-xs text-slate-500">0 log(s)</span>
+      </div>
 
-    <div class="overflow-x-auto">
-      <table class="min-w-full">
-        <thead class="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
-          <tr>
-            <th class="px-4 py-3">Date &amp; Time</th>
-            <th class="px-4 py-3">Product Name</th>
-            <th class="px-4 py-3">Movement Type</th>
-            <th class="px-4 py-3">Batch Number</th>
-            <th class="px-4 py-3">Quantity Change (+ / −)</th>
-            <th class="px-4 py-3">Before Quantity</th>
-            <th class="px-4 py-3">After Quantity</th>
-            <th class="px-4 py-3">Performed By</th>
-            <th class="px-4 py-3">Reference ID</th>
-          </tr>
-        </thead>
-        <tbody id="stockLogsTableBody" class="bg-white"></tbody>
-      </table>
-    </div>
-  </section>
+      <div class="overflow-x-auto">
+        <table class="min-w-full">
+          <thead class="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+            <tr>
+              <th class="px-4 py-3">Date &amp; Time</th>
+              <th class="px-4 py-3">Product Name</th>
+              <th class="px-4 py-3">Movement Type</th>
+              <th class="px-4 py-3">Batch Number</th>
+              <th class="px-4 py-3">Quantity Change (+ / −)</th>
+              <th class="px-4 py-3">Before Quantity</th>
+              <th class="px-4 py-3">After Quantity</th>
+              <th class="px-4 py-3">Performed By</th>
+            </tr>
+          </thead>
+          <tbody id="stockLogsTableBody" class="bg-white"></tbody>
+        </table>
+      </div>
+    </section>
   </div>
 
   <!-- Logs Report Tab Content -->
@@ -126,24 +130,30 @@
         <div class="flex w-full flex-wrap items-end gap-2.5 lg:w-auto lg:flex-nowrap lg:justify-end">
           <label class="text-sm">
             <span class="mb-1.5 block text-xs font-medium text-slate-600">Start Date</span>
-            <input id="reportStartDate" type="date" class="h-9 min-w-[136px] rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs shadow-sm transition-colors hover:border-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100" />
+            <input id="reportStartDate" type="date"
+              class="h-9 min-w-[136px] rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs shadow-sm transition-colors hover:border-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100" />
           </label>
           <label class="text-sm">
             <span class="mb-1.5 block text-xs font-medium text-slate-600">End Date</span>
-            <input id="reportEndDate" type="date" class="h-9 min-w-[136px] rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs shadow-sm transition-colors hover:border-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100" />
+            <input id="reportEndDate" type="date"
+              class="h-9 min-w-[136px] rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs shadow-sm transition-colors hover:border-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100" />
           </label>
           <label class="text-sm">
             <span class="mb-1.5 block text-xs font-medium text-slate-600">Select Month</span>
-            <select id="reportMonthFilter" class="h-9 min-w-[170px] rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs shadow-sm transition-colors hover:border-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100">
+            <select id="reportMonthFilter"
+              class="h-9 min-w-[170px] rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs shadow-sm transition-colors hover:border-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100">
               <!-- Options will be populated dynamically -->
             </select>
           </label>
-          <button id="generateReport" class="h-9 rounded-lg bg-blue-600 px-4 text-xs font-medium text-white shadow-sm transition-all hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed">
+          <button id="generateReport"
+            class="h-9 rounded-lg bg-blue-600 px-4 text-xs font-medium text-white shadow-sm transition-all hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed">
             <span id="generateBtnText">Generate</span>
           </button>
-          <button id="printReport" onclick="window.printMonthlyReport?.()" class="h-9 rounded-lg bg-slate-600 px-4 text-xs font-medium text-white shadow-sm transition-all hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-offset-2 flex items-center gap-1.5">
+          <button id="printReport" onclick="window.printMonthlyReport?.()"
+            class="h-9 rounded-lg bg-slate-600 px-4 text-xs font-medium text-white shadow-sm transition-all hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-offset-2 flex items-center gap-1.5">
             <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/>
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
             </svg>
             <span>Print</span>
           </button>
@@ -158,34 +168,40 @@
           <h3 id="chartTitle" class="text-lg font-semibold text-slate-900">Inventory Overview</h3>
           <p id="chartSubtitle" class="text-sm text-slate-500">Select a month and generate a report</p>
         </div>
-        <span id="chartItemCount" class="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600 hidden">0 items</span>
+        <span id="chartItemCount"
+          class="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600 hidden">0 items</span>
       </div>
       <!-- Loading / Empty / Chart states -->
       <div id="chartLoadingState" class="hidden flex flex-col items-center justify-center py-16 gap-3">
         <svg class="h-8 w-8 animate-spin text-blue-600" fill="none" viewBox="0 0 24 24">
           <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+          <path class="opacity-75" fill="currentColor"
+            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z">
+          </path>
         </svg>
         <p class="text-sm font-medium text-slate-700">Generating report…</p>
         <p class="text-xs text-slate-500">Calculating inventory balances and variances</p>
       </div>
       <div id="chartEmptyState" class="hidden flex flex-col items-center justify-center py-16 gap-3">
         <svg class="h-12 w-12 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
         </svg>
         <p class="text-sm font-medium text-slate-700">No inventory data found</p>
         <p class="text-xs text-slate-500">There are no stock movements for the selected month</p>
       </div>
       <div id="chartErrorState" class="hidden flex flex-col items-center justify-center py-16 gap-3">
         <svg class="h-12 w-12 text-rose-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
         </svg>
         <p class="text-sm font-semibold text-rose-700">Failed to generate report</p>
         <p id="chartErrorMessage" class="text-xs text-slate-600">An unexpected error occurred.</p>
       </div>
       <div id="chartInitialState" class="flex flex-col items-center justify-center py-16 gap-3">
         <svg class="h-12 w-12 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
         </svg>
         <p class="text-sm font-medium text-slate-500">Select a month and click Generate Report</p>
       </div>
@@ -204,9 +220,12 @@
           <p class="text-sm text-slate-500">Difference between actual balance and system quantity per item</p>
         </div>
         <div class="flex items-center gap-4 text-xs">
-          <span class="flex items-center gap-1.5"><span class="inline-block h-2.5 w-2.5 rounded-full bg-emerald-500"></span>Surplus</span>
-          <span class="flex items-center gap-1.5"><span class="inline-block h-2.5 w-2.5 rounded-full bg-rose-500"></span>Shortage</span>
-          <span class="flex items-center gap-1.5"><span class="inline-block h-2.5 w-2.5 rounded-full bg-slate-300"></span>Matched</span>
+          <span class="flex items-center gap-1.5"><span
+              class="inline-block h-2.5 w-2.5 rounded-full bg-emerald-500"></span>Surplus</span>
+          <span class="flex items-center gap-1.5"><span
+              class="inline-block h-2.5 w-2.5 rounded-full bg-rose-500"></span>Shortage</span>
+          <span class="flex items-center gap-1.5"><span
+              class="inline-block h-2.5 w-2.5 rounded-full bg-slate-300"></span>Matched</span>
         </div>
       </div>
       <div class="relative w-full" style="height: 280px;">
@@ -219,9 +238,11 @@
       <div class="mb-4 flex items-center justify-between">
         <div>
           <h3 class="text-lg font-semibold text-slate-900">Monthly Inventory Report Table</h3>
-          <p class="text-sm text-slate-500">Enter physical count values to verify inventory. Variance is auto-calculated.</p>
+          <p class="text-sm text-slate-500">Enter physical count values to verify inventory. Variance is
+            auto-calculated.</p>
         </div>
-        <button id="saveVarianceBtn" class="rounded-lg bg-emerald-600 px-5 py-2.5 text-sm font-medium text-white shadow-sm transition-all hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed hidden">
+        <button id="saveVarianceBtn"
+          class="rounded-lg bg-emerald-600 px-5 py-2.5 text-sm font-medium text-white shadow-sm transition-all hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed hidden">
           Save Physical Count
         </button>
       </div>
@@ -234,8 +255,10 @@
               <th class="px-3 py-2">Batch Number</th>
               <th class="px-3 py-2 text-right">System Stock</th>
               <th class="px-3 py-2">Expiration Date</th>
-              <th class="px-3 py-2 text-right w-28" style="width: 7rem; min-width: 7rem; max-width: 7rem;">Physical Count</th>
-              <th class="px-3 py-2 text-center w-28" style="width: 7rem; min-width: 7rem; max-width: 7rem;">Variance</th>
+              <th class="px-3 py-2 text-right w-28" style="width: 7rem; min-width: 7rem; max-width: 7rem;">Physical
+                Count</th>
+              <th class="px-3 py-2 text-center w-28" style="width: 7rem; min-width: 7rem; max-width: 7rem;">Variance
+              </th>
               <th class="px-3 py-2">Date Added</th>
               <th class="px-3 py-2 text-center">Status</th>
             </tr>

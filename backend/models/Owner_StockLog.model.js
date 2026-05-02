@@ -36,8 +36,7 @@ const Owner_StockLogSchema = new mongoose.Schema(
     },
     referenceId: {
       type: String,
-      required: true,
-      unique: true,
+      required: false,
       index: true,
       trim: true,
     },

@@ -5,11 +5,11 @@ import { NotificationWidget } from "../components/notificationWidget.js";
    API endpoints
    ════════════════════════════════════════════════════════════════ */
 const OWNER_DASHBOARD_API = {
-  summary:        "/api/owner/dashboard/summary",
-  revenueTrend:   "/api/owner/dashboard/revenue-trend",
-  pendingRequests:"/api/owner/dashboard/pending-requests",
-  lowStock:       "/api/owner/dashboard/low-stock",
-  activity:       "/api/owner/dashboard/activity",
+  summary: "/api/owner/dashboard/summary",
+  revenueTrend: "/api/owner/dashboard/revenue-trend",
+  pendingRequests: "/api/owner/dashboard/pending-requests",
+  lowStock: "/api/owner/dashboard/low-stock",
+  activity: "/api/owner/dashboard/activity",
   stockMovements: "/api/owner/dashboard/stock-movements",
 };
 
@@ -94,11 +94,11 @@ async function OWNER_fetchDashboardData() {
     ]);
 
   return {
-    summary:        summary.status        === "fulfilled" ? summary.value        : null,
-    revenueTrend:   revenueTrend.status   === "fulfilled" ? revenueTrend.value   : null,
-    pendingRequests:pendingRequests.status === "fulfilled" ? pendingRequests.value: null,
-    lowStock:       lowStock.status       === "fulfilled" ? lowStock.value       : null,
-    activity:       activity.status       === "fulfilled" ? activity.value       : null,
+    summary: summary.status === "fulfilled" ? summary.value : null,
+    revenueTrend: revenueTrend.status === "fulfilled" ? revenueTrend.value : null,
+    pendingRequests: pendingRequests.status === "fulfilled" ? pendingRequests.value : null,
+    lowStock: lowStock.status === "fulfilled" ? lowStock.value : null,
+    activity: activity.status === "fulfilled" ? activity.value : null,
     stockMovements: stockMovements.status === "fulfilled" ? stockMovements.value : null,
   };
 }
@@ -109,11 +109,11 @@ async function OWNER_fetchDashboardData() {
 function mapDashboardSummary(raw) {
   if (!raw) return { revenueTotal: 0, revenueToday: 0, activeStaff: 0, pendingRequests: 0, lowStockItems: 0 };
   return {
-    revenueTotal:    raw.totalRevenue             ?? 0,
-    revenueToday:    raw.todaysRevenue            ?? 0,
-    activeStaff:     raw.activeStaffCount         ?? 0,
-    pendingRequests: raw.pendingInventoryRequests  ?? 0,
-    lowStockItems:   raw.lowStockItems            ?? 0,
+    revenueTotal: raw.totalRevenue ?? 0,
+    revenueToday: raw.todaysRevenue ?? 0,
+    activeStaff: raw.activeStaffCount ?? 0,
+    pendingRequests: raw.pendingInventoryRequests ?? 0,
+    lowStockItems: raw.lowStockItems ?? 0,
   };
 }
 
@@ -121,61 +121,61 @@ function mapRevenueTrend(raw) {
   if (!raw) return { labels: [], data: [] };
   return {
     labels: raw.labels || [],
-    data:   raw.data   || [],
+    data: raw.data || [],
   };
 }
 
 function mapPendingRequests(raw) {
   if (!Array.isArray(raw)) return [];
   return raw.map((r) => ({
-    id:          r._id || "",
-    itemName:    r.itemName         || "Unknown",
-    requestType: r.requestType      || "",
-    requestedBy: r.requestedBy      || "Unknown",
-    quantity:    r.requestedQuantity ?? 0,
-    status:      r.status           || "pending",
-    createdAt:   r.createdAt        || "",
+    id: r._id || "",
+    itemName: r.itemName || "Unknown",
+    requestType: r.requestType || "",
+    requestedBy: r.requestedBy || "Unknown",
+    quantity: r.requestedQuantity ?? 0,
+    status: r.status || "pending",
+    createdAt: r.createdAt || "",
   }));
 }
 
 function mapLowStock(raw) {
   if (!Array.isArray(raw)) return [];
   return raw.map((p) => ({
-    name:         p.name          || "Unknown",
-    category:     p.category      || "",
-    currentStock: p.quantity       ?? 0,
-    minStock:     p.minStock       ?? 10,
-    status:       p.status === "out" ? "critical"
-                  : p.quantity <= (p.minStock ?? 10) * 0.25 ? "critical"
-                  : "warning",
-    unit:         p.unit          || "pcs",
+    name: p.name || "Unknown",
+    category: p.category || "",
+    currentStock: p.quantity ?? 0,
+    minStock: p.minStock ?? 10,
+    status: p.status === "out" ? "critical"
+      : p.quantity <= (p.minStock ?? 10) * 0.25 ? "critical"
+        : "warning",
+    unit: p.unit || "pcs",
   }));
 }
 
 function mapActivity(raw) {
   if (!Array.isArray(raw)) return [];
   return raw.map((a) => ({
-    id:        a._id       || "",
-    actor:     a.actor      || "System",
-    action:    a.action     || "",
-    type:      a.type       || "general",
-    createdAt: a.createdAt  || "",
+    id: a._id || "",
+    actor: a.actor || "System",
+    action: a.action || "",
+    type: a.type || "general",
+    createdAt: a.createdAt || "",
   }));
 }
 
 function mapStockMovements(raw) {
   if (!raw) return { totalAdditions: 0, totalDeductions: 0, movementCount: 0, recentMovements: [] };
   return {
-    totalAdditions:  raw.totalAdditions  ?? 0,
+    totalAdditions: raw.totalAdditions ?? 0,
     totalDeductions: raw.totalDeductions ?? 0,
-    movementCount:   raw.movementCount   ?? 0,
+    movementCount: raw.movementCount ?? 0,
     recentMovements: (raw.recentMovements || []).map((m) => ({
-      productName:    m.productName    || "Unknown",
-      movementType:   m.movementType   || "",
+      productName: m.productName || "Unknown",
+      movementType: m.movementType || "",
       quantityChange: m.quantityChange ?? 0,
-      performedBy:    m.performedBy    || "System",
-      source:         m.source         || "",
-      createdAt:      m.createdAt      || "",
+      performedBy: m.performedBy || "System",
+      source: m.source || "",
+      createdAt: m.createdAt || "",
     })),
   };
 }
@@ -186,11 +186,11 @@ function mapStockMovements(raw) {
 function timeAgo(dateStr) {
   if (!dateStr) return "";
   const diff = Date.now() - new Date(dateStr).getTime();
-  const mins  = Math.floor(diff / 60000);
-  if (mins < 1)  return "Just now";
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return "Just now";
   if (mins < 60) return `${mins} min ago`;
   const hrs = Math.floor(mins / 60);
-  if (hrs < 24)  return `${hrs}h ago`;
+  if (hrs < 24) return `${hrs}h ago`;
   const days = Math.floor(hrs / 24);
   return `${days}d ago`;
 }
@@ -200,11 +200,11 @@ function timeAgo(dateStr) {
    ════════════════════════════════════════════════════════════════ */
 function movementBadge(type) {
   const map = {
-    SALE:           { label: "Sale",     bg: "bg-rose-50",    text: "text-rose-600" },
-    RESTOCK:        { label: "Restock",  bg: "bg-emerald-50", text: "text-emerald-600" },
-    ADJUST:         { label: "Adjust",   bg: "bg-amber-50",   text: "text-amber-600" },
-    VOID_REVERSAL:  { label: "Void Rev", bg: "bg-blue-50",    text: "text-blue-600" },
-    DISPOSAL:       { label: "Disposal", bg: "bg-slate-100",  text: "text-slate-700" },
+    SALE: { label: "Sale", bg: "bg-rose-50", text: "text-rose-600" },
+    RESTOCK: { label: "Restock", bg: "bg-emerald-50", text: "text-emerald-600" },
+    ADJUST: { label: "Adjust", bg: "bg-amber-50", text: "text-amber-600" },
+    VOID_REVERSAL: { label: "Void Rev", bg: "bg-blue-50", text: "text-blue-600" },
+    DISPOSAL: { label: "Disposal", bg: "bg-slate-100", text: "text-slate-700" },
   };
   const m = map[type] || { label: type, bg: "bg-slate-50", text: "text-slate-600" };
   return `<span class="text-xs font-medium px-2 py-0.5 rounded-full ${m.bg} ${m.text}">${m.label}</span>`;
@@ -221,21 +221,21 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   /* ================= ELEMENTS ================= */
-  const mainContent       = document.getElementById("mainContent");
-  const navDashboard      = document.getElementById("navDashboard");
-  const navInventory      = document.getElementById("navInventory");
+  const mainContent = document.getElementById("mainContent");
+  const navDashboard = document.getElementById("navDashboard");
+  const navInventory = document.getElementById("navInventory");
   const navUserManagement = document.getElementById("navUserManagement");
-  const navReports        = document.getElementById("navReports");
-  const navExpenses       = document.getElementById("navExpenses");
-  const navStockLogs      = document.getElementById("navStockLogs");
-  const navDisposalBin    = document.getElementById("navDisposalBin");
+  const navReports = document.getElementById("navReports");
+  const navExpenses = document.getElementById("navExpenses");
+  const navStockLogs = document.getElementById("navStockLogs");
+  const navDisposalBin = document.getElementById("navDisposalBin");
 
-  const staffNameEl       = document.getElementById("staffName");
-  const staffUsernameEl   = document.getElementById("staffUsername");
-  const staffAvatarEl     = document.getElementById("staffAvatar");
-  const settingsBtn       = document.getElementById("settingsBtn");
-  const profileBtn        = document.getElementById("profileBtn");
-  const logoutBtn         = document.getElementById("logoutBtn");
+  const staffNameEl = document.getElementById("staffName");
+  const staffUsernameEl = document.getElementById("staffUsername");
+  const staffAvatarEl = document.getElementById("staffAvatar");
+  const settingsBtn = document.getElementById("settingsBtn");
+  const profileBtn = document.getElementById("profileBtn");
+  const logoutBtn = document.getElementById("logoutBtn");
 
   const MAIN_CONTENT_BASE_CLASSES = "flex-1 overflow-y-auto overflow-x-hidden p-6 pt-20";
 
@@ -251,13 +251,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
   /* ================= OWNER INFO ================= */
   const ownerInfo = getOwnerDisplayInfo();
-  if (staffNameEl)     staffNameEl.textContent     = ownerInfo.fullName;
+  if (staffNameEl) staffNameEl.textContent = ownerInfo.fullName;
   if (staffUsernameEl) {
     staffUsernameEl.textContent = ownerInfo.subtitle;
     staffUsernameEl.classList.remove("hidden");
     staffUsernameEl.removeAttribute("aria-hidden");
   }
-  if (staffAvatarEl)   staffAvatarEl.textContent   = ownerInfo.initial;
+  if (staffAvatarEl) staffAvatarEl.textContent = ownerInfo.initial;
 
   hydrateOwnerHeaderIdentity({ staffNameEl, staffUsernameEl, staffAvatarEl });
 
@@ -340,18 +340,18 @@ document.addEventListener("DOMContentLoaded", () => {
 
   /* ================= RENDER DASHBOARD CONTENT ================= */
   function renderDashboardContent(raw) {
-    const summary        = mapDashboardSummary(raw.summary);
-    const revenueTrend   = mapRevenueTrend(raw.revenueTrend);
-    const requests       = mapPendingRequests(raw.pendingRequests);
-    const lowStockItems  = mapLowStock(raw.lowStock);
-    const activities     = mapActivity(raw.activity);
+    const summary = mapDashboardSummary(raw.summary);
+    const revenueTrend = mapRevenueTrend(raw.revenueTrend);
+    const requests = mapPendingRequests(raw.pendingRequests);
+    const lowStockItems = mapLowStock(raw.lowStock);
+    const activities = mapActivity(raw.activity);
     const stockMovements = mapStockMovements(raw.stockMovements);
 
     mainContent.innerHTML = `
       <div class="p-8 max-w-7xl mx-auto animate-fade-in">
         
         <!-- Metrics Cards -->
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 mb-8">
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
           ${renderMetricsCards(summary)}
         </div>
 
@@ -385,18 +385,6 @@ document.addEventListener("DOMContentLoaded", () => {
   /* ================= RENDER METRICS CARDS ================= */
   function renderMetricsCards(s) {
     return `
-      <!-- Total Revenue -->
-      <div class="bg-white rounded-2xl p-6 shadow-sm border border-slate-100 hover-lift animate-slide-up" style="animation-delay: 0.1s">
-        <div class="text-slate-500 text-sm font-medium mb-1">Total Revenue</div>
-        <div class="text-3xl font-bold text-slate-900 mb-2">₱${s.revenueTotal.toLocaleString()}</div>
-        <div class="flex items-center text-emerald-500 text-sm font-medium">
-          <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"></path>
-          </svg>
-          All time
-        </div>
-      </div>
-
       <!-- Today's Revenue -->
       <div class="bg-white rounded-2xl p-6 shadow-sm border border-slate-100 hover-lift animate-slide-up" style="animation-delay: 0.15s">
         <div class="text-slate-500 text-sm font-medium mb-1">Today's Revenue</div>
@@ -533,7 +521,7 @@ document.addEventListener("DOMContentLoaded", () => {
   /* ================= RENDER REQUEST ITEM ================= */
   function renderRequestItem(request) {
     const typeColors = {
-      RESTOCK:  { bg: "bg-blue-50",   text: "text-blue-600",   icon: "bg-blue-100",   svg: "text-blue-600" },
+      RESTOCK: { bg: "bg-blue-50", text: "text-blue-600", icon: "bg-blue-100", svg: "text-blue-600" },
       ADD_ITEM: { bg: "bg-emerald-50", text: "text-emerald-600", icon: "bg-emerald-100", svg: "text-emerald-600" },
     };
     const c = typeColors[request.requestType] || typeColors.RESTOCK;
@@ -578,7 +566,7 @@ document.addEventListener("DOMContentLoaded", () => {
   function renderStockAlert(alert) {
     const statusColors = {
       critical: { bg: "bg-rose-500", text: "text-rose-500" },
-      warning:  { bg: "bg-amber-500", text: "text-amber-500" },
+      warning: { bg: "bg-amber-500", text: "text-amber-500" },
     };
     const colors = statusColors[alert.status] || statusColors.warning;
     const minStock = alert.minStock || 1;
@@ -666,11 +654,11 @@ document.addEventListener("DOMContentLoaded", () => {
   /* ================= RENDER ACTIVITY ITEM ================= */
   function renderActivityItem(activity) {
     const activityColors = {
-      billing:   { border: "border-emerald-400", dot: "bg-emerald-400" },
-      inventory: { border: "border-blue-400",    dot: "bg-blue-400" },
-      approval:  { border: "border-purple-400",  dot: "bg-purple-400" },
-      user:      { border: "border-cyan-400",    dot: "bg-cyan-400" },
-      general:   { border: "border-amber-400",   dot: "bg-amber-400" },
+      billing: { border: "border-emerald-400", dot: "bg-emerald-400" },
+      inventory: { border: "border-blue-400", dot: "bg-blue-400" },
+      approval: { border: "border-purple-400", dot: "bg-purple-400" },
+      user: { border: "border-cyan-400", dot: "bg-cyan-400" },
+      general: { border: "border-amber-400", dot: "bg-amber-400" },
     };
     const colors = activityColors[activity.type] || activityColors.general;
 
@@ -698,7 +686,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     const maxVal = Math.max(...revenueTrend.data, 1000);
-    const yMax   = Math.ceil(maxVal * 1.2 / 1000) * 1000;     // round up nicely
+    const yMax = Math.ceil(maxVal * 1.2 / 1000) * 1000;     // round up nicely
 
     new Chart(ctx, {
       type: "line",
@@ -941,22 +929,35 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  function loadExpenses() {
+  async function loadExpenses() {
     setActive(navExpenses);
     clearInterval(refreshTimer);
     ensureOwnerLayoutShell();
 
-    mainContent.innerHTML = `
-      <div class="w-full">
-        <div class="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
-          <iframe
-            title="Owner Expenses"
-            src="../../HTML/OWNER_Expenses/OWNER_Expenses.html"
-            class="h-[calc(100vh-220px)] min-h-[560px] w-full border-0"
-          ></iframe>
-        </div>
-      </div>
-    `;
+    try {
+      const response = await fetch('../../HTML/OWNER_Expenses/OWNER_Expenses.html');
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const html = await response.text();
+      mainContent.innerHTML = html;
+
+      // Re-execute inline scripts (innerHTML does not run them)
+      mainContent.querySelectorAll('script').forEach(oldScript => {
+        const newScript = document.createElement('script');
+        [...oldScript.attributes].forEach(attr => newScript.setAttribute(attr.name, attr.value));
+        newScript.textContent = oldScript.textContent;
+        document.body.appendChild(newScript);
+        oldScript.remove();
+      });
+
+      // Move modals to body so fixed inset-0 covers the full screen (not just the right panel)
+      ['expenseModal', 'customAlertModal'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) document.body.appendChild(el);
+      });
+    } catch (error) {
+      console.error('Failed to load Expenses:', error);
+      mainContent.innerHTML = `<div class="p-8 text-red-500 font-medium">Error loading Expenses module: ${error.message}</div>`;
+    }
   }
 
   /* ================= EVENTS ================= */
@@ -1000,7 +1001,7 @@ document.addEventListener("DOMContentLoaded", () => {
     e.preventDefault();
     loadSettings();
   });
-    
+
 
   navStockLogs.addEventListener("click", (e) => {
     e.preventDefault();

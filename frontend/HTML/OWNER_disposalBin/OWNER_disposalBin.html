@@ -50,7 +50,8 @@
       <div>
         <p class="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Owner Module</p>
         <h1 class="mt-1 text-2xl font-semibold text-slate-900">Disposal Bin</h1>
-        <p class="mt-2 max-w-3xl text-sm text-slate-600">Permanent digital disposal logbook for expired, damaged, recalled, and otherwise non-sellable medicine batches.</p>
+        <p class="mt-2 max-w-3xl text-sm text-slate-600">Permanent digital disposal logbook for expired, damaged,
+          recalled, and otherwise non-sellable medicine batches.</p>
       </div>
       <div class="grid grid-cols-1 gap-3 text-sm md:grid-cols-3">
         <article class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
@@ -81,7 +82,8 @@
       </label>
       <label class="text-sm">
         <span class="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">Item Name</span>
-        <input id="disposalItemName" type="search" placeholder="Search item..." class="w-full rounded-lg border border-slate-300 px-3 py-2" />
+        <input id="disposalItemName" type="search" placeholder="Search item..."
+          class="w-full rounded-lg border border-slate-300 px-3 py-2" />
       </label>
       <label class="text-sm">
         <span class="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">Reason</span>
@@ -107,9 +109,14 @@
       </label>
     </div>
     <div class="mt-4 flex justify-end gap-2 disposal-no-print">
-      <button id="disposalResetFiltersBtn" class="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Reset</button>
-      <button id="disposalApplyFiltersBtn" class="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800">Apply Filters</button>
-      <button id="disposalPrintBtn" class="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50" disabled>
+      <button id="disposalResetFiltersBtn"
+        class="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Reset</button>
+      <button id="disposalApplyFiltersBtn"
+        class="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800">Apply
+        Filters</button>
+      <button id="disposalPrintBtn"
+        class="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+        disabled>
         <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
           <path d="M6 9V3h12v6"></path>
           <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path>
@@ -147,7 +154,8 @@
     </div>
   </section>
 
-  <section id="disposalReportPrintLayout" class="ibms-report-print-root hidden" aria-hidden="true" data-default-orientation="landscape">
+  <section id="disposalReportPrintLayout" class="ibms-report-print-root hidden" aria-hidden="true"
+    data-default-orientation="landscape">
     <article class="ibms-report-page">
       <header class="ibms-report-header">
         <div class="ibms-report-brand">
@@ -212,16 +220,20 @@
           <span> | </span>
           <span data-report-footer-timestamp>-</span>
         </div>
-        <div class="ibms-report-page-number">Page <span class="ibms-page-current"></span> of <span class="ibms-page-total"></span></div>
+        <div class="ibms-report-page-number">Page <span class="ibms-page-current"></span> of <span
+            class="ibms-page-total"></span></div>
       </footer>
     </article>
   </section>
 </div>
 
-<div id="disposalDetailsModal" class="fixed inset-0 hidden items-start justify-center overflow-y-auto bg-black/45 px-4 py-6 sm:items-center sm:p-6 z-[10001]">
+<div id="disposalDetailsModal"
+  class="fixed inset-0 hidden items-start justify-center overflow-y-auto bg-black/45 px-4 py-6 sm:items-center sm:p-6 z-[10001]">
   <div class="relative flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl bg-white p-6 shadow-xl">
-    <button id="closeDisposalDetailsModal" class="absolute right-4 top-4 text-2xl text-slate-400 hover:text-slate-700">&times;</button>
+    <button id="closeDisposalDetailsModal"
+      class="absolute right-4 top-4 text-2xl text-slate-400 hover:text-slate-700">&times;</button>
     <h3 class="text-xl font-semibold text-slate-900">Disposal Details</h3>
-    <div id="disposalDetailsBody" class="mt-5 grid grid-cols-1 gap-3 overflow-y-auto pr-1 text-sm md:grid-cols-2 sm:pr-2"></div>
+    <div id="disposalDetailsBody"
+      class="mt-5 grid grid-cols-1 gap-3 overflow-y-auto pr-1 text-sm md:grid-cols-2 sm:pr-2"></div>
   </div>
 </div>

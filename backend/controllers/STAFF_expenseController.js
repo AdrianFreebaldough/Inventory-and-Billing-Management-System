@@ -206,3 +206,48 @@ export const OWNER_getExpenseSummary = async (req, res) => {
     return res.status(500).json({ message: error.message || "Internal server error" });
   }
 };
+
+// Owner: Create expense (Auto-approved)
+export const OWNER_createExpense = async (req, res) => {
+  try {
+    const { title, category, amount, description, date, receiptImage } = req.body;
+
+    if (!title || !category || amount === undefined || amount === null) {
+      return res.status(400).json({ message: "Title, category, and amount are required" });
+    }
+
+    const parsedAmount = Number(amount);
+    if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
+      return res.status(400).json({ message: "Expense amount must be greater than zero." });
+    }
+
+    const expense = await STAFF_Expense.create({
+      title,
+      category,
+      amount,
+      description: description || "",
+      date: date || new Date(),
+      staffId: req.user.id,
+      staffName: req.user.name || "Owner",
+      receiptImage: receiptImage || null,
+      status: "Approved", // Auto-approved for admin
+      reviewedBy: req.user.id,
+      reviewedAt: new Date(),
+    });
+
+    await STAFF_ActivityLog.create({
+      staffId: req.user.id,
+      actionType: "expense-created-owner",
+      targetItemId: expense._id,
+      description: `Owner created and auto-approved expense: "${title}" (${category})`,
+      status: "completed",
+    });
+
+    return res.status(201).json({
+      message: "Expense created and approved successfully",
+      data: expense,
+    });
+  } catch (error) {
+    return res.status(500).json({ message: error.message || "Internal server error" });
+  }
+};

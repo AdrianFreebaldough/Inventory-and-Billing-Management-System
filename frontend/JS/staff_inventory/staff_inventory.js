@@ -722,17 +722,17 @@ function renderInventory() {
                         View Details
                     </button>
                     ${item.archived === true ?
-                        `<button class="restore-btn flex-1 bg-blue-600 text-white py-2 rounded text-xs font-medium hover:bg-blue-700 transition-colors" data-item-id="${item.id}">Restore</button>` :
-                        (item.isPendingRequest ?
-                            `<span class="flex-1 bg-yellow-100 text-yellow-700 py-2 rounded text-xs font-medium text-center border border-yellow-300">Awaiting Approval</span>` :
-                            `<button class="restock-btn flex-1 bg-blue-600 text-white py-2 rounded text-xs font-medium hover:bg-blue-700 transition-colors">Request Restock</button>`
-                        )
-                    }
+                `<button class="restore-btn flex-1 bg-blue-600 text-white py-2 rounded text-xs font-medium hover:bg-blue-700 transition-colors" data-item-id="${item.id}">Restore</button>` :
+                (item.isPendingRequest ?
+                    `<span class="flex-1 bg-yellow-100 text-yellow-700 py-2 rounded text-xs font-medium text-center border border-yellow-300">Awaiting Approval</span>` :
+                    `<button class="restock-btn flex-1 bg-blue-600 text-white py-2 rounded text-xs font-medium hover:bg-blue-700 transition-colors">Request Restock</button>`
+                )
+            }
                 </div>
                 ${!item.archived && !item.isPendingRequest ?
-                    `<button class="archive-btn w-full border border-gray-400 bg-gray-50 text-gray-700 py-2 rounded text-xs font-medium hover:bg-gray-100 transition-colors" data-item-id="${item.id}"> Archive</button>` :
-                    ''
-                }
+                `<button class="archive-btn w-full border border-gray-400 bg-gray-50 text-gray-700 py-2 rounded text-xs font-medium hover:bg-gray-100 transition-colors" data-item-id="${item.id}"> Archive</button>` :
+                ''
+            }
             </div>
         `;
         inventoryGrid.appendChild(card);
@@ -968,7 +968,7 @@ function showStaffEditPriceRequestModal(item) {
 
     const priceInput = getElement(modal, "#staffRequestedPriceInput");
     const priceError = getElement(modal, "#staffRequestedPriceError");
-    const saveBtn    = getElement(modal, "#staffPriceChangeSubmitBtn");
+    const saveBtn = getElement(modal, "#staffPriceChangeSubmitBtn");
 
     const validatePrice = () => {
         const raw = (priceInput?.value || "").trim();
@@ -1934,7 +1934,7 @@ function showAddItemModal() {
 
     addPriceInput?.addEventListener("input", validateSellingPrice);
     addPriceInput?.addEventListener("blur", validateSellingPrice);
-    
+
     // Initial validation check if value is already set (e.g. 0 by default)
     if (addPriceInput) {
         // Set default value to 0 if empty to trigger validation

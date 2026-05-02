@@ -1,422 +1,546 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
-	<meta charset="UTF-8" />
-	<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-	<title>Owner - Expense Management</title>
-	<script src="https://cdn.tailwindcss.com"></script>
-	<script src="../../JS/utils/authSession.js"></script>
-	<script>
-		window.IBMSAuth?.protectPage({ requiredRole: "owner" });
-	</script>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Owner - Expense Management</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="../../JS/utils/authSession.js"></script>
+  <script>
+    window.IBMSAuth?.protectPage({ requiredRole: "owner" });
+  </script>
 </head>
+
 <body class="bg-slate-100">
-	<div class="w-full p-6">
-		<div class="mb-4 flex items-center justify-end">
-			<button
-				type="button"
-				onclick="openAddExpensePrompt()"
-				class="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
-			>
-				Add Expense
-			</button>
-		</div>
+  <div class="w-full p-6">
+    <div class="mb-4 flex items-center justify-end">
+      <button type="button" onclick="openAddExpensePrompt()"
+        class="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700">
+        Add Expense
+      </button>
+    </div>
 
-		<!-- Summary Cards -->
-		<div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-			<div class="bg-white rounded-lg shadow-md p-6">
-				<div class="text-slate-600 text-sm mb-1">Total Today</div>
-				<div class="text-2xl font-bold text-blue-600" id="totalToday">₱0.00</div>
-			</div>
-			<div class="bg-white rounded-lg shadow-md p-6">
-				<div class="text-slate-600 text-sm mb-1">Total This Week</div>
-				<div class="text-2xl font-bold text-green-600" id="totalWeek">₱0.00</div>
-			</div>
-			<div class="bg-white rounded-lg shadow-md p-6">
-				<div class="text-slate-600 text-sm mb-1">Total This Month</div>
-				<div class="text-2xl font-bold text-purple-600" id="totalMonth">₱0.00</div>
-			</div>
-		</div>
+    <!-- Summary Cards -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+      <div class="bg-white rounded-lg shadow-md p-6">
+        <div class="text-slate-600 text-sm mb-1">Total Today</div>
+        <div class="text-2xl font-bold text-blue-600" id="totalToday">&#8369;0.00</div>
+      </div>
+      <div class="bg-white rounded-lg shadow-md p-6">
+        <div class="text-slate-600 text-sm mb-1">Total This Week</div>
+        <div class="text-2xl font-bold text-green-600" id="totalWeek">&#8369;0.00</div>
+      </div>
+      <div class="bg-white rounded-lg shadow-md p-6">
+        <div class="text-slate-600 text-sm mb-1">Total This Month</div>
+        <div class="text-2xl font-bold text-purple-600" id="totalMonth">&#8369;0.00</div>
+      </div>
+    </div>
 
-		<!-- Filters -->
-		<div class="bg-white rounded-lg shadow-md p-4 mb-6">
-			<h2 class="text-base font-semibold mb-3">Filters</h2>
-			<div class="grid grid-cols-1 md:grid-cols-5 gap-3 items-end">
-				<div>
-					<label class="block text-sm font-medium mb-1">Start Date</label>
-					<input type="date" id="filterStartDate" class="w-full border border-slate-300 rounded px-3 py-1.5" />
-				</div>
-				<div>
-					<label class="block text-sm font-medium mb-1">End Date</label>
-					<input type="date" id="filterEndDate" class="w-full border border-slate-300 rounded px-3 py-1.5" />
-				</div>
-				<div>
-					<label class="block text-sm font-medium mb-1">Category</label>
-					<select id="filterCategory" class="w-full border border-slate-300 rounded px-3 py-1.5">
-						<option value="">All Categories</option>
-						<option value="Meals">Meals</option>
-						<option value="Supplies">Supplies</option>
-						<option value="Transportation">Transportation</option>
-						<option value="Others">Others</option>
-					</select>
-				</div>
-				<div>
-					<label class="block text-sm font-medium mb-1">Status</label>
-					<select id="filterStatus" class="w-full border border-slate-300 rounded px-3 py-1.5">
-						<option value="">All Statuses</option>
-						<option value="Pending">Pending</option>
-						<option value="Reviewed">Reviewed</option>
-						<option value="Approved">Approved</option>
-					</select>
-				</div>
-				<div>
-					<button onclick="loadExpenses()" class="w-full bg-blue-600 text-white px-4 py-1.5 rounded hover:bg-blue-700 text-sm font-medium">
-						Apply Filters
-					</button>
-				</div>
-			</div>
-		</div>
+    <!-- Filters -->
+    <div class="bg-white rounded-lg shadow-md p-4 mb-6">
+      <h2 class="text-base font-semibold mb-3">Filters</h2>
+      <div class="grid grid-cols-1 md:grid-cols-5 gap-3 items-end">
+        <div>
+          <label class="block text-sm font-medium mb-1">Start Date</label>
+          <input type="date" id="filterStartDate" class="w-full border border-slate-300 rounded px-3 py-1.5" />
+        </div>
+        <div>
+          <label class="block text-sm font-medium mb-1">End Date</label>
+          <input type="date" id="filterEndDate" class="w-full border border-slate-300 rounded px-3 py-1.5" />
+        </div>
+        <div>
+          <label class="block text-sm font-medium mb-1">Category</label>
+          <select id="filterCategory" class="w-full border border-slate-300 rounded px-3 py-1.5">
+            <option value="">All Categories</option>
+            <option value="Meals">Meals</option>
+            <option value="Supplies">Supplies</option>
+            <option value="Transportation">Transportation</option>
+            <option value="Others">Others</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-sm font-medium mb-1">Status</label>
+          <select id="filterStatus" class="w-full border border-slate-300 rounded px-3 py-1.5">
+            <option value="">All Statuses</option>
+            <option value="Pending">Pending</option>
+            <option value="Reviewed">Reviewed</option>
+            <option value="Approved">Approved</option>
+          </select>
+        </div>
+        <div>
+          <button onclick="loadExpenses()"
+            class="w-full bg-blue-600 text-white px-4 py-1.5 rounded hover:bg-blue-700 text-sm font-medium">
+            Apply Filters
+          </button>
+        </div>
+      </div>
+    </div>
 
-		<!-- Expense List -->
-		<div class="bg-white rounded-lg shadow-md p-6">
-			<h2 class="text-lg font-semibold mb-4">All Expenses</h2>
-			<div class="overflow-x-auto">
-				<table class="w-full text-sm">
-					<thead class="bg-slate-100">
-						<tr>
-							<th class="px-4 py-2 text-left">Expense Title</th>
-							<th class="px-4 py-2 text-left">Category</th>
-							<th class="px-4 py-2 text-right">Amount</th>
-							<th class="px-4 py-2 text-left">Staff Name</th>
-							<th class="px-4 py-2 text-left">Date</th>
-							<th class="px-4 py-2 text-center">Actions</th>
-						</tr>
-					</thead>
-					<tbody id="expenseList">
-						<tr>
-							<td colspan="6" class="text-center py-4 text-slate-500">Loading expenses...</td>
-						</tr>
-					</tbody>
-				</table>
-			</div>
-		</div>
-	</div>
+    <!-- Expense List -->
+    <div class="bg-white rounded-lg shadow-md p-6">
+      <h2 class="text-lg font-semibold mb-4">All Expenses</h2>
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead class="bg-slate-100">
+            <tr>
+              <th class="px-4 py-2 text-left">Expense Title</th>
+              <th class="px-4 py-2 text-left">Category</th>
+              <th class="px-4 py-2 text-right">Amount</th>
+              <th class="px-4 py-2 text-left">Staff Name</th>
+              <th class="px-4 py-2 text-left">Date</th>
+              <th class="px-4 py-2 text-center">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="expenseList">
+            <tr>
+              <td colspan="6" class="text-center py-4 text-slate-500">Loading expenses...</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
 
-	<!-- Expense Detail Modal -->
-	<div id="expenseModal" class="hidden fixed inset-0 z-[9999] bg-black/10 backdrop-blur-none p-4">
-		<div class="mx-auto mt-8 w-full max-w-3xl rounded-xl bg-white shadow-2xl max-h-[88vh] overflow-y-auto">
-			<div class="flex items-start justify-between border-b border-slate-200 px-6 py-4">
-				<div>
-					<h3 class="text-xl font-semibold text-slate-900">Expense Details</h3>
-					<p class="text-sm text-slate-500 mt-1">Review expense information and update status</p>
-				</div>
-				<button
-					type="button"
-					onclick="closeModal()"
-					class="h-8 w-8 rounded-full text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-					aria-label="Close expense details"
-				>
-					&times;
-				</button>
-			</div>
+  <!-- Expense Detail Modal
+       PLACEMENT ONLY CHANGE: added flex items-center justify-center + darker backdrop.
+       All inner design is original. -->
+  <div id="expenseModal"
+    class="hidden fixed inset-0 z-[9999] bg-black/40 backdrop-blur-sm p-4 flex items-center justify-center">
+    <div class="w-full max-w-3xl rounded-xl bg-white shadow-2xl max-h-[88vh] overflow-y-auto">
+      <div class="flex items-start justify-between border-b border-slate-200 px-6 py-4">
+        <div>
+          <h3 class="text-xl font-semibold text-slate-900">Expense Details</h3>
+          <p class="text-sm text-slate-500 mt-1">Review expense information and update status</p>
+        </div>
+        <button type="button" onclick="closeModal()"
+          class="h-8 w-8 rounded-full text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+          aria-label="Close expense details">
+          &times;
+        </button>
+      </div>
 
-			<div class="px-6 py-5 space-y-5">
-				<div class="rounded-lg border border-slate-200 bg-slate-50 p-4">
-					<div class="flex flex-wrap items-start justify-between gap-3">
-						<div>
-							<p id="detailTitle" class="text-lg font-semibold text-slate-900">-</p>
-							<p id="detailCategory" class="text-sm text-slate-600 mt-0.5">-</p>
-						</div>
-						<div class="text-right">
-							<p id="detailAmount" class="text-2xl font-bold text-blue-700">-</p>
-							<span id="detailStatus" class="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium mt-1">-</span>
-						</div>
-					</div>
-				</div>
+      <div class="px-6 py-5 space-y-5">
+        <div class="rounded-lg border border-slate-200 bg-slate-50 p-4">
+          <div class="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p id="detailTitle" class="text-lg font-semibold text-slate-900">-</p>
+              <p id="detailCategory" class="text-sm text-slate-600 mt-0.5">-</p>
+            </div>
+            <div class="text-right">
+              <p id="detailAmount" class="text-2xl font-bold text-blue-700">-</p>
+              <span id="detailStatus"
+                class="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium mt-1">-</span>
+            </div>
+          </div>
+        </div>
 
-				<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-					<div class="rounded-lg border border-slate-200 p-4">
-						<p class="text-xs uppercase tracking-wide text-slate-500">Staff Name</p>
-						<p id="detailStaff" class="mt-1 text-sm font-medium text-slate-900">-</p>
-					</div>
-					<div class="rounded-lg border border-slate-200 p-4">
-						<p class="text-xs uppercase tracking-wide text-slate-500">Expense Date</p>
-						<p id="detailDate" class="mt-1 text-sm font-medium text-slate-900">-</p>
-					</div>
-					<div class="rounded-lg border border-slate-200 p-4">
-						<p class="text-xs uppercase tracking-wide text-slate-500">Submitted At</p>
-						<p id="detailSubmitted" class="mt-1 text-sm font-medium text-slate-900">-</p>
-					</div>
-					<div class="rounded-lg border border-slate-200 p-4">
-						<p class="text-xs uppercase tracking-wide text-slate-500">Reference</p>
-						<p id="detailReference" class="mt-1 text-sm font-medium text-slate-900">-</p>
-					</div>
-				</div>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div class="rounded-lg border border-slate-200 p-4">
+            <p class="text-xs uppercase tracking-wide text-slate-500">Staff Name</p>
+            <p id="detailStaff" class="mt-1 text-sm font-medium text-slate-900">-</p>
+          </div>
+          <div class="rounded-lg border border-slate-200 p-4">
+            <p class="text-xs uppercase tracking-wide text-slate-500">Expense Date</p>
+            <p id="detailDate" class="mt-1 text-sm font-medium text-slate-900">-</p>
+          </div>
+          <div class="rounded-lg border border-slate-200 p-4">
+            <p class="text-xs uppercase tracking-wide text-slate-500">Submitted At</p>
+            <p id="detailSubmitted" class="mt-1 text-sm font-medium text-slate-900">-</p>
+          </div>
+          <div class="rounded-lg border border-slate-200 p-4">
+            <p class="text-xs uppercase tracking-wide text-slate-500">Reference</p>
+            <p id="detailReference" class="mt-1 text-sm font-medium text-slate-900">-</p>
+          </div>
+        </div>
 
-				<div class="rounded-lg border border-slate-200 p-4">
-					<p class="text-xs uppercase tracking-wide text-slate-500">Description</p>
-					<p id="detailDescription" class="mt-1 text-sm text-slate-800 whitespace-pre-line">No description provided.</p>
-				</div>
+        <div class="rounded-lg border border-slate-200 p-4">
+          <p class="text-xs uppercase tracking-wide text-slate-500">Description</p>
+          <p id="detailDescription" class="mt-1 text-sm text-slate-800 whitespace-pre-line">No description provided.</p>
+        </div>
 
-				<div class="flex flex-wrap justify-end gap-2">
-					<button id="btnApprove" onclick="updateExpenseStatus('Approved')" class="rounded bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700">
-						Approve
-					</button>
-					<button id="btnReject" onclick="updateExpenseStatus('Rejected')" class="rounded bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700">
-						Reject
-					</button>
-					<button onclick="closeModal()" class="rounded bg-slate-600 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700">
-						Close
-					</button>
-				</div>
-			</div>
-		</div>
-	</div>
+        <div id="detailReceiptContainer" class="hidden rounded-lg border border-slate-200 p-4">
+          <p class="text-xs uppercase tracking-wide text-slate-500 mb-2">Receipt Image</p>
+          <div class="flex justify-center bg-slate-50 rounded p-2">
+            <img id="detailReceiptImage" src="" alt="Expense Receipt" class="max-w-full max-h-64 rounded shadow-sm cursor-pointer hover:opacity-90" onclick="window.open(this.src, '_blank')" />
+          </div>
+        </div>
 
-	<!-- Custom Alert Modal -->
-	<div id="customAlertModal" class="hidden fixed inset-0 z-[10000] bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
-		<div class="bg-white rounded-xl shadow-2xl max-w-md w-full p-6 text-center transform transition-all">
-			<div id="alertIconContainer" class="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-green-100 text-green-600 mb-4">
-				<svg id="alertIconSuccess" class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-				</svg>
-				<svg id="alertIconError" class="h-6 w-6 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
-				</svg>
-				<svg id="alertIconInfo" class="h-6 w-6 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-				</svg>
-			</div>
-			<h3 id="alertTitle" class="text-lg font-semibold text-slate-900 mb-2">Success</h3>
-			<p id="alertMessage" class="text-sm text-slate-600 mb-6">-</p>
-			<button onclick="closeAlertModal()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg transition duration-200">
-				Okay
-			</button>
-		</div>
-	</div>
+        <div class="flex flex-wrap justify-end gap-2">
+          <button id="btnApprove" onclick="updateExpenseStatus('Approved')"
+            class="rounded bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700">
+            Approve
+          </button>
+          <button id="btnReject" onclick="updateExpenseStatus('Rejected')"
+            class="rounded bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700">
+            Reject
+          </button>
+          <button onclick="closeModal()"
+            class="rounded bg-slate-600 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700">
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
 
-	<script>
-		const resolveApiBase = () => {
-			const configuredBase = String(window.IBMS_API_BASE_URL || '').trim().replace(/\/+$/, '');
-			if (configuredBase) {
-				return configuredBase.endsWith('/api') ? configuredBase : `${configuredBase}/api`;
-			}
+  <!-- Add Expense Modal -->
+  <div id="addExpenseModal" class="hidden fixed inset-0 z-[9999] bg-black/40 backdrop-blur-sm p-4 flex items-center justify-center">
+    <div class="w-full max-w-lg rounded-xl bg-white shadow-2xl max-h-[90vh] overflow-y-auto">
+      <div class="flex items-start justify-between border-b border-slate-200 px-6 py-4">
+        <h3 class="text-xl font-semibold text-slate-900">Add New Expense</h3>
+        <button type="button" onclick="closeAddModal()" class="text-slate-400 hover:text-slate-700 text-2xl">&times;</button>
+      </div>
+      <form id="addExpenseForm" class="p-6 space-y-4">
+        <div>
+          <label class="block text-sm font-medium text-slate-700 mb-1">Expense Title*</label>
+          <input type="text" id="addTitle" required class="w-full border border-slate-300 rounded px-3 py-2 text-sm" placeholder="e.g., Office Supplies" />
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-slate-700 mb-1">Category*</label>
+          <select id="addCategory" required class="w-full border border-slate-300 rounded px-3 py-2 text-sm">
+            <option value="">Select Category</option>
+            <option value="Meals">Meals</option>
+            <option value="Supplies">Supplies</option>
+            <option value="Transportation">Transportation</option>
+            <option value="Others">Others</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-slate-700 mb-1">Amount (&#8369;)*</label>
+          <input type="number" id="addAmount" required step="0.01" min="0.01" class="w-full border border-slate-300 rounded px-3 py-2 text-sm" placeholder="0.00" />
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-slate-700 mb-1">Date*</label>
+          <input type="date" id="addDate" required class="w-full border border-slate-300 rounded px-3 py-2 text-sm" />
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-slate-700 mb-1">Description</label>
+          <textarea id="addDescription" rows="3" class="w-full border border-slate-300 rounded px-3 py-2 text-sm" placeholder="Details..."></textarea>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-slate-700 mb-1">Receipt Image</label>
+          <input type="file" id="addReceiptImage" accept="image/*" class="w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100" />
+        </div>
+        <div class="flex justify-end gap-2 pt-4">
+          <button type="button" onclick="closeAddModal()" class="px-4 py-2 text-sm font-medium text-slate-600 bg-slate-100 rounded hover:bg-slate-200">Cancel</button>
+          <button type="submit" class="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded hover:bg-blue-700">Add Expense</button>
+        </div>
+      </form>
+    </div>
+  </div>
 
-			const host = String(window.location.hostname || '').toLowerCase();
-			if (host === 'localhost' || host === '127.0.0.1') {
-				return 'http://localhost:3000/api';
-			}
+  <!-- Custom Alert Modal -->
+  <div id="customAlertModal"
+    class="hidden fixed inset-0 z-[10000] bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-white rounded-xl shadow-2xl max-w-md w-full p-6 text-center transform transition-all">
+      <div id="alertIconContainer"
+        class="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-green-100 text-green-600 mb-4">
+        <svg id="alertIconSuccess" class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+        </svg>
+        <svg id="alertIconError" class="h-6 w-6 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+        </svg>
+        <svg id="alertIconInfo" class="h-6 w-6 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+        </svg>
+      </div>
+      <h3 id="alertTitle" class="text-lg font-semibold text-slate-900 mb-2">Success</h3>
+      <p id="alertMessage" class="text-sm text-slate-600 mb-6">-</p>
+      <button onclick="closeAlertModal()"
+        class="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg transition duration-200">
+        Okay
+      </button>
+    </div>
+  </div>
 
-			return '/api';
-		};
+  <script>
+    const resolveApiBase = () => {
+      const configuredBase = String(window.IBMS_API_BASE_URL || '').trim().replace(/\/+$/, '');
+      if (configuredBase) {
+        return configuredBase.endsWith('/api') ? configuredBase : `${configuredBase}/api`;
+      }
+      const host = String(window.location.hostname || '').toLowerCase();
+      if (host === 'localhost' || host === '127.0.0.1') {
+        return 'http://localhost:3000/api';
+      }
+      return '/api';
+    };
 
-		const API_BASE = resolveApiBase();
-		const TOKEN_KEYS = ['token', 'authToken', 'jwtToken', 'ibmsToken'];
-		const token = TOKEN_KEYS.map(k => localStorage.getItem(k)).find(v => v && v.trim()) || '';
-		let currentExpenseId = null;
+    const API_BASE = resolveApiBase();
+    const TOKEN_KEYS = ['token', 'authToken', 'jwtToken', 'ibmsToken'];
+    const token = TOKEN_KEYS.map(k => localStorage.getItem(k)).find(v => v && v.trim()) || '';
+    let currentExpenseId = null;
 
-		function showAlert(message, type = 'success') {
-			const modal = document.getElementById('customAlertModal');
-			const titleEl = document.getElementById('alertTitle');
-			const messageEl = document.getElementById('alertMessage');
-			const iconSuccess = document.getElementById('alertIconSuccess');
-			const iconError = document.getElementById('alertIconError');
-			const iconInfo = document.getElementById('alertIconInfo');
-			const iconContainer = document.getElementById('alertIconContainer');
+    function showAlert(message, type = 'success') {
+      const modal = document.getElementById('customAlertModal');
+      const titleEl = document.getElementById('alertTitle');
+      const messageEl = document.getElementById('alertMessage');
+      const iconSuccess = document.getElementById('alertIconSuccess');
+      const iconError = document.getElementById('alertIconError');
+      const iconInfo = document.getElementById('alertIconInfo');
+      const iconContainer = document.getElementById('alertIconContainer');
 
-			messageEl.textContent = message;
-			
-			iconSuccess.classList.add('hidden');
-			iconError.classList.add('hidden');
-			iconInfo.classList.add('hidden');
+      messageEl.textContent = message;
+      iconSuccess.classList.add('hidden');
+      iconError.classList.add('hidden');
+      iconInfo.classList.add('hidden');
 
-			if (type === 'success') {
-				titleEl.textContent = 'Success';
-				iconSuccess.classList.remove('hidden');
-				iconContainer.className = 'mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-green-100 text-green-600 mb-4';
-			} else if (type === 'error') {
-				titleEl.textContent = 'Error';
-				iconError.classList.remove('hidden');
-				iconContainer.className = 'mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-red-100 text-red-600 mb-4';
-			} else {
-				titleEl.textContent = 'Info';
-				iconInfo.classList.remove('hidden');
-				iconContainer.className = 'mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-blue-100 text-blue-600 mb-4';
-			}
+      if (type === 'success') {
+        titleEl.textContent = 'Success';
+        iconSuccess.classList.remove('hidden');
+        iconContainer.className = 'mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-green-100 text-green-600 mb-4';
+      } else if (type === 'error') {
+        titleEl.textContent = 'Error';
+        iconError.classList.remove('hidden');
+        iconContainer.className = 'mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-red-100 text-red-600 mb-4';
+      } else {
+        titleEl.textContent = 'Info';
+        iconInfo.classList.remove('hidden');
+        iconContainer.className = 'mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-blue-100 text-blue-600 mb-4';
+      }
 
-			modal.classList.remove('hidden');
-		}
+      modal.classList.remove('hidden');
+    }
 
-		function closeAlertModal() {
-			document.getElementById('customAlertModal').classList.add('hidden');
-		}
+    function closeAlertModal() {
+      document.getElementById('customAlertModal').classList.add('hidden');
+    }
 
-		// Load summary
-		async function loadSummary() {
-			try {
-				const response = await fetch(`${API_BASE}/owner/expenses/summary`, {
-					headers: { 'Authorization': `Bearer ${token}` }
-				});
-				const result = await response.json();
-				
-				if (response.ok) {
-					document.getElementById('totalToday').textContent = `₱${result.data.today.toFixed(2)}`;
-					document.getElementById('totalWeek').textContent = `₱${result.data.thisWeek.toFixed(2)}`;
-					document.getElementById('totalMonth').textContent = `₱${result.data.thisMonth.toFixed(2)}`;
-				}
-			} catch (error) {
-				console.error('Error loading summary:', error);
-			}
-		}
+    async function loadSummary() {
+      try {
+        const response = await fetch(`${API_BASE}/owner/expenses/summary`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const result = await response.json();
+        if (response.ok) {
+          document.getElementById('totalToday').textContent = `\u20B1${result.data.today.toFixed(2)}`;
+          document.getElementById('totalWeek').textContent = `\u20B1${result.data.thisWeek.toFixed(2)}`;
+          document.getElementById('totalMonth').textContent = `\u20B1${result.data.thisMonth.toFixed(2)}`;
+        }
+      } catch (error) {
+        console.error('Error loading summary:', error);
+      }
+    }
 
-		// Load expenses
-		async function loadExpenses() {
-			const params = new URLSearchParams();
-			const startDate = document.getElementById('filterStartDate').value;
-			const endDate = document.getElementById('filterEndDate').value;
-			const category = document.getElementById('filterCategory').value;
-			const status = document.getElementById('filterStatus').value;
+    async function loadExpenses() {
+      const params = new URLSearchParams();
+      const startDate = document.getElementById('filterStartDate').value;
+      const endDate = document.getElementById('filterEndDate').value;
+      const category = document.getElementById('filterCategory').value;
+      const status = document.getElementById('filterStatus').value;
 
-			if (startDate) params.append('startDate', startDate);
-			if (endDate) params.append('endDate', endDate);
-			if (category) params.append('category', category);
-			if (status) params.append('status', status);
+      if (startDate) params.append('startDate', startDate);
+      if (endDate) params.append('endDate', endDate);
+      if (category) params.append('category', category);
+      if (status) params.append('status', status);
 
-			try {
-				const response = await fetch(`${API_BASE}/owner/expenses?${params}`, {
-					headers: { 'Authorization': `Bearer ${token}` }
-				});
-				const result = await response.json();
+      try {
+        const response = await fetch(`${API_BASE}/owner/expenses?${params}`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const result = await response.json();
 
-				if (response.ok) {
-					const tbody = document.getElementById('expenseList');
-					
-					if (result.data.length === 0) {
-						tbody.innerHTML = '<tr><td colspan="6" class="text-center py-4 text-slate-500">No expenses found</td></tr>';
-						return;
-					}
+        if (response.ok) {
+          const tbody = document.getElementById('expenseList');
 
-					tbody.innerHTML = result.data.map(expense => {
-						const statusLower = String(expense.status || '').toLowerCase();
-						let btnColor = 'text-yellow-500 font-medium';
-						if (statusLower === 'approved') btnColor = 'text-blue-600';
-						if (statusLower === 'rejected') btnColor = 'text-red-600 font-semibold';
-						
-						return `
-							<tr class="border-b hover:bg-slate-50">
-								<td class="px-4 py-2">${expense.title}</td>
-								<td class="px-4 py-2">${expense.category}</td>
-								<td class="px-4 py-2 text-right">₱${expense.amount.toFixed(2)}</td>
-								<td class="px-4 py-2">${expense.staffName}</td>
-								<td class="px-4 py-2">${new Date(expense.date).toLocaleDateString()}</td>
-								<td class="px-4 py-2 text-center">
-									<button onclick='showExpenseDetails(${JSON.stringify(expense)})' class="${btnColor} hover:underline text-sm">
-										View
-									</button>
-								</td>
-							</tr>
-						`;
-					}).join('');
-				}
-			} catch (error) {
-				console.error('Error loading expenses:', error);
-			}
-		}
+          if (result.data.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="6" class="text-center py-4 text-slate-500">No expenses found</td></tr>';
+            return;
+          }
 
-		function openAddExpensePrompt() {
-			showAlert('Use the Staff Expenses module to create a new expense entry.', 'info');
-		}
+          tbody.innerHTML = result.data.map(expense => {
+            const statusLower = String(expense.status || '').toLowerCase();
+            let btnColor = 'text-yellow-500 font-medium';
+            if (statusLower === 'approved') btnColor = 'text-blue-600';
+            if (statusLower === 'rejected') btnColor = 'text-red-600 font-semibold';
 
-		function getStatusBadgeClass(status) {
-			const key = String(status || '').toLowerCase();
-			if (key === 'approved') return 'bg-green-100 text-green-700';
-			if (key === 'reviewed') return 'bg-blue-100 text-blue-700';
-			if (key === 'pending') return 'bg-yellow-100 text-yellow-700';
-			if (key === 'rejected') return 'bg-red-100 text-red-700';
-			return 'bg-slate-100 text-slate-700';
-		}
+            return `
+              <tr class="border-b hover:bg-slate-50">
+                <td class="px-4 py-2">${expense.title}</td>
+                <td class="px-4 py-2">${expense.category}</td>
+                <td class="px-4 py-2 text-right">\u20B1${expense.amount.toFixed(2)}</td>
+                <td class="px-4 py-2">${expense.staffName}</td>
+                <td class="px-4 py-2">${new Date(expense.date).toLocaleDateString()}</td>
+                <td class="px-4 py-2 text-center">
+                  <button onclick='showExpenseDetails(${JSON.stringify(expense)})' class="${btnColor} hover:underline text-sm">
+                    View
+                  </button>
+                </td>
+              </tr>
+            `;
+          }).join('');
+        }
+      } catch (error) {
+        console.error('Error loading expenses:', error);
+      }
+    }
 
-		function setDetail(id, value) {
-			const el = document.getElementById(id);
-			if (el) el.textContent = value;
-		}
+    function openAddExpensePrompt() {
+      document.getElementById('addDate').valueAsDate = new Date();
+      document.getElementById('addExpenseModal').classList.remove('hidden');
+    }
 
-		// Show expense details
-		function showExpenseDetails(expense) {
-			currentExpenseId = expense._id;
-			setDetail('detailTitle', expense.title || 'Untitled Expense');
-			setDetail('detailCategory', expense.category || 'Uncategorized');
-			setDetail('detailAmount', `₱${Number(expense.amount || 0).toFixed(2)}`);
-			setDetail('detailStaff', expense.staffName || 'Unknown');
-			setDetail('detailDate', expense.date ? new Date(expense.date).toLocaleDateString() : 'N/A');
-			setDetail('detailSubmitted', expense.createdAt ? new Date(expense.createdAt).toLocaleString() : 'N/A');
-			setDetail('detailReference', expense._id || 'N/A');
-			setDetail('detailDescription', expense.description || 'No description provided.');
+    function closeAddModal() {
+      document.getElementById('addExpenseModal').classList.add('hidden');
+      document.getElementById('addExpenseForm').reset();
+    }
 
-			const statusEl = document.getElementById('detailStatus');
-			if (statusEl) {
-				statusEl.className = `inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium mt-1 ${getStatusBadgeClass(expense.status)}`;
-				statusEl.textContent = expense.status || 'Unknown';
-			}
+    document.getElementById('addExpenseForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      
+      const fileInput = document.getElementById('addReceiptImage');
+      let receiptImage = null;
 
-			const btnApprove = document.getElementById('btnApprove');
-			const btnReject = document.getElementById('btnReject');
-			if (btnApprove && btnReject) {
-				const statusLower = String(expense.status || '').toLowerCase();
-				if (statusLower === 'approved' || statusLower === 'rejected') {
-					btnApprove.classList.add('hidden');
-					btnReject.classList.add('hidden');
-				} else {
-					btnApprove.classList.remove('hidden');
-					btnReject.classList.remove('hidden');
-				}
-			}
+      if (fileInput.files && fileInput.files[0]) {
+        try {
+          receiptImage = await toBase64(fileInput.files[0]);
+        } catch (err) {
+          console.error("Failed to process image:", err);
+        }
+      }
 
-			document.getElementById('expenseModal').classList.remove('hidden');
-		}
+      const formData = {
+        title: document.getElementById('addTitle').value,
+        category: document.getElementById('addCategory').value,
+        amount: parseFloat(document.getElementById('addAmount').value),
+        date: document.getElementById('addDate').value,
+        description: document.getElementById('addDescription').value,
+        receiptImage: receiptImage
+      };
 
-		// Update expense status
-		async function updateExpenseStatus(status) {
-			if (!currentExpenseId) return;
+      try {
+        const response = await fetch(`${API_BASE}/owner/expenses`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify(formData)
+        });
 
-			try {
-				const response = await fetch(`${API_BASE}/owner/expenses/${currentExpenseId}/status`, {
-					method: 'PATCH',
-					headers: {
-						'Content-Type': 'application/json',
-						'Authorization': `Bearer ${token}`
-					},
-					body: JSON.stringify({ status })
-				});
+        const result = await response.json();
 
-				const result = await response.json();
+        if (response.ok) {
+          showAlert('Expense added and approved successfully!', 'success');
+          closeAddModal();
+          loadExpenses();
+          loadSummary();
+        } else {
+          showAlert(result.message || 'Failed to add expense', 'error');
+        }
+      } catch (error) {
+        showAlert('Network error occurred', 'error');
+      }
+    });
 
-				if (response.ok) {
-					showAlert(`Expense ${status.toLowerCase()} successfully!`, 'success');
-					closeModal();
-					loadExpenses();
-					loadSummary();
-				} else {
-					showAlert(`Error: ${result.message}`, 'error');
-				}
-			} catch (error) {
-				showAlert(`Error: ${error.message}`, 'error');
-			}
-		}
+    function toBase64(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = error => reject(error);
+      });
+    }
 
-		// Close modal
-		function closeModal() {
-			document.getElementById('expenseModal').classList.add('hidden');
-			currentExpenseId = null;
-		}
+    function getStatusBadgeClass(status) {
+      const key = String(status || '').toLowerCase();
+      if (key === 'approved') return 'bg-green-100 text-green-700';
+      if (key === 'reviewed') return 'bg-blue-100 text-blue-700';
+      if (key === 'pending') return 'bg-yellow-100 text-yellow-700';
+      if (key === 'rejected') return 'bg-red-100 text-red-700';
+      return 'bg-slate-100 text-slate-700';
+    }
 
-		document.getElementById('expenseModal')?.addEventListener('click', (e) => {
-			if (e.target.id === 'expenseModal') closeModal();
-		});
+    function setDetail(id, value) {
+      const el = document.getElementById(id);
+      if (el) el.textContent = value;
+    }
 
-		// Load data on page load
-		loadSummary();
-		loadExpenses();
-	</script>
+    function showExpenseDetails(expense) {
+      currentExpenseId = expense._id;
+      setDetail('detailTitle', expense.title || 'Untitled Expense');
+      setDetail('detailCategory', expense.category || 'Uncategorized');
+      setDetail('detailAmount', `\u20B1${Number(expense.amount || 0).toFixed(2)}`);
+      setDetail('detailStaff', expense.staffName || 'Unknown');
+      setDetail('detailDate', expense.date ? new Date(expense.date).toLocaleDateString() : 'N/A');
+      setDetail('detailSubmitted', expense.createdAt ? new Date(expense.createdAt).toLocaleString() : 'N/A');
+      setDetail('detailReference', expense._id || 'N/A');
+      setDetail('detailDescription', expense.description || 'No description provided.');
+
+      const receiptContainer = document.getElementById('detailReceiptContainer');
+      const receiptImg = document.getElementById('detailReceiptImage');
+      if (expense.receiptImage) {
+        receiptImg.src = expense.receiptImage;
+        receiptContainer.classList.remove('hidden');
+      } else {
+        receiptContainer.classList.add('hidden');
+      }
+
+      const statusEl = document.getElementById('detailStatus');
+      if (statusEl) {
+        statusEl.className = `inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium mt-1 ${getStatusBadgeClass(expense.status)}`;
+        statusEl.textContent = expense.status || 'Unknown';
+      }
+
+      const btnApprove = document.getElementById('btnApprove');
+      const btnReject = document.getElementById('btnReject');
+      if (btnApprove && btnReject) {
+        const statusLower = String(expense.status || '').toLowerCase();
+        if (statusLower === 'approved' || statusLower === 'rejected') {
+          btnApprove.classList.add('hidden');
+          btnReject.classList.add('hidden');
+        } else {
+          btnApprove.classList.remove('hidden');
+          btnReject.classList.remove('hidden');
+        }
+      }
+
+      document.getElementById('expenseModal').classList.remove('hidden');
+    }
+
+    async function updateExpenseStatus(status) {
+      if (!currentExpenseId) return;
+
+      try {
+        const response = await fetch(`${API_BASE}/owner/expenses/${currentExpenseId}/status`, {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({ status })
+        });
+
+        const result = await response.json();
+
+        if (response.ok) {
+          showAlert(`Expense ${status.toLowerCase()} successfully!`, 'success');
+          closeModal();
+          loadExpenses();
+          loadSummary();
+        } else {
+          showAlert(`Error: ${result.message}`, 'error');
+        }
+      } catch (error) {
+        showAlert(`Error: ${error.message}`, 'error');
+      }
+    }
+
+    function closeModal() {
+      document.getElementById('expenseModal').classList.add('hidden');
+      currentExpenseId = null;
+    }
+
+    document.getElementById('expenseModal')?.addEventListener('click', (e) => {
+      if (e.target.id === 'expenseModal') closeModal();
+    });
+
+    loadSummary();
+    loadExpenses();
+  </script>
 </body>
+
 </html>

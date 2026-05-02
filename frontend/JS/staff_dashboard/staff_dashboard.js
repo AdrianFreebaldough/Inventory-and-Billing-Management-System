@@ -634,22 +634,35 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  function loadExpenses() {
+  async function loadExpenses() {
     stopAutoRefresh();
     setCurrentStaffRoute("expenses");
     if (navExpenses) setActive(navExpenses);
 
-    mainContent.innerHTML = `
-      <div class="mx-auto max-w-7xl">
-        <div class="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
-          <iframe
-            title="My Expenses"
-            src="../../HTML/STAFF_Expenses/STAFF_Expenses.html"
-            class="h-[calc(100vh-220px)] min-h-[560px] w-full border-0"
-          ></iframe>
-        </div>
-      </div>
-    `;
+    try {
+      const response = await fetch('../../HTML/STAFF_Expenses/STAFF_Expenses.html');
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const html = await response.text();
+      mainContent.innerHTML = html;
+
+      // Re-execute inline scripts (innerHTML does not run them)
+      mainContent.querySelectorAll('script').forEach(oldScript => {
+        const newScript = document.createElement('script');
+        [...oldScript.attributes].forEach(attr => newScript.setAttribute(attr.name, attr.value));
+        newScript.textContent = oldScript.textContent;
+        document.body.appendChild(newScript);
+        oldScript.remove();
+      });
+
+      // Move modals to body so fixed inset-0 covers the full screen (not just the right panel)
+      ['customAlertModal'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) document.body.appendChild(el);
+      });
+    } catch (error) {
+      console.error('Failed to load Expenses:', error);
+      mainContent.innerHTML = `<div class="p-8 text-red-500 font-medium">Error loading Expenses module: ${error.message}</div>`;
+    }
   }
 
   function loadActivityLog() {

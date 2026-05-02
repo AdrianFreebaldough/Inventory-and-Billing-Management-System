@@ -8,7 +8,7 @@ const State = {
   currentTab: "sales",
   currentFilter: "All Types",
   currentSort: "",
-  currentPeriod: "Last Week",
+  currentPeriod: "Today",
   abortController: null,
   salesData: null,
 };
@@ -691,11 +691,7 @@ function populateTable() {
 }
 
 function setupEventListeners() {
-  if (DOM.periodSelect) {
-    const newPeriodSelect = DOM.periodSelect.cloneNode(true);
-    DOM.periodSelect.parentNode.replaceChild(newPeriodSelect, DOM.periodSelect);
-    DOM.periodSelect = newPeriodSelect;
-
+  if (DOM.periodSelect && !DOM.periodSelect.dataset.listenerAttached) {
     DOM.periodSelect.addEventListener("change", async (e) => {
       State.currentPeriod = e.target.value;
 
@@ -708,6 +704,11 @@ function setupEventListeners() {
         await currentModule.refreshData(State.currentPeriod);
       }
     });
+    DOM.periodSelect.dataset.listenerAttached = "true";
+  }
+
+  if (DOM.periodSelect) {
+    DOM.periodSelect.value = State.currentPeriod;
   }
 
   if (!exportListenerAttached) {
@@ -720,6 +721,7 @@ function setupEventListeners() {
     DOM.sortSelect.parentNode.replaceChild(newSortSelect, DOM.sortSelect);
     DOM.sortSelect = newSortSelect;
 
+    DOM.sortSelect.value = State.currentSort || "";
     DOM.sortSelect.addEventListener("change", (e) => {
       const value = e.target.value;
       State.currentSort = value === "Sort By" || value === "" ? "" : value;
@@ -732,6 +734,7 @@ function setupEventListeners() {
     DOM.filterSelect.parentNode.replaceChild(newFilterSelect, DOM.filterSelect);
     DOM.filterSelect = newFilterSelect;
 
+    DOM.filterSelect.value = State.currentFilter || "All Types";
     DOM.filterSelect.addEventListener("change", (e) => {
       State.currentFilter = e.target.value || "All Types";
       populateTable();

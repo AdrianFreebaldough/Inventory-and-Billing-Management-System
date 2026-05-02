@@ -12,7 +12,7 @@ export const Owner_getStockLogs = async (req, res) => {
       productId: req.query.productId,
       movementType: req.query.movementType,
       performedBy: req.query.performedBy,
-      referenceId: req.query.referenceId,
+      search: req.query.search,
       page: req.query.page,
       limit: req.query.limit,
     });
@@ -34,7 +34,7 @@ export const Owner_getStockLogSummary = async (req, res) => {
       productId: req.query.productId,
       movementType: req.query.movementType,
       performedBy: req.query.performedBy,
-      referenceId: req.query.referenceId,
+      search: req.query.search,
     });
 
     return res.status(200).json({

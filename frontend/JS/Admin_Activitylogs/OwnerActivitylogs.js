@@ -38,7 +38,7 @@ const qtyClass = (qtyChange) =>
 const renderStatusRow = (tableBody, message) => {
 	tableBody.innerHTML = `
 		<tr>
-			<td colspan="9" class="px-4 py-8 text-center text-sm text-slate-500">${escapeHtml(message)}</td>
+			<td colspan="8" class="px-4 py-8 text-center text-sm text-slate-500">${escapeHtml(message)}</td>
 		</tr>
 	`;
 };
@@ -97,7 +97,7 @@ export function initOwnerActivitylogs() {
 	const productFilterEl = document.getElementById("filterProduct");
 	const movementFilterEl = document.getElementById("filterMovementType");
 	const performedByFilterEl = document.getElementById("filterPerformedBy");
-	const referenceFilterEl = document.getElementById("filterReferenceId");
+	const searchLogsEl = document.getElementById("searchLogs");
 	const resetFiltersEl = document.getElementById("resetFilters");
 
 	const tableBody = document.getElementById("stockLogsTableBody");
@@ -191,10 +191,10 @@ export function initOwnerActivitylogs() {
 		reportMonthFilter.innerHTML = [
 			"<option value=\"\">Select Month</option>",
 			...months
-			.map(
-				(m) =>
-					`<option value="${m.value}">${m.label}</option>`
-			)
+				.map(
+					(m) =>
+						`<option value="${m.value}">${m.label}</option>`
+				)
 		]
 			.join("");
 
@@ -756,141 +756,141 @@ export function initOwnerActivitylogs() {
 
 			// ── Inventory Overview (grouped bar) ──
 			if (overviewCanvas) {
-			const parentW = overviewCanvas.parentElement.clientWidth;
-			const parentH = overviewCanvas.parentElement.clientHeight;
+				const parentW = overviewCanvas.parentElement.clientWidth;
+				const parentH = overviewCanvas.parentElement.clientHeight;
 
-			const maxVal = Math.max(...systemData, ...physicalData, 10);
-			const yMax = Math.ceil(maxVal * 1.2 / 10) * 10;
+				const maxVal = Math.max(...systemData, ...physicalData, 10);
+				const yMax = Math.ceil(maxVal * 1.2 / 10) * 10;
 
-			inventoryChartInstance = new ChartJS(overviewCanvas, {
-				type: "bar",
-				data: {
-					labels,
-					datasets: [
-						{
-							label: "System Stock",
-							data: systemData,
-							backgroundColor: "rgba(14, 165, 233, 0.75)",
-							borderColor: "rgba(14, 165, 233, 1)",
-							borderWidth: 1,
-							borderRadius: 4,
-						},
-						{
-							label: "Physical Count",
-							data: physicalData,
-							backgroundColor: "rgba(16, 185, 129, 0.75)",
-							borderColor: "rgba(16, 185, 129, 1)",
-							borderWidth: 1,
-							borderRadius: 4,
-						},
-					],
-				},
-				options: {
-					responsive: true,
-					maintainAspectRatio: false,
-					plugins: {
-						legend: {
-							position: "top",
-							labels: {
-								usePointStyle: true,
-								pointStyle: "rectRounded",
-								padding: 20,
-								color: "#475569",
-								font: { size: 11, weight: "500" },
+				inventoryChartInstance = new ChartJS(overviewCanvas, {
+					type: "bar",
+					data: {
+						labels,
+						datasets: [
+							{
+								label: "System Stock",
+								data: systemData,
+								backgroundColor: "rgba(14, 165, 233, 0.75)",
+								borderColor: "rgba(14, 165, 233, 1)",
+								borderWidth: 1,
+								borderRadius: 4,
+							},
+							{
+								label: "Physical Count",
+								data: physicalData,
+								backgroundColor: "rgba(16, 185, 129, 0.75)",
+								borderColor: "rgba(16, 185, 129, 1)",
+								borderWidth: 1,
+								borderRadius: 4,
+							},
+						],
+					},
+					options: {
+						responsive: true,
+						maintainAspectRatio: false,
+						plugins: {
+							legend: {
+								position: "top",
+								labels: {
+									usePointStyle: true,
+									pointStyle: "rectRounded",
+									padding: 20,
+									color: "#475569",
+									font: { size: 11, weight: "500" },
+								},
+							},
+							tooltip: {
+								backgroundColor: "#1e293b",
+								titleColor: "#f8fafc",
+								bodyColor: "#cbd5e1",
+								padding: 12,
+								cornerRadius: 8,
+								displayColors: true,
+								boxPadding: 4,
 							},
 						},
-						tooltip: {
-							backgroundColor: "#1e293b",
-							titleColor: "#f8fafc",
-							bodyColor: "#cbd5e1",
-							padding: 12,
-							cornerRadius: 8,
-							displayColors: true,
-							boxPadding: 4,
-						},
-					},
-					scales: {
-						y: {
-							beginAtZero: true,
-							max: yMax,
-							ticks: { color: "#94a3b8", font: { size: 11 } },
-							grid: { color: "#f1f5f9", drawBorder: false },
-						},
-						x: {
-							ticks: {
-								color: "#64748b",
-								font: { size: 10 },
-								maxRotation: 45,
-								minRotation: 0,
+						scales: {
+							y: {
+								beginAtZero: true,
+								max: yMax,
+								ticks: { color: "#94a3b8", font: { size: 11 } },
+								grid: { color: "#f1f5f9", drawBorder: false },
 							},
-							grid: { display: false },
+							x: {
+								ticks: {
+									color: "#64748b",
+									font: { size: 10 },
+									maxRotation: 45,
+									minRotation: 0,
+								},
+								grid: { display: false },
+							},
 						},
+						interaction: { intersect: false, mode: "index" },
 					},
-					interaction: { intersect: false, mode: "index" },
-				},
-			});
+				});
 				console.log("[LogsReport] Overview chart created successfully");
 			}
 
 			// ── Variance Analysis (horizontal bar) ──
 			if (varianceCanvas) {
-			const barColors = varianceData.map((v) =>
-				v > 0 ? "rgba(16, 185, 129, 0.8)" : v < 0 ? "rgba(244, 63, 94, 0.8)" : "rgba(203, 213, 225, 0.8)"
-			);
-			const borderColors = varianceData.map((v) =>
-				v > 0 ? "rgba(16, 185, 129, 1)" : v < 0 ? "rgba(244, 63, 94, 1)" : "rgba(203, 213, 225, 1)"
-			);
+				const barColors = varianceData.map((v) =>
+					v > 0 ? "rgba(16, 185, 129, 0.8)" : v < 0 ? "rgba(244, 63, 94, 0.8)" : "rgba(203, 213, 225, 0.8)"
+				);
+				const borderColors = varianceData.map((v) =>
+					v > 0 ? "rgba(16, 185, 129, 1)" : v < 0 ? "rgba(244, 63, 94, 1)" : "rgba(203, 213, 225, 1)"
+				);
 
-			varianceChartInstance = new ChartJS(varianceCanvas, {
-				type: "bar",
-				data: {
-					labels,
-					datasets: [
-						{
-							label: "Variance",
-							data: varianceData,
-							backgroundColor: barColors,
-							borderColor: borderColors,
-							borderWidth: 1,
-							borderRadius: 4,
-						},
-					],
-				},
-				options: {
-					indexAxis: "y",
-					responsive: true,
-					maintainAspectRatio: false,
-					plugins: {
-						legend: { display: false },
-						tooltip: {
-							backgroundColor: "#1e293b",
-							titleColor: "#f8fafc",
-							bodyColor: "#cbd5e1",
-							padding: 12,
-							cornerRadius: 8,
-							displayColors: false,
-							callbacks: {
-								label: (context) => {
-									const v = context.parsed.x;
-									const prefix = v > 0 ? "+" : "";
-									const status = v > 0 ? "Surplus" : v < 0 ? "Shortage" : "Matched";
-									return `${prefix}${v}  (${status})`;
+				varianceChartInstance = new ChartJS(varianceCanvas, {
+					type: "bar",
+					data: {
+						labels,
+						datasets: [
+							{
+								label: "Variance",
+								data: varianceData,
+								backgroundColor: barColors,
+								borderColor: borderColors,
+								borderWidth: 1,
+								borderRadius: 4,
+							},
+						],
+					},
+					options: {
+						indexAxis: "y",
+						responsive: true,
+						maintainAspectRatio: false,
+						plugins: {
+							legend: { display: false },
+							tooltip: {
+								backgroundColor: "#1e293b",
+								titleColor: "#f8fafc",
+								bodyColor: "#cbd5e1",
+								padding: 12,
+								cornerRadius: 8,
+								displayColors: false,
+								callbacks: {
+									label: (context) => {
+										const v = context.parsed.x;
+										const prefix = v > 0 ? "+" : "";
+										const status = v > 0 ? "Surplus" : v < 0 ? "Shortage" : "Matched";
+										return `${prefix}${v}  (${status})`;
+									},
 								},
 							},
 						},
-					},
-					scales: {
-						x: {
-							ticks: { color: "#94a3b8", font: { size: 11 } },
-							grid: { color: "#f1f5f9", drawBorder: false },
+						scales: {
+							x: {
+								ticks: { color: "#94a3b8", font: { size: 11 } },
+								grid: { color: "#f1f5f9", drawBorder: false },
+							},
+							y: {
+								ticks: { color: "#64748b", font: { size: 10 } },
+								grid: { display: false },
+							},
 						},
-						y: {
-							ticks: { color: "#64748b", font: { size: 10 } },
-							grid: { display: false },
-						},
 					},
-				},
-			});
+				});
 				console.log("[LogsReport] Variance chart created successfully");
 			}
 
@@ -1263,34 +1263,31 @@ export function initOwnerActivitylogs() {
 				<td class="px-4 py-3 text-sm">
 					<span
 						class="inline-flex cursor-default select-none items-center rounded-full px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide ${movementBadgeClass[log.movementType] || "bg-slate-100 text-slate-700 border border-slate-200"}"
-						title="${
-							isAdjust ? "Manual stock adjustment performed by the owner to correct inventory discrepancies."
-							: isAdjustment ? "Inventory adjustment from discrepancy correction."
-							: isItemCreated ? "New inventory item created."
+						title="${isAdjust ? "Manual stock adjustment performed by the owner to correct inventory discrepancies."
+					: isAdjustment ? "Inventory adjustment from discrepancy correction."
+						: isItemCreated ? "New inventory item created."
 							: isDisposal ? "Disposed stock removed from a specific batch after owner approval."
-							: ""
-						}"
+								: ""
+				}"
 					>
 						${escapeHtml(log.movementType)}${isAdjust ? " " : ""}
 					</span>
-					${
-						isAdjust
-							? '<span class="mt-1 inline-flex cursor-default select-none items-center rounded-full border border-slate-200 bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-600" title="Manual stock adjustment performed by the owner to correct inventory discrepancies.">Manual Correction</span>'
-							: isAdjustment
-							? '<span class="mt-1 inline-flex cursor-default select-none items-center rounded-full border border-orange-200 bg-orange-50 px-2 py-0.5 text-[10px] font-medium text-orange-600" title="Inventory adjustment from discrepancy correction.">Discrepancy</span>'
-							: isItemCreated
+					${isAdjust
+					? '<span class="mt-1 inline-flex cursor-default select-none items-center rounded-full border border-slate-200 bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-600" title="Manual stock adjustment performed by the owner to correct inventory discrepancies.">Manual Correction</span>'
+					: isAdjustment
+						? '<span class="mt-1 inline-flex cursor-default select-none items-center rounded-full border border-orange-200 bg-orange-50 px-2 py-0.5 text-[10px] font-medium text-orange-600" title="Inventory adjustment from discrepancy correction.">Discrepancy</span>'
+						: isItemCreated
 							? '<span class="mt-1 inline-flex cursor-default select-none items-center rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-[10px] font-medium text-blue-600" title="New inventory item created.">New Item</span>'
 							: isDisposal
-							? '<span class="mt-1 inline-flex cursor-default select-none items-center rounded-full border border-slate-300 bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-700" title="Disposed stock removed from a specific batch after owner approval.">Disposal</span>'
-							: ""
-					}
+								? '<span class="mt-1 inline-flex cursor-default select-none items-center rounded-full border border-slate-300 bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-700" title="Disposed stock removed from a specific batch after owner approval.">Disposal</span>'
+								: ""
+				}
 				</td>
 				<td class="px-4 py-3 text-sm text-slate-700">${escapeHtml(log.batchNumber || "—")}</td>
 				<td class="px-4 py-3 text-sm ${qtyClass(log.qtyChange)}">${qtyText}</td>
 				<td class="px-4 py-3 text-sm text-slate-700">${escapeHtml(log.beforeQty)}</td>
 				<td class="px-4 py-3 text-sm text-slate-700">${escapeHtml(log.afterQty)}</td>
 				<td class="px-4 py-3 text-sm text-slate-700">${escapeHtml(log.performedBy)}</td>
-				<td class="px-4 py-3 text-sm font-mono text-slate-700">${escapeHtml(log.referenceId)}</td>
 			`;
 
 			tableBody.appendChild(row);
@@ -1305,7 +1302,7 @@ export function initOwnerActivitylogs() {
 		productId: productFilterEl?.value || "",
 		movementType: movementFilterEl?.value || "",
 		performedBy: performedByFilterEl?.value || "",
-		referenceId: referenceFilterEl?.value || "",
+		search: searchLogsEl?.value || "",
 	});
 
 	const refreshFilterOptions = (records) => {
@@ -1365,7 +1362,7 @@ export function initOwnerActivitylogs() {
 		productFilterEl,
 		movementFilterEl,
 		performedByFilterEl,
-		referenceFilterEl,
+		searchLogsEl,
 	].forEach((el) => {
 		el?.addEventListener("input", fetchAndRenderLogs);
 		el?.addEventListener("change", fetchAndRenderLogs);
@@ -1377,9 +1374,10 @@ export function initOwnerActivitylogs() {
 		if (productFilterEl) productFilterEl.value = "";
 		if (movementFilterEl) movementFilterEl.value = "";
 		if (performedByFilterEl) performedByFilterEl.value = "";
-		if (referenceFilterEl) referenceFilterEl.value = "";
+		if (searchLogsEl) searchLogsEl.value = "";
 		fetchAndRenderLogs();
 	});
 
 	fetchAndRenderLogs();
+}
 }

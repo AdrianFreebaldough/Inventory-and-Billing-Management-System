@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -10,21 +11,19 @@
     window.IBMSAuth?.protectPage({ requiredRole: "staff" });
   </script>
 </head>
+
 <body class="bg-slate-100">
   <div class="container mx-auto p-6">
     <div class="rounded-lg bg-white p-6 shadow-md">
-      
+
       <!-- Filter Section -->
       <div class="mb-6 space-y-4">
         <!-- Search Bar -->
         <div class="flex items-center gap-3">
-          <input 
-            type="text" 
-            id="searchInput" 
-            placeholder="Search activity (action, description, module)..." 
-            class="flex-1 rounded-lg border border-slate-300 px-4 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-          />
-          <button id="refreshLogsBtn" class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700">
+          <input type="text" id="searchInput" placeholder="Search activity (action, description, module)..."
+            class="flex-1 rounded-lg border border-slate-300 px-4 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+          <button id="refreshLogsBtn"
+            class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700">
             Refresh
           </button>
         </div>
@@ -34,7 +33,8 @@
           <!-- Date Filter -->
           <div>
             <label class="block text-xs font-medium text-slate-700 mb-1">Date Filter</label>
-            <select id="dateFilter" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500">
+            <select id="dateFilter"
+              class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500">
               <option value="all">All Time</option>
               <option value="today">Today</option>
               <option value="yesterday">Yesterday</option>
@@ -47,29 +47,25 @@
           <!-- Start Time -->
           <div>
             <label class="block text-xs font-medium text-slate-700 mb-1">Start Time</label>
-            <input 
-              type="time" 
-              id="startTime" 
-              class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-            />
+            <input type="time" id="startTime"
+              class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
           </div>
 
           <!-- End Time -->
           <div>
             <label class="block text-xs font-medium text-slate-700 mb-1">End Time</label>
-            <input 
-              type="time" 
-              id="endTime" 
-              class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-            />
+            <input type="time" id="endTime"
+              class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
           </div>
 
           <!-- Action Buttons -->
           <div class="flex items-end gap-2">
-            <button id="applyFilterBtn" class="flex-1 rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700">
+            <button id="applyFilterBtn"
+              class="flex-1 rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700">
               Apply
             </button>
-            <button id="resetFilterBtn" class="flex-1 rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
+            <button id="resetFilterBtn"
+              class="flex-1 rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
               Reset
             </button>
           </div>
@@ -79,19 +75,13 @@
         <div id="customDateRange" class="hidden grid grid-cols-2 gap-3">
           <div>
             <label class="block text-xs font-medium text-slate-700 mb-1">From Date</label>
-            <input 
-              type="date" 
-              id="startDate" 
-              class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-            />
+            <input type="date" id="startDate"
+              class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
           </div>
           <div>
             <label class="block text-xs font-medium text-slate-700 mb-1">To Date</label>
-            <input 
-              type="date" 
-              id="endDate" 
-              class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-            />
+            <input type="date" id="endDate"
+              class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
           </div>
         </div>
       </div>
@@ -132,9 +122,11 @@
 
       <!-- Pagination -->
       <div class="mt-4 flex items-center justify-end gap-2">
-        <button id="prevPageBtn" class="rounded border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50">Previous</button>
+        <button id="prevPageBtn"
+          class="rounded border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50">Previous</button>
         <span id="pageLabel" class="text-sm text-slate-600">Page 1 of 1</span>
-        <button id="nextPageBtn" class="rounded border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50">Next</button>
+        <button id="nextPageBtn"
+          class="rounded border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50">Next</button>
       </div>
     </div>
   </div>
@@ -186,7 +178,7 @@
       const info = ["billing-create", "billing-complete", "expense-submitted", "restore-item"];
 
       const normalized = String(actionType || "").toLowerCase();
-      
+
       if (critical.some(c => normalized.includes(c))) return "CRITICAL";
       if (warning.some(w => normalized.includes(w))) return "WARNING";
       return "INFO";
@@ -231,11 +223,11 @@
 
       const now = new Date();
       const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-      
+
       return logs.filter(log => {
         const logDate = new Date(log.timestamp);
-        
-        switch(filterValue) {
+
+        switch (filterValue) {
           case "today":
             return logDate >= today;
           case "yesterday":
@@ -295,7 +287,7 @@
       return logs.filter(log => {
         const actionType = String(log.actionType || "").toLowerCase();
         const description = String(log.description || "").toLowerCase();
-        
+
         return actionType.includes(searchTerm) || description.includes(searchTerm);
       });
     }
@@ -432,4 +424,5 @@
     loadActivityLogs();
   </script>
 </body>
+
 </html>

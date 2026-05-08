@@ -72,7 +72,7 @@ function mapExpiryRiskToUi(value) {
 
 function getExpiryRiskPill(expiryRisk, options = {}) {
     if (options.pendingDisposalOnly === true) {
-        return { label: 'Under Review', textClass: 'text-amber-700', dotColor: '#f59e0b' };
+        return { label: 'Disposal Pending', textClass: 'text-amber-700', dotColor: '#f59e0b' };
     }
 
     const normalized = mapExpiryRiskToUi(expiryRisk);
@@ -101,7 +101,7 @@ const STATUS_COLORS = {
 
 const STATUS_DISPLAY = {
     'in-stock': 'In Stock',
-    'pending': 'Pending',
+    'pending': 'Under Review',
     'low-stock': 'Low Stock',
     'out-of-stock': 'Out of Stock',
     'archived': 'Archived'
@@ -294,8 +294,30 @@ async function fetchInventoryItems() {
         const qs = Object.entries(query).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join("&");
         const url = qs ? `${API.ITEMS}?${qs}` : API.ITEMS;
 
+        /* Always refresh requests to identify items with pending actions accurately */
+        await fetchMyRequests();
+
         const result = await apiFetch(url);
-        inventoryItems = (result.data || []).map(mapBackendItemToUI);
+        let items = (result.data || []).map(mapBackendItemToUI);
+
+        if (!showArchivedItems) {
+            // 1. Mark existing items that have a pending request
+            items = items.map(item => {
+                const hasPending = restockRequests.some(req =>
+                    (req.requestType === "RESTOCK" || req.requestType === "PRICE_CHANGE" || req.requestType === "DISPOSAL" || req.requestType === "DISCREPANCY" || req.isDiscrepancy || req.isPriceChange || req.isDisposal) &&
+                    String(req.productId || "") === String(item.id) &&
+                    req.status === "pending"
+                );
+                const hasPendingRestock = restockRequests.some(req =>
+                    req.requestType === "RESTOCK" &&
+                    String(req.productId || "") === String(item.id) &&
+                    req.status === "pending"
+                );
+                return { ...item, hasPendingRequest: hasPending, hasPendingRestock };
+            });
+        }
+
+        inventoryItems = items;
         renderCategoryFilterSelect(inventoryItems);
         return inventoryItems;
     } catch (error) {
@@ -407,6 +429,10 @@ async function fetchMyRequests() {
                 hour: "2-digit", minute: "2-digit", hour12: true
             }) : "",
             rejectionReason: r.rejectionReason,
+            productId: r.productId || null,
+            isPriceChange: !!r.isPriceChange,
+            isDisposal: !!r.isDisposal,
+            isDiscrepancy: !!r.isDiscrepancy,
         }));
 
         /* Update summary counts */
@@ -638,9 +664,12 @@ function applyFilters() {
         const matchesStatus = (() => {
             if (currentStatusFilter === 'all') return true;
             if (riskFilters.has(currentStatusFilter)) return item.expiryRisk === currentStatusFilter;
+            if (currentStatusFilter === 'pending') {
+                return item.status === 'pending' || item.hasPendingRequest === true || item.hasPendingDisposalOnlyStock === true;
+            }
             return item.status === currentStatusFilter;
         })();
-        const matchesStockFilter = !showLowStockOnly || item.status === 'low-stock' || item.status === 'out-of-stock';
+        const matchesStockFilter = !showLowStockOnly || item.status === 'low-stock' || item.status === 'out-of-stock' || item.status === 'pending' || item.hasPendingRequest === true || item.hasPendingDisposalOnlyStock === true;
 
         return matchesSearch && matchesCategory && matchesStatus && matchesStockFilter;
     });
@@ -659,7 +688,7 @@ function renderInventory() {
     inventoryGrid.innerHTML = "";
 
     if (showLowStockOnly) {
-        filteredItems = filteredItems.filter(item => item.status === "low-stock" || item.status === "out-of-stock");
+        filteredItems = filteredItems.filter(item => item.status === "low-stock" || item.status === "out-of-stock" || item.status === "pending" || item.hasPendingRequest === true || item.hasPendingDisposalOnlyStock === true);
     }
 
     if (filteredItems.length === 0) {
@@ -668,8 +697,9 @@ function renderInventory() {
     }
 
     filteredItems.forEach(item => {
-        const colors = getStatusColors(item.status);
-        const statusText = getStatusDisplayText(item.status);
+        const isPending = item.status === 'pending' || item.hasPendingRequest === true || item.isPendingRequest === true;
+        const colors = isPending ? STATUS_COLORS['pending'] : getStatusColors(item.status);
+        const statusText = isPending ? 'Under Review' : getStatusDisplayText(item.status);
         const archivedPill = item.archived === true ? `<span class="ml-2 inline-block px-2 py-1 rounded text-xs font-medium bg-gray-200 text-gray-700">Archived</span>` : '';
         const hasBatchWarning = hasExpiringSoonBatch(item.batches || []);
         const riskPill = getExpiryRiskPill(item.expiryRisk, {
@@ -723,8 +753,8 @@ function renderInventory() {
                     </button>
                     ${item.archived === true ?
                 `<button class="restore-btn flex-1 bg-blue-600 text-white py-2 rounded text-xs font-medium hover:bg-blue-700 transition-colors" data-item-id="${item.id}">Restore</button>` :
-                (item.isPendingRequest ?
-                    `<span class="flex-1 bg-yellow-100 text-yellow-700 py-2 rounded text-xs font-medium text-center border border-yellow-300">Awaiting Approval</span>` :
+                (item.hasPendingRestock ?
+                    `<span class="flex-1 bg-yellow-50 text-yellow-700 py-2 rounded text-xs font-medium text-center border border-yellow-200">Under Review</span>` :
                     `<button class="restock-btn flex-1 bg-blue-600 text-white py-2 rounded text-xs font-medium hover:bg-blue-700 transition-colors">Request Restock</button>`
                 )
             }
@@ -781,7 +811,7 @@ async function showItemDetails(item) {
             const pendingPriceResponse = await apiFetch(API.PRICE_CHANGE_REQUEST_FOR_PRODUCT(detailItem.id));
             const pendingPriceRequest = pendingPriceResponse?.data || null;
             if (pendingPriceRequest && String(pendingPriceRequest.status || '') === 'pending') {
-                requestedPricePreview.textContent = `Pending Approval · Requested: ₱${Number(pendingPriceRequest.requestedPrice || 0).toFixed(2)}`;
+                requestedPricePreview.textContent = `Under Review · Requested: ₱${Number(pendingPriceRequest.requestedPrice || 0).toFixed(2)}`;
                 requestedPricePreview.classList.remove('hidden');
             }
         } catch {
@@ -821,7 +851,7 @@ async function showItemDetails(item) {
 
             let actionHtml;
             if (batch.isPendingDisposal) {
-                actionHtml = `<span class="text-xs font-medium text-orange-600">Pending Approval</span>`;
+                actionHtml = `<span class="text-xs font-medium text-orange-600">Under Review</span>`;
             } else if (batch.canDispose) {
                 actionHtml = `<button class="staff-dispose-batch-btn inline-flex items-center rounded-md border border-red-200 bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-700 hover:bg-red-100 transition-colors" data-batch-id="${escapeHtml(batch.id || "")}">Dispose</button>`;
             } else {
@@ -1039,7 +1069,7 @@ function showStaffEditPriceRequestModal(item) {
                 }),
             });
 
-            showToast('Price change request submitted for admin approval', 'success');
+            showToast('Price change request submitted for review', 'success');
             hide();
             await fetchInventoryItems();
             applyFilters();
@@ -1117,7 +1147,7 @@ function showStaffDisposalRequestModal(item, batch) {
         </div>
         <div class="mt-5 grid grid-cols-2 gap-3">
             <button id="staffCancelDisposalBtn" class="w-full border border-gray-300 py-2 rounded-lg bg-white text-sm font-semibold text-gray-700 hover:bg-gray-50">Cancel</button>
-            <button id="staffSubmitDisposalBtn" class="w-full bg-red-600 text-white py-2 rounded-lg text-sm font-semibold hover:bg-red-700">Submit for Approval</button>
+            <button id="staffSubmitDisposalBtn" class="w-full bg-red-600 text-white py-2 rounded-lg text-sm font-semibold hover:bg-red-700">Submit for Review</button>
         </div>`;
 
     const modal = createModal({ id: "staffDisposalRequestModal", content, width: "640px" });
@@ -1160,8 +1190,8 @@ function showStaffDisposalRequestModal(item, batch) {
             });
             const referenceId = response?.reference_id || response?.data?.referenceId;
             showToast(referenceId
-                ? `Disposal request submitted successfully (${referenceId}). Waiting for owner approval.`
-                : "Disposal request submitted successfully. Waiting for owner approval.", "success");
+                ? `Disposal request submitted successfully (${referenceId}). Status: Under Review.`
+                : "Disposal request submitted successfully. Status: Under Review.", "success");
             hide();
             try {
                 const result = await apiFetch(API.ITEM_DETAILS(item.id));
@@ -2050,6 +2080,7 @@ function showAddItemModal() {
 /* ================= REFRESH ALL DATA FROM BACKEND ================= */
 
 async function refreshAllData() {
+    await fetchMyRequests();
     await fetchInventoryItems();
     applyFilters();
 

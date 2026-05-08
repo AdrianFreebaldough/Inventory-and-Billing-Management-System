@@ -186,7 +186,7 @@ const historyViewTxnId = document.getElementById("historyViewTxnId");
 const historyViewDateTime = document.getElementById("historyViewDateTime");
 const historyViewPatientId = document.getElementById("historyViewPatientId");
 const historyViewStatus = document.getElementById("historyViewStatus");
-const historyViewItemsBody = document.getElementById("historyViewItemsBody");
+const historyViewItems = document.getElementById("historyViewItems");
 const historyViewSubtotal = document.getElementById("historyViewSubtotal");
 const historyViewDiscount = document.getElementById("historyViewDiscount");
 const historyViewVat = document.getElementById("historyViewVat");
@@ -344,6 +344,7 @@ function normalizePendingBalanceLines(lines = []) {
 				serviceCode: String(line?.serviceCode || "").trim() || null,
 				linkedProductId: String(line?.linkedProductId || "").trim() || null,
 				resolution: PRESCRIPTION_DECISIONS.has(normalizedResolution) ? normalizedResolution : "unresolved",
+				quantity: Math.max(1, Number(line?.quantity || 1) || 1),
 				amount: Number(amount.toFixed(2)),
 				isBillable: amount > 0,
 				includeInTotal: amount > 0,
@@ -503,6 +504,19 @@ function getSelectedServiceProductIds() {
 		.filter(Boolean);
 }
 
+function isParmsAutoAddedServiceItem(item) {
+	if (!item || !isServiceProduct(item)) return false;
+	const itemId = String(item.id || "").trim();
+	if (!itemId) return false;
+
+	return state.pendingBalances.some((line) => {
+		const origin = String(line?.origin || "").trim().toLowerCase();
+		if (origin !== "parms" && origin !== "intent") return false;
+		if (line?.obligationKind !== "required_service") return false;
+		return String(line?.linkedProductId || "").trim() === itemId;
+	});
+}
+
 function reconcilePendingObligationsWithCart() {
 	const selectedServiceProductIds = getSelectedServiceProductIds();
 	const claimedServiceProductIds = new Set();
@@ -515,7 +529,7 @@ function reconcilePendingObligationsWithCart() {
 				if (matchedProduct) {
 					matchedProductId = String(matchedProduct.id || "").trim();
 					if (matchedProductId && Number(state.quantities[matchedProductId] || 0) <= 0) {
-						state.quantities[matchedProductId] = 1;
+						state.quantities[matchedProductId] = Math.max(1, Number(line?.quantity || 1) || 1);
 					}
 				}
 			}
@@ -550,7 +564,7 @@ function reconcilePendingObligationsWithCart() {
 			}
 
 			if (normalizedResolution === "bought_in_clinic" && matchedProductId && Number(state.quantities[matchedProductId] || 0) <= 0) {
-				state.quantities[matchedProductId] = 1;
+				state.quantities[matchedProductId] = Math.max(1, Number(line?.quantity || 1) || 1);
 			}
 
 			const isPrescriptionInCart = Boolean(matchedProductId) && Number(state.quantities[matchedProductId] || 0) > 0;
@@ -595,7 +609,7 @@ function setPendingBalances(lines = []) {
 			};
 		}
 
-		state.quantities[matchedProduct.id] = 1;
+		state.quantities[matchedProduct.id] = Math.max(1, Number(line?.quantity || 1) || 1);
 		return {
 			...line,
 			linkedProductId: matchedProduct.id,
@@ -1131,6 +1145,9 @@ function renderPendingBalancesPanel() {
 				lineAmountTone = isPrescriptionBoughtInClinic && isPrescriptionInCart ? "text-emerald-300" : "text-cyan-300";
 			}
 
+			const unitPrice = line.quantity > 0 ? lineAmount / line.quantity : 0;
+			const linePricingMarkup = `<p class="text-[10px] text-slate-400 mt-0.5">${formatPeso(unitPrice)} | Qty: ${line.quantity} | Subtotal: ${formatPeso(lineAmount)}</p>`;
+
 			const statusMarkup = isRequiredService
 				? `<p class="text-[10px] ${isResolvedService ? "text-emerald-300" : "text-rose-300"}">${isResolvedService ? "Required service in cart" : "Required service is not in cart"}</p>`
 				: isOptionalPrescription
@@ -1204,9 +1221,10 @@ function renderItemRows() {
 			const checkoutLocked = state.checkoutMode;
 			const isNotSellable = isItemUnsaleable(item);
 			const disabledTooltip = isItemExpired(item) ? "Cannot sell expired items." : getUnsaleableMessage(item);
-			const isMinusDisabled = isNotSellable || checkoutLocked || currentQty <= 0;
-			const isPlusDisabled = isNotSellable || checkoutLocked || !patientReadyForCart || currentQty >= maxSellableStock;
-			const isQtyInputDisabled = isNotSellable || checkoutLocked || !patientReadyForCart;
+			const isParmsLockedItem = isParmsAutoAddedServiceItem(item);
+			const isMinusDisabled = isNotSellable || checkoutLocked || isParmsLockedItem || currentQty <= 0;
+			const isPlusDisabled = isNotSellable || checkoutLocked || !patientReadyForCart || (isParmsLockedItem && currentQty >= 1) || currentQty >= maxSellableStock;
+			const isQtyInputDisabled = isNotSellable || checkoutLocked || isParmsLockedItem || !patientReadyForCart;
 			const controlTooltip = checkoutLocked
 				? "Back to cart to edit quantities."
 				: (!patientReadyForCart
@@ -1295,7 +1313,8 @@ function renderServiceRows() {
 							const isSelected = (state.quantities[service.id] || 0) > 0;
 							const isLockedForCheckout = state.checkoutMode;
 							const selectionBlockedByPatient = !patientReadyForCart && !isSelected;
-							const isDisabled = isLockedForCheckout || isItemUnsaleable(service) || selectionBlockedByPatient;
+							const isParmsLockedItem = isParmsAutoAddedServiceItem(service);
+							const isDisabled = isLockedForCheckout || isItemUnsaleable(service) || selectionBlockedByPatient || isParmsLockedItem;
 							const helperMessage = isLockedForCheckout
 								? "Back to cart to edit selected services."
 								: (isItemUnsaleable(service)
@@ -1471,16 +1490,18 @@ function renderSummaryPanel() {
 		.map((item) => {
 			const lineTotal = item.subtotal;
 			const isLockedForCheckout = state.checkoutMode;
+			const isParmsLockedItem = isParmsAutoAddedServiceItem(item);
+			const isRemoveDisabled = isLockedForCheckout || isParmsLockedItem;
 			return `
 				<div class="mb-2 border-b border-slate-200 pb-2 text-sm last:mb-0 last:border-b-0 last:pb-0" data-cart-item-id="${item.id}">
 					<div class="flex items-start justify-between gap-2">
 						<p class="min-w-0 flex-1 break-words pr-1 font-medium text-slate-800">${item.genericName || item.name}</p>
-						<button type="button" data-action="remove-cart-item" data-id="${item.id}" ${isLockedForCheckout ? "disabled" : ""} class="shrink-0 rounded border border-rose-300 px-2 py-0.5 text-[10px] font-semibold ${
-							isLockedForCheckout ? "cursor-not-allowed text-rose-300" : "text-rose-700 hover:bg-rose-50"
+						<button type="button" data-action="remove-cart-item" data-id="${item.id}" ${isRemoveDisabled ? "disabled" : ""} class="shrink-0 rounded border border-rose-300 px-2 py-0.5 text-[10px] font-semibold ${
+							isRemoveDisabled ? "cursor-not-allowed text-rose-300" : "text-rose-700 hover:bg-rose-50"
 						}">Remove</button>
 					</div>
 					${item.type === 'item' && (item.brandName || item.brand) ? `<p class="text-xs text-slate-500 mb-0.5">${item.brandName || item.brand}</p>` : ''}
-					<p class="text-xs text-slate-500">Price: ${formatPeso(item.price)} | Qty: ${item.qty}</p>
+					<p class="text-xs text-slate-500">${formatPeso(item.price)} | Qty: ${item.qty} | Subtotal: ${formatPeso(lineTotal)}</p>
 				</div>
 			`;
 		})
@@ -1841,6 +1862,21 @@ function removeAllCartItemsOnly() {
 	showToast("All cart items removed.", "info");
 }
 
+function resetCartForPatientEdit() {
+	Object.keys(state.quantities).forEach((key) => {
+		state.quantities[key] = 0;
+	});
+	state.checkoutMode = false;
+	state.cashTendered = 0;
+	state.patientId = "";
+	state.parmsIntent = null;
+	setPendingBalances([]);
+	if (cashTenderedInlineInput) {
+		cashTenderedInlineInput.value = "";
+	}
+	setProceedButtonEnabled(false);
+}
+
 function resetActiveSale() {
 	Object.keys(state.quantities).forEach((key) => {
 		state.quantities[key] = 0;
@@ -2009,7 +2045,7 @@ function showSuccessModal() {
 	successTxnId.textContent = state.lastCompletedSale.transactionCode;
 	successPatientId.textContent = state.lastCompletedSale.patientName || "N/A";
 	const selectedItemsMarkup = state.lastCompletedSale.selected
-		.map((item) => `<p>${item.name} - ${formatPeso(item.qty * item.price)}</p>`)
+		.map((item) => `<p>${item.name} - ${formatPeso(item.price)} | Qty: ${item.qty} | Subtotal: ${formatPeso(item.qty * item.price)}</p>`)
 		.join("");
 
 	const boughtPrescriptionLines = (state.lastCompletedSale.pendingBalances || []).filter((line) => {
@@ -2121,21 +2157,24 @@ function openHistoryTransactionModal(transactionId) {
 			? "rounded bg-rose-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-rose-700"
 			: "rounded bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-emerald-700";
 
-	historyViewItemsBody.innerHTML = (transaction.items || [])
-		.map(
-			(item) => {
-				const qtyValue = isHistoryServiceLikeItem(item) ? "-" : String(item.quantity ?? "-");
-				return `
-				<tr class="text-xs text-slate-700">
-					<td class="px-3 py-2">${item.name}</td>
-					<td class="px-3 py-2 text-center">${qtyValue}</td>
-					<td class="px-3 py-2 text-right">${formatPeso(item.unitPrice)}</td>
-					<td class="px-3 py-2 text-right">${formatPeso(item.lineTotal)}</td>
-				</tr>
-			`;
-			}
-		)
+	const selectedItemsMarkup = (transaction.items || [])
+		.map((item) => {
+			const qty = Number(item.quantity || 0);
+			const price = Number(item.unitPrice || 0);
+			const subtotal = Number(item.lineTotal || qty * price);
+			return `<p>${item.name} - ${formatPeso(price)} | Qty: ${qty} | Subtotal: ${formatPeso(subtotal)}</p>`;
+		})
 		.join("");
+
+	const boughtPrescriptionLines = (transaction.parmsPendingBalances || []).filter((line) => {
+		return String(line?.sourceType || "").trim().toLowerCase() === "prescription";
+	});
+
+	const prescriptionNotesMarkup = boughtPrescriptionLines
+		.map((line) => `<p>Prescription (${line.description || "N/A"})</p>`)
+		.join("");
+
+	historyViewItems.innerHTML = `${selectedItemsMarkup}${prescriptionNotesMarkup ? `<div class="mt-1 border-t border-slate-300 pt-1 text-[10px] text-slate-500 italic">${prescriptionNotesMarkup}</div>` : ""}`;
 
 	historyViewSubtotal.textContent = formatPeso(transaction.subtotal || 0);
 	historyViewDiscount.textContent = formatPeso(transaction.discountAmount || 0);
@@ -2298,7 +2337,7 @@ function attachEvents() {
 				}
 
 				if (linkedProductId && Number(state.quantities[linkedProductId] || 0) <= 0) {
-					state.quantities[linkedProductId] = 1;
+					state.quantities[linkedProductId] = Math.max(1, Number(line?.quantity || 1) || 1);
 					addedInCart = true;
 				}
 
@@ -2339,7 +2378,16 @@ function attachEvents() {
 
 	patientNameInput?.addEventListener("input", (event) => {
 		if (state.isGuest) return;
-		const patientNameValue = String(event.target.value || "").trim();
+		const patientNameValue = String(event.target.value || "");
+		const trimmedPatientNameValue = patientNameValue.trim();
+		const previousPatientNameValue = String(state.patientName || "");
+		const hasExistingCartItems = computeSaleTotals().itemCount > 0;
+		const hasResolvedPatientContext = Boolean(state.patientId) || Boolean(previousPatientNameValue.trim()) || state.pendingBalances.length > 0 || Boolean(state.parmsIntent);
+
+		if (patientNameValue !== previousPatientNameValue && (hasExistingCartItems || hasResolvedPatientContext)) {
+			resetCartForPatientEdit();
+		}
+
 		state.patientName = patientNameValue;
 		state.patientId = "";
 		state.parmsIntent = null;
@@ -2351,7 +2399,7 @@ function attachEvents() {
 			clearTimeout(patientLookupDebounceTimer);
 		}
 
-		if (!patientNameValue) {
+		if (!trimmedPatientNameValue) {
 			state.isResolvingPatient = false;
 			refreshUi();
 			return;
@@ -2359,8 +2407,8 @@ function attachEvents() {
 
 		patientLookupDebounceTimer = setTimeout(async () => {
 			try {
-				const patientRecord = await resolvePatientByName(patientNameValue);
-				if (state.patientName !== patientNameValue) return;
+				const patientRecord = await resolvePatientByName(trimmedPatientNameValue);
+				if (String(state.patientName || "").trim() !== trimmedPatientNameValue) return;
 
 				if (!patientRecord) {
 					state.patientId = "";
@@ -2426,6 +2474,11 @@ function attachEvents() {
 		if (!action || !idValue) return;
 
 		if (action === "remove-cart-item") {
+			const item = state.products.find((entry) => String(entry.id || "").trim() === String(idValue || "").trim());
+			if (item && isParmsAutoAddedServiceItem(item)) {
+				showToast("This PARMS-added service cannot be removed from the cart.", "warning");
+				return;
+			}
 			removeCartItem(idValue);
 		}
 	});

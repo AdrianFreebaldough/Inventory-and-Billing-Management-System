@@ -8,6 +8,6 @@ const router = express.Router();
 router.get('/', protect, getSettings);
 
 // Only administrators/owners can alter environment rules
-router.put('/', protect, authorizeRoles('OWNER'), updateSettings);
+router.put('/', protect, authorizeRoles('OWNER', 'ADMIN'), updateSettings);
 
 export default router;

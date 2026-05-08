@@ -7,7 +7,7 @@ let isEditMode = false;
 
 export async function initServiceManagement() {
   const roleVal = String(localStorage.getItem('role') || 'staff').toUpperCase();
-  currentRole = roleVal.includes('OWNER') ? 'OWNER' : 'STAFF';
+  currentRole = (roleVal.includes('OWNER') || roleVal.includes('ADMIN')) ? 'OWNER' : 'STAFF';
 
   setupUIByRole();
   attachEventListeners();

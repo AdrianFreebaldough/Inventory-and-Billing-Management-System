@@ -10,7 +10,7 @@ import {
 
 const OWNER_userManagementRouter = express.Router();
 
-OWNER_userManagementRouter.use(protect, authorizeRoles("owner"));
+OWNER_userManagementRouter.use(protect, authorizeRoles("owner", "admin"));
 
 OWNER_userManagementRouter.post("/users", OWNER_createStaffUser);
 OWNER_userManagementRouter.get("/users", OWNER_getStaffUsers);

@@ -16,42 +16,42 @@ const router = express.Router();
 router.get(
   "/summary",
   protect,
-  authorizeRoles("owner"),
+  authorizeRoles("owner", "admin"),
   getDashboardSummary
 );
 
 router.get(
   "/revenue-trend",
   protect,
-  authorizeRoles("owner"),
+  authorizeRoles("owner", "admin"),
   getRevenueTrend
 );
 
 router.get(
   "/pending-requests",
   protect,
-  authorizeRoles("owner"),
+  authorizeRoles("owner", "admin"),
   getPendingInventoryRequests
 );
 
 router.get(
   "/low-stock",
   protect,
-  authorizeRoles("owner"),
+  authorizeRoles("owner", "admin"),
   getLowStockItems
 );
 
 router.get(
   "/activity",
   protect,
-  authorizeRoles("owner"),
+  authorizeRoles("owner", "admin"),
   getRecentActivity
 );
 
 router.get(
   "/stock-movements",
   protect,
-  authorizeRoles("owner"),
+  authorizeRoles("owner", "admin"),
   getStockMovements
 );
 

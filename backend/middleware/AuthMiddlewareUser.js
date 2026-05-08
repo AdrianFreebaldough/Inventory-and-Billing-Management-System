@@ -63,7 +63,8 @@ export const authorizeRoles = (...allowedRoles) => {
 };
 
 export const verifyToken = protect;
-export const verifyOwner = authorizeRoles("OWNER");
+export const verifyAdmin = authorizeRoles("ADMIN", "OWNER");
+export const verifyOwner = authorizeRoles("OWNER", "ADMIN");
 export const verifyStaff = authorizeRoles("STAFF");
 
 export default protect;

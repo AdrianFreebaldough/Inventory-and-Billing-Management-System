@@ -427,7 +427,7 @@ document.addEventListener("DOMContentLoaded", () => {
           <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
           </svg>
-          Awaiting approval
+          Under Review
         </div>
       </div>
     `;
@@ -505,12 +505,12 @@ document.addEventListener("DOMContentLoaded", () => {
   function renderPendingRequests(requests) {
     const items = requests.length
       ? requests.map((r) => renderRequestItem(r)).join("")
-      : '<p class="text-sm text-slate-400 text-center py-4">No pending requests</p>';
+      : '<p class="text-sm text-slate-400 text-center py-4">No items under review</p>';
 
     return `
       <div class="bg-white rounded-2xl p-6 shadow-sm border border-slate-100 animate-slide-up" style="animation-delay: 0.6s">
         <div class="flex justify-between items-center mb-6">
-          <h3 class="text-lg font-semibold text-slate-900">Pending Inventory Requests</h3>
+          <h3 class="text-lg font-semibold text-slate-900">Inventory Under Review</h3>
           <span class="w-2 h-2 bg-amber-400 rounded-full animate-pulse"></span>
         </div>
         <div class="space-y-4">${items}</div>

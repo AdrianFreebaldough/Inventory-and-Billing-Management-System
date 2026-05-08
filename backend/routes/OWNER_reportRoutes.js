@@ -8,7 +8,7 @@ import {
 
 const OWNER_reportRouter = express.Router();
 
-OWNER_reportRouter.use(protect, authorizeRoles("owner"));
+OWNER_reportRouter.use(protect, authorizeRoles("owner", "admin"));
 
 OWNER_reportRouter.get("/sales", OWNER_getSalesReport);
 OWNER_reportRouter.get("/inventory", OWNER_getInventoryReport);

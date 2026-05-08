@@ -1380,4 +1380,3 @@ export function initOwnerActivitylogs() {
 
 	fetchAndRenderLogs();
 }
-}

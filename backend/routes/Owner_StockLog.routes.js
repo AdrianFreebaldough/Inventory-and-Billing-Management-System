@@ -9,7 +9,7 @@ import {
 
 const Owner_stockLogRouter = express.Router();
 
-Owner_stockLogRouter.use(protect, authorizeRoles("owner"));
+Owner_stockLogRouter.use(protect, authorizeRoles("owner", "admin"));
 
 Owner_stockLogRouter.get("/", Owner_getStockLogs);
 Owner_stockLogRouter.get("/summary", Owner_getStockLogSummary);

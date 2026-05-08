@@ -11,7 +11,7 @@ import {
 
 const OWNER_disposalRouter = express.Router();
 
-OWNER_disposalRouter.use(protect, authorizeRoles("owner"));
+OWNER_disposalRouter.use(protect, authorizeRoles("owner", "admin"));
 
 OWNER_disposalRouter.get("/", OWNER_getDisposalLogs);
 OWNER_disposalRouter.get("/:id", OWNER_getDisposalLogDetails);

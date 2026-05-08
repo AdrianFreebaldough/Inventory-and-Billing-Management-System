@@ -4,6 +4,7 @@ import connectIBMS from "./database/database.js";
 import NotificationCronService from "./services/notificationCronService.js";
 import { repairAllInventoryBatchIntegrity } from "./services/inventoryIntegrityService.js";
 import { startParmsSyncWorker } from "./services/parmsIntegrationService.js";
+import { runHRMSAccountSyncAudit } from "./services/hrmsSyncService.js";
 import logger from "./utils/logger.js";
 
 const PORT = env.PORT;
@@ -21,6 +22,9 @@ const startServer = async () => {
     defaultBatches: integritySummary.createdDefaultBatches,
     normalizedBatches: integritySummary.normalizedBatches,
   });
+
+  // Automatically audit and fix all legacy IBMS accounts
+  await runHRMSAccountSyncAudit();
 
   app.listen(PORT, () => {
     logger.info("Server started", { port: PORT, env: env.NODE_ENV });

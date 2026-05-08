@@ -5,6 +5,8 @@ import PriceChangeRequest from "../models/priceChangeRequest.js";
 import STAFF_ActivityLog from "../models/STAFF_activityLog.js";
 import OWNER_ArchivedProduct from "../models/OWNER_archivedProduct.js";
 import ActivityLog from "../models/activityLog.js";
+import OWNER_DisposalLog from "../models/OWNER_disposalLog.js";
+import STAFF_QuantityAdjustment from "../models/STAFF_quantityAdjustment.js";
 import mongoose from "mongoose";
 import { getExpirationStatus, getDaysUntilExpiry } from "../services/expirationService.js";
 import { classifyExpiryRisk, toUiExpiryRiskKey } from "../services/fefoService.js";
@@ -456,7 +458,6 @@ export const STAFF_getInventory = async (req, res) => {
       const pendingFilter = {
         requestType: "ADD_ITEM",
         status: "pending",
-        requestedBy: req.user.id,
       };
 
       if (categoryRegex) {
@@ -482,7 +483,7 @@ export const STAFF_getInventory = async (req, res) => {
           unit: pr.unit || "pcs",
           unitPrice: pr.unitPrice ?? 0,
           minStock: pr.minStock ?? 10,
-          supplier: null,
+          supplier: pr.supplier || null,
           description: pr.description || "",
           expiryDate: pr.expiryDate || null,
           nearestExpiryDate: pr.expiryDate || null,
@@ -491,6 +492,11 @@ export const STAFF_getInventory = async (req, res) => {
           batchNumber: pr.batchNumber || null,
           isArchived: false,
           isPendingRequest: true,
+          genericName: pr.genericName || "",
+          brandName: pr.brandName || "",
+          dosageForm: pr.dosageForm || "",
+          strength: pr.strength || "",
+          medicineName: pr.medicineName || pr.itemName || "",
         });
       });
     }
@@ -732,7 +738,7 @@ export const STAFF_archiveItem = async (req, res) => {
       product.isArchived = true;
       product.archivedAt = new Date();
       product.archivedBy = req.user.id;
-      await product.save({ session });
+      await product.save({ session, validateBeforeSave: false });
 
       await ActivityLog.create(
         [
@@ -801,7 +807,7 @@ export const STAFF_restoreItem = async (req, res) => {
     product.isArchived = false;
     product.archivedAt = null;
     product.archivedBy = null;
-    await product.save();
+    await product.save({ validateBeforeSave: false });
 
     await STAFF_logActivity({
       staffId: req.user.id,
@@ -838,64 +844,92 @@ export const STAFF_getMyRequests = async (req, res) => {
     const limit = Math.min(50, Math.max(1, parseInt(req.query.limit, 10) || 20));
     const skip = (page - 1) * limit;
 
-    const filter = { requestedBy: req.user.id };
-
+    const filter = {};
     if (req.query.status) {
       filter.status = String(req.query.status).trim();
     }
-
     if (req.query.requestType) {
       filter.requestType = String(req.query.requestType).trim();
     }
 
-    const [requests, total] = await Promise.all([
+    const [inventoryRequests, priceChangeRequests, disposalRequests, discrepancyRequests] = await Promise.all([
       InventoryRequest.find(filter)
         .populate("product", "name category quantity unit status")
         .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(limit)
         .lean(),
-      InventoryRequest.countDocuments(filter),
+      PriceChangeRequest.find({ status: filter.status || "pending" })
+        .sort({ createdAt: -1 })
+        .lean(),
+      OWNER_DisposalLog.find({ status: filter.status ? (filter.status.charAt(0).toUpperCase() + filter.status.slice(1)) : "Pending" })
+        .sort({ createdAt: -1 })
+        .lean(),
+      STAFF_QuantityAdjustment.find({ status: filter.status ? (filter.status.charAt(0).toUpperCase() + filter.status.slice(1)) : "Pending" })
+        .sort({ createdAt: -1 })
+        .lean(),
     ]);
 
-    const data = requests.map((r) => ({
+    const mappedInventory = inventoryRequests.map((r) => ({
       requestId: r._id,
       requestType: r.requestType,
       status: r.status,
-      /* ADD_ITEM fields */
       itemName: r.itemName || (r.product && r.product.name) || null,
       category: r.category || (r.product && r.product.category) || null,
-      initialQuantity: r.initialQuantity || null,
-      /* RESTOCK fields */
-      productId: r.product ? r.product._id : null,
+      productId: r.product ? String(r.product._id || r.product) : null,
       productName: r.product ? r.product.name : null,
-      requestedQuantity: r.requestedQuantity || null,
-      currentQuantity: r.product ? r.product.quantity : null,
+      requestedQuantity: r.requestedQuantity || r.initialQuantity || null,
       unit: r.unit || (r.product && r.product.unit) || "pcs",
-      /* Timing */
       createdAt: r.createdAt,
-      reviewedAt: r.reviewedAt || null,
-      rejectionReason: r.rejectionReason || null,
     }));
 
-    /* Compute summary counts for the staff's requests */
-    const allStatuses = await InventoryRequest.aggregate([
-      { $match: { requestedBy: new mongoose.Types.ObjectId(req.user.id) } },
-      { $group: { _id: "$status", count: { $sum: 1 } } },
-    ]);
+    const mappedPriceChange = priceChangeRequests.map((r) => ({
+      requestId: r._id,
+      requestType: "PRICE_CHANGE",
+      isPriceChange: true,
+      status: r.status.toLowerCase(),
+      itemName: r.productName,
+      productId: String(r.productId),
+      productName: r.productName,
+      requestedPrice: r.requestedPrice,
+      createdAt: r.createdAt,
+    }));
 
-    const summary = { pending: 0, approved: 0, rejected: 0 };
-    allStatuses.forEach((s) => {
-      if (summary[s._id] !== undefined) summary[s._id] = s.count;
-    });
+    const mappedDisposal = disposalRequests.map((r) => ({
+      requestId: r._id,
+      requestType: "DISPOSAL",
+      isDisposal: true,
+      status: r.status.toLowerCase(),
+      itemName: r.itemName,
+      productId: String(r.itemId),
+      productName: r.itemName,
+      requestedQuantity: r.quantityDisposed,
+      createdAt: r.createdAt,
+    }));
+
+    const mappedDiscrepancy = discrepancyRequests.map((r) => ({
+      requestId: r._id,
+      requestType: "DISCREPANCY",
+      isDiscrepancy: true,
+      status: r.status.toLowerCase(),
+      itemName: r.productName,
+      productId: String(r.productId),
+      productName: r.productName,
+      requestedQuantity: r.actualQuantity,
+      createdAt: r.createdAt,
+    }));
+
+    const allRequests = [...mappedInventory, ...mappedPriceChange, ...mappedDisposal, ...mappedDiscrepancy].sort(
+      (a, b) => new Date(b.createdAt) - new Date(a.createdAt)
+    );
+
+    const total = allRequests.length;
+    const paginatedData = allRequests.slice(skip, skip + limit);
 
     return res.status(200).json({
       page,
       limit,
       total,
       totalPages: Math.ceil(total / limit) || 1,
-      summary,
-      data,
+      data: paginatedData,
     });
   } catch (error) {
     return res.status(500).json({ message: error.message });

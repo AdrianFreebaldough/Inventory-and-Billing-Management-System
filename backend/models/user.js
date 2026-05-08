@@ -27,7 +27,7 @@ export const userSchema = new mongoose.Schema(
     },
     role: {
       type: String,
-      enum: ["owner", "staff"],
+      enum: ["owner", "admin", "staff"],
       required: true,
     },
     status: {

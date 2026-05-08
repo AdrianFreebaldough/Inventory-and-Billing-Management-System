@@ -23,7 +23,7 @@ router.get("/profile/me", protect, getMyProfile);
 router.post(
   "/users",
   protect,
-  authorizeRoles("owner"),
+  authorizeRoles("owner", "admin"),
   createUser
 );
 

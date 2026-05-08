@@ -702,6 +702,8 @@ export const STAFF_completeBillingTransaction = async ({ transactionId, staffId,
       throw new STAFF_BillingError("Insufficient cash received", 400);
     }
 
+    const receiptNumber = STAFF_makeReceiptNumber();
+
     for (const item of transaction.items) {
       if (item.type === "service") {
         continue;
@@ -744,6 +746,7 @@ export const STAFF_completeBillingTransaction = async ({ transactionId, staffId,
           role: "staff",
         },
         source: "POS",
+        referenceId: `${receiptNumber}-${item.productId}`,
         session,
       });
     }
@@ -752,7 +755,7 @@ export const STAFF_completeBillingTransaction = async ({ transactionId, staffId,
     const completedAt = new Date();
 
     const receiptSnapshot = {
-      receiptNumber: STAFF_makeReceiptNumber(),
+      receiptNumber,
       clinic: {
         name: process.env.CLINIC_NAME || "IBMS Clinic",
       },

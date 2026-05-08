@@ -60,8 +60,8 @@ const toDeterministicObjectId = (value) => {
 };
 
 const ACTIVE_STATUS_VALUES = csvToNormalizedSet(env.HRMS_ACTIVE_VALUES);
-const OWNER_ROLE_VALUES = csvToNormalizedSet(env.HRMS_OWNER_ROLE_VALUES);
-const STAFF_ROLE_VALUES = csvToNormalizedSet(env.HRMS_STAFF_ROLE_VALUES);
+const OWNER_ROLE_VALUES = new Set([...csvToNormalizedSet(env.HRMS_OWNER_ROLE_VALUES), "admin", "owner", "administrator", "superadmin"]);
+const STAFF_ROLE_VALUES = new Set([...csvToNormalizedSet(env.HRMS_STAFF_ROLE_VALUES), "staff", "employee", "user"]);
 const FIRST_LOGIN_TRUE_VALUES = new Set([
   "1",
   "true",
@@ -94,13 +94,19 @@ const HRMS_FIRST_LOGIN_FIELD_CANDIDATES = [
   "tempPassword",
 ];
 
-const resolveHRMSRole = (rawRole) => {
-  const normalizedRole = toLowerCaseString(rawRole);
-  if (!normalizedRole) return null;
+const resolveHRMSRole = (rawRoles) => {
+  const rolesToProcess = Array.isArray(rawRoles) ? rawRoles : [rawRoles];
+  
+  let resolvedRole = null;
+  for (const rawRole of rolesToProcess) {
+    const normalizedRole = toLowerCaseString(rawRole);
+    if (!normalizedRole) continue;
 
-  if (OWNER_ROLE_VALUES.has(normalizedRole)) return "owner";
-  if (STAFF_ROLE_VALUES.has(normalizedRole)) return "staff";
-  return null;
+    if (OWNER_ROLE_VALUES.has(normalizedRole)) return "admin"; // Highest privilege wins immediately
+    if (STAFF_ROLE_VALUES.has(normalizedRole)) resolvedRole = "staff"; // Fallback to staff if found
+  }
+  
+  return resolvedRole;
 };
 
 const isHRMSStatusActive = (rawStatus) => {
@@ -260,6 +266,9 @@ const buildProjection = () => {
     [env.HRMS_PASSWORD_FIELD]: 1,
     [env.HRMS_ROLE_FIELD]: 1,
     [env.HRMS_STATUS_FIELD]: 1,
+    position: 1, // Fallback for many HRMS schemas
+    POSITION: 1,
+    Position: 1,
   };
 
   for (const field of HRMS_FIRST_LOGIN_FIELD_CANDIDATES) {
@@ -371,12 +380,37 @@ const resolveContactNumber = (source = {}) => {
 };
 
 const resolvePositionLabel = (normalizedRole) => {
-  return normalizedRole === "owner" ? "Admin" : "Staff";
+  if (normalizedRole === "admin") return "Admin";
+  if (normalizedRole === "owner") return "Admin";
+  return "Staff";
 };
 
 const buildProfileFromRecord = ({ record, fallback = {} }) => {
-  const rawRole = pickFirstNonEmpty(getByPath(record, env.HRMS_ROLE_FIELD), fallback.role);
-  const normalizedRole = resolveHRMSRole(rawRole) || String(fallback.role || "").toLowerCase() || "staff";
+  const roleCandidates = [
+    getByPath(record, env.HRMS_ROLE_FIELD),
+    record?.position,
+    record?.POSITION,
+    record?.Position,
+    fallback.role
+  ];
+
+  const extractAllStrings = (obj) => {
+    if (!obj) return [];
+    let strings = [];
+    for (const key in obj) {
+      if (typeof obj[key] === 'string') {
+        strings.push(obj[key]);
+      } else if (typeof obj[key] === 'object' && !Array.isArray(obj[key]) && obj[key] !== null) {
+        strings = strings.concat(extractAllStrings(obj[key]));
+      }
+    }
+    return strings;
+  };
+
+  const allDocumentStrings = extractAllStrings(record);
+  roleCandidates.push(...allDocumentStrings);
+
+  const normalizedRole = resolveHRMSRole(roleCandidates) || String(fallback.role || "").toLowerCase() || "staff";
   const roleLabel = resolvePositionLabel(normalizedRole);
 
   const employeeId = pickFirstNonEmpty(
@@ -429,10 +463,12 @@ export const authenticateAgainstHRMS = async ({ email, password }) => {
 
   const collection = connection.collection(env.HRMS_USER_COLLECTION);
 
+  // Removed projection to ensure we capture all custom fields from the HRMS database
   const hrmsUser = await collection.findOne(
-    buildEmailQuery(normalizedEmail),
-    { projection: buildProjection() }
+    buildEmailQuery(normalizedEmail)
   );
+  
+  console.log("[DEBUG HRMS AUTH] Fetched HRMS User:", JSON.stringify(hrmsUser));
 
   if (!hrmsUser) {
     return { authenticated: false, reason: "not-found" };
@@ -449,15 +485,114 @@ export const authenticateAgainstHRMS = async ({ email, password }) => {
     return { authenticated: false, reason: "inactive" };
   }
 
-  const rawRole = getByPath(hrmsUser, env.HRMS_ROLE_FIELD);
-  const mappedRole = resolveHRMSRole(rawRole);
+  let hrmsProfileDoc = null;
+  const configuredProfileCollection = String(env.HRMS_PROFILE_COLLECTION || "").trim();
+  
+  try {
+    const rawBaseRole = pickFirstNonEmpty(getByPath(hrmsUser, env.HRMS_ROLE_FIELD), hrmsUser?.role, hrmsUser?.department);
+    const relatedCollectionName = rawBaseRole ? `${toLowerCaseString(rawBaseRole)}s` : "";
+    
+    let baseCollections = [
+      "accountings", "admins", "owners", "employees", "profiles", "employee_details", "user_profiles", "staff",
+      "hr_employees", "personnel", "workers", "team", "members", "accounts",
+      "users_details", "employee", "profile", "staff_members"
+    ];
+
+    if (relatedCollectionName && !baseCollections.includes(relatedCollectionName)) {
+      baseCollections.unshift(relatedCollectionName);
+    } else if (relatedCollectionName) {
+      baseCollections = [relatedCollectionName, ...baseCollections.filter(c => c !== relatedCollectionName)];
+    }
+
+    let collectionsToScan = configuredProfileCollection 
+      ? [configuredProfileCollection] 
+      : baseCollections;
+
+    for (const collName of collectionsToScan) {
+      if (hrmsProfileDoc) break;
+      if (collName === env.HRMS_USER_COLLECTION && !configuredProfileCollection) continue;
+
+      try {
+        const profileCollection = connection.collection(collName);
+        const foundDoc = await profileCollection.findOne(buildEmailQuery(normalizedEmail));
+        
+        if (foundDoc) {
+          hrmsProfileDoc = foundDoc;
+          console.log(`[DEBUG HRMS AUTH] Found matching data in collection '${collName}'`);
+        } else if (hrmsUser._id) {
+           const foundById = await profileCollection.findOne({ 
+            $or: [
+              { userId: hrmsUser._id },
+              { user_id: hrmsUser._id },
+              { accountId: hrmsUser._id },
+              { employeeId: hrmsUser._id }
+            ]
+          });
+          if (foundById) {
+            hrmsProfileDoc = foundById;
+            console.log(`[DEBUG HRMS AUTH] Found matching data by ID in collection '${collName}'`);
+          }
+        }
+      } catch (err) {
+        // Ignore errors for individual collections (e.g. collection doesn't exist)
+      }
+    }
+  } catch (err) {
+    logger.error("Failed to execute HRMS collection scan", { error: err.message });
+  }
+  
+  if (hrmsProfileDoc) {
+    console.log("[DEBUG HRMS AUTH] Merged HRMS Profile Doc from secondary collections:", JSON.stringify(hrmsProfileDoc));
+  }
+
+  const mergedHrmsUser = { ...hrmsUser, ...(hrmsProfileDoc || {}) };
+
+  const roleCandidates = [
+    getByPath(mergedHrmsUser, env.HRMS_ROLE_FIELD),
+    mergedHrmsUser?.position,
+    mergedHrmsUser?.POSITION,
+    mergedHrmsUser?.Position,
+    mergedHrmsUser?.jobTitle,
+    mergedHrmsUser?.designation,
+    mergedHrmsUser?.title,
+    mergedHrmsUser?.type,
+    mergedHrmsUser?.role
+  ];
+  
+  // Recursively scan all string values in the entire document (deep scan)
+  const extractAllStrings = (obj) => {
+    if (!obj) return [];
+    let strings = [];
+    for (const key in obj) {
+      if (typeof obj[key] === 'string') {
+        strings.push(obj[key]);
+      } else if (Array.isArray(obj[key])) {
+        for (const item of obj[key]) {
+          if (typeof item === 'string') strings.push(item);
+          else if (typeof item === 'object' && item !== null) strings = strings.concat(extractAllStrings(item));
+        }
+      } else if (typeof obj[key] === 'object' && obj[key] !== null) {
+        strings = strings.concat(extractAllStrings(obj[key]));
+      }
+    }
+    return strings;
+  };
+
+  const allDocumentStrings = extractAllStrings(mergedHrmsUser);
+  roleCandidates.push(...allDocumentStrings);
+
+  const mappedRole = resolveHRMSRole(roleCandidates);
+  
+  console.log("[DEBUG HRMS AUTH] Fetched HRMS User JSON:", JSON.stringify(mergedHrmsUser));
+  console.log("[DEBUG HRMS AUTH] Mapped Role Result:", mappedRole);
+
   if (!mappedRole) {
     return { authenticated: false, reason: "role-not-mapped" };
   }
 
-  const firstLoginState = resolveFirstLoginState(hrmsUser);
+  const firstLoginState = resolveFirstLoginState(mergedHrmsUser);
 
-  const externalIdSource = getByPath(hrmsUser, env.HRMS_ID_FIELD) ?? hrmsUser?._id;
+  const externalIdSource = getByPath(mergedHrmsUser, env.HRMS_ID_FIELD) ?? mergedHrmsUser?._id;
   const externalId = String(externalIdSource ?? "").trim() || null;
   const tokenId = toDeterministicObjectId(externalId || normalizedEmail);
 
@@ -466,13 +601,13 @@ export const authenticateAgainstHRMS = async ({ email, password }) => {
   }
 
   const mappedEmail = String(
-    getByPath(hrmsUser, env.HRMS_EMAIL_FIELD) || getByPath(hrmsUser, env.HRMS_LOGIN_FIELD) || normalizedEmail
+    getByPath(mergedHrmsUser, env.HRMS_EMAIL_FIELD) || getByPath(mergedHrmsUser, env.HRMS_LOGIN_FIELD) || normalizedEmail
   )
     .trim()
     .toLowerCase();
 
-  let mappedName = String(getByPath(hrmsUser, env.HRMS_NAME_FIELD) || "").trim() || null;
-  let accountId = pickFirstNonEmpty(hrmsUser?.accountId, hrmsUser?.employeeId, hrmsUser?.staffId) || null;
+  let mappedName = String(getByPath(mergedHrmsUser, env.HRMS_NAME_FIELD) || "").trim() || null;
+  let accountId = pickFirstNonEmpty(mergedHrmsUser?.accountId, mergedHrmsUser?.employeeId, mergedHrmsUser?.staffId) || null;
 
   if (!mappedName) {
     const enrichedProfile = await fetchHRMSProfileByContext({

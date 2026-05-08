@@ -161,6 +161,7 @@ const normalizePendingLine = (entry, fallbackIndex = 0) => {
     sourceLabel,
     serviceCode: String(entry?.serviceCode || entry?.parmsServiceCode || "").trim() || null,
     description,
+    quantity: Math.max(1, Number(entry?.quantity || entry?.qty || entry?.count || 1) || 1),
     amount: Number(amount.toFixed(2)),
   };
 };
@@ -276,9 +277,15 @@ const normalizeReceiptItemsForSync = (items = []) => {
     return {
       productId: item?.productId ? String(item.productId) : null,
       name: item?.name || null,
-      quantity: Number(item?.quantity || 0),
+      quantity: Number(item?.quantity || 1) || 1,
       unitPriceMinor,
+      unit_price_minor: unitPriceMinor,
+      priceMinor: unitPriceMinor,
+      price_minor: unitPriceMinor,
       lineTotalMinor,
+      line_total_minor: lineTotalMinor,
+      subtotalMinor: lineTotalMinor,
+      subtotal_minor: lineTotalMinor,
       batchAllocations: (item?.batchAllocations || []).map((allocation) => ({
         batchId: allocation?.batchId ? String(allocation.batchId) : null,
         batchNumber: allocation?.batchNumber || null,
@@ -327,7 +334,13 @@ const normalizeReceiptItemsForSync = (items = []) => {
     name: item.name,
     quantity: item.quantity,
     unitPriceMinor: item.unitPriceMinor,
+    unit_price_minor: item.unitPriceMinor,
+    priceMinor: item.unitPriceMinor,
+    price_minor: item.unitPriceMinor,
     lineTotalMinor: item.lineTotalMinor,
+    line_total_minor: item.lineTotalMinor,
+    subtotalMinor: item.lineTotalMinor,
+    subtotal_minor: item.lineTotalMinor,
     batchAllocations: item.batchAllocations,
   }));
 };
@@ -355,15 +368,66 @@ const buildReceiptPayload = (transaction) => {
     changeMinor: toMinorUnits(snapshot.change),
     pendingBalanceTotalMinor: toMinorUnits(snapshot.pendingBalanceTotal),
     items: normalizeReceiptItemsForSync(snapshot.items || []),
-    pendingBalances: (snapshot.pendingBalances || []).map((line) => ({
-      sourceType: line.sourceType || null,
-      referenceId: line.referenceId || null,
-      description: line.description || null,
-      amountMinor: toMinorUnits(line.amount),
-    })),
+    pendingBalances: (snapshot.pendingBalances || []).map((line) => {
+      const amountMinor = toMinorUnits(line.amount);
+      const quantity = Math.max(1, Number(line?.quantity || 1) || 1);
+      const unitPriceMinor = Math.round(amountMinor / quantity);
+
+      return {
+        sourceType: line.sourceType || null,
+        referenceId: line.referenceId || null,
+        description: line.description || null,
+        amountMinor,
+        amount_minor: amountMinor,
+        unitPriceMinor,
+        unit_price_minor: unitPriceMinor,
+        priceMinor: unitPriceMinor,
+        price_minor: unitPriceMinor,
+        lineTotalMinor: amountMinor,
+        line_total_minor: amountMinor,
+        subtotalMinor: amountMinor,
+        subtotal_minor: amountMinor,
+        quantity,
+      };
+    }),
   };
 
   return compactPayload(receipt);
+};
+
+const extractPricedLinesForSync = (transaction) => {
+  if (!transaction) return [];
+
+  const items = (transaction.items || []).map((item) => ({
+    productId: item.productId ? String(item.productId) : null,
+    name: item.name || "Item",
+    genericName: item.genericName || "",
+    brandName: item.brandName || "",
+    unitPrice: Number(item.unitPrice || 0),
+    quantity: Number(item.quantity || 1),
+    lineTotal: Number(item.lineTotal || 0),
+    type: item.type || "item",
+    batchAllocations: Array.isArray(item.batchAllocations) ? item.batchAllocations : []
+  }));
+
+  const pending = (transaction.parmsPendingBalances || []).map((line) => {
+    const qty = Math.max(1, Number(line.quantity || 1));
+    const total = Number(line.amount || 0);
+    const price = total / qty;
+    return {
+      productId: line.referenceId ? String(line.referenceId) : null,
+      name: line.description || "Pending Balance",
+      genericName: "",
+      brandName: "",
+      unitPrice: price,
+      quantity: qty,
+      lineTotal: total,
+      type: line.sourceType === "prescription" ? "item" : "service",
+      batchAllocations: []
+    };
+  });
+
+  return [...items, ...pending];
 };
 
 const buildSyncPayload = (transaction) => {
@@ -379,6 +443,7 @@ const buildSyncPayload = (transaction) => {
   const invoiceNumber = transaction.parmsInvoiceNumber || transaction.receiptSnapshot?.receiptNumber || null;
   const ibmsReference = transaction.parmsInvoiceReference || transaction.receiptSnapshot?.receiptNumber || String(transaction._id);
   const receipt = buildReceiptPayload(transaction);
+  const pricedLines = extractPricedLinesForSync(transaction);
 
   const payload = {
     billingId: externalBillingId,
@@ -394,6 +459,8 @@ const buildSyncPayload = (transaction) => {
     amountPaidMinor: totalAmountMinor,
     balanceDueMinor: 0,
     currency: env.PARMS_SYNC_CURRENCY || "PHP",
+    pricedLines,
+    priced_lines: pricedLines,
     receipt,
   };
 
@@ -774,4 +841,3 @@ export const fetchPatientPendingBalancesFromPARMS = async (patientId) => {
 };
 
 export const parmsIntegrationReady = () => hasParmsConfig();
-

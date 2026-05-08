@@ -123,7 +123,7 @@ export const createStockLog = async ({
         beforeQuantity,
         afterQuantity,
         performedBy: performer,
-        referenceId: providedReferenceId || null,
+        referenceId: providedReferenceId || await Owner_generateReferenceId(session),
         batchNumber: batchNumber ? String(batchNumber).trim() : null,
         source,
         notes: notes || null,

@@ -61,7 +61,7 @@ const AUTH_syncHRMSUserToIBMS = async (hrmsProfile = {}) => {
     throw new Error("HRMS profile email is invalid");
   }
 
-  if (!["owner", "staff"].includes(normalizedRole)) {
+  if (!["owner", "admin", "staff"].includes(normalizedRole)) {
     throw new Error("HRMS profile role is invalid");
   }
 
@@ -121,7 +121,8 @@ const AUTH_issueTokenAndRespond = ({ res, profile }) => {
   const token = jwt.sign(
     {
       id: profile.id,
-      role: profile.role,
+      position: profile.role || profile.position,
+      role: profile.role || profile.position,
       name: profile.name,
       email: profile.email,
       accountId: profile.accountId || profile.email,
@@ -139,7 +140,8 @@ const AUTH_issueTokenAndRespond = ({ res, profile }) => {
       name: profile.name || null,
       email: profile.email,
       accountId: profile.accountId || profile.email,
-      role: profile.role,
+      position: profile.role || profile.position,
+      role: profile.role || profile.position,
       authSource: profile.authSource || "IBMS",
       externalId: profile.externalId || null,
     },
@@ -158,57 +160,13 @@ export const login = async (req, res) => {
       return res.status(400).json({ message: "valid email and password are required" });
     }
 
-    // 1) Keep standalone IBMS accounts as primary login path.
-    const user = await User.findOne({
-      email: {
-        $regex: `^${escapeRegex(email)}$`,
-        $options: "i",
-      },
-    });
-    if (user && !user.hrmsId) {
-      if (AUTH_isSuspendedStatus(user.status)) {
-        return res.status(403).json({ message: "Account suspended. Please contact administrator." });
-      }
-
-      if (!user.isActive) {
-        return res.status(401).json({ message: "Invalid credentials" });
-      }
-
-      const isMatch = await bcrypt.compare(password, user.password);
-      if (!isMatch) {
-        if (!env.HRMS_AUTH_ENABLED) {
-          return res.status(401).json({ message: "Invalid credentials" });
-        }
-      } else {
-        return AUTH_issueTokenAndRespond({
-          res,
-          profile: {
-            id: String(user._id),
-            role: user.role,
-            name: user.name || null,
-            email: user.email,
-            accountId: user.email,
-            authSource: "IBMS",
-            externalId: null,
-          },
-        });
-      }
-    }
-
-    // 2) Optional HRMS login fallback.
+    // 1) Optional HRMS login fallback (Prioritized if enabled).
     if (env.HRMS_AUTH_ENABLED) {
-      const existingHrmsShadow = await User.findOne({
-        email: {
-          $regex: `^${escapeRegex(email)}$`,
-          $options: "i",
-        },
-      }).lean();
-
-      if (existingHrmsShadow && AUTH_isSuspendedStatus(existingHrmsShadow.status)) {
-        return res.status(403).json({ message: "Account suspended. Please contact administrator." });
-      }
-
+      console.log("[DEBUG LOGIN] HRMS_AUTH_ENABLED is true. Attempting HRMS login for:", email);
       const hrmsResult = await authenticateAgainstHRMS({ email, password });
+      
+      console.log("[DEBUG LOGIN] HRMS Auth Result:", JSON.stringify(hrmsResult));
+
       if (hrmsResult?.authenticated && hrmsResult?.user) {
         if (hrmsResult?.requiresPasswordChange) {
           const challengeToken = AUTH_issueFirstLoginChallenge(
@@ -224,6 +182,8 @@ export const login = async (req, res) => {
         }
 
         const syncedUser = await AUTH_syncHRMSUserToIBMS(hrmsResult.user);
+        
+        console.log("[DEBUG LOGIN] Synced User Role:", syncedUser.role);
 
         if (AUTH_isSuspendedStatus(syncedUser.status)) {
           return res.status(403).json({ message: "Account suspended. Please contact administrator." });
@@ -243,10 +203,65 @@ export const login = async (req, res) => {
         });
       }
 
-      logger.warn("HRMS authentication attempt failed", {
+      logger.debug("HRMS authentication attempt did not succeed, falling back to local IBMS check", {
         email,
         reason: hrmsResult?.reason || "unknown",
       });
+    }
+
+    // 2) Fallback to standalone IBMS accounts.
+    const user = await User.findOne({
+      email: {
+        $regex: `^${escapeRegex(email)}$`,
+        $options: "i",
+      },
+    });
+
+    if (user) {
+      if (AUTH_isSuspendedStatus(user.status)) {
+        return res.status(403).json({ message: "Account suspended. Please contact administrator." });
+      }
+
+      if (!user.isActive) {
+        return res.status(401).json({ message: "Invalid credentials" });
+      }
+
+      const isMatch = await bcrypt.compare(password, user.password);
+      if (isMatch) {
+        // Enforce HRMS as single source of truth even for old IBMS accounts
+        if (env.HRMS_AUTH_ENABLED) {
+          try {
+            const hrmsProfile = await fetchHRMSProfileByContext({
+              email: user.email,
+              externalId: user.hrmsId,
+            });
+
+            const rawHrmsRole = String(hrmsProfile?.role || "").trim().toLowerCase();
+            const validHrmsRole = ["owner", "admin", "staff"].includes(rawHrmsRole) ? rawHrmsRole : null;
+
+            if (validHrmsRole && validHrmsRole !== user.role) {
+              console.log(`[DEBUG LOGIN] Syncing legacy IBMS account role from HRMS. Old: ${user.role}, New: ${validHrmsRole}`);
+              user.role = validHrmsRole;
+              await user.save();
+            }
+          } catch (syncError) {
+            logger.error("Failed to sync legacy IBMS account with HRMS during login", { errorMessage: syncError.message });
+          }
+        }
+
+        return AUTH_issueTokenAndRespond({
+          res,
+          profile: {
+            id: String(user._id),
+            role: user.role,
+            name: user.name || null,
+            email: user.email,
+            accountId: user.email,
+            authSource: "IBMS",
+            externalId: user.hrmsId || null,
+          },
+        });
+      }
     }
 
     return res.status(401).json({ message: "Invalid credentials" });
@@ -309,7 +324,7 @@ export const completeFirstLoginPasswordChange = async (req, res) => {
     }
 
     const normalizedRole = String(payload?.role || "").trim().toLowerCase();
-    if (!normalizedRole || !["owner", "staff"].includes(normalizedRole)) {
+    if (!normalizedRole || !["owner", "admin", "staff"].includes(normalizedRole)) {
       return res.status(400).json({ message: "Invalid role in password change session" });
     }
 
@@ -370,8 +385,8 @@ export const createUser = async (req, res) => {
       return res.status(400).json({ message: "Password must be at least 8 characters" });
     }
 
-    if (!["owner", "staff"].includes(normalizedRole)) {
-      return res.status(400).json({ message: "role must be owner or staff" });
+    if (!["owner", "admin", "staff"].includes(normalizedRole)) {
+      return res.status(400).json({ message: "role must be owner, admin, or staff" });
     }
 
     // Prevent duplicate users

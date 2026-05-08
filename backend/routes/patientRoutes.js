@@ -78,6 +78,7 @@ const normalizePendingLine = (line = {}, index = 0) => {
     origin,
     obligationKind,
     serviceCode: String(line?.serviceCode || line?.parmsServiceCode || "").trim() || null,
+    quantity: Math.max(1, Number(line?.quantity || line?.qty || 1) || 1),
     amount: Number(amount.toFixed(2)),
   };
 };
@@ -223,6 +224,7 @@ const buildIntentPendingLines = (intentContext) => {
       origin: "intent",
       obligationKind: "required_service",
       serviceCode: parmsServiceCode || null,
+      quantity: Math.max(1, Number(line?.quantity || 1) || 1),
       amount,
     };
   });
@@ -242,6 +244,7 @@ const buildIntentPendingLines = (intentContext) => {
       origin: "intent",
       obligationKind: "optional_prescription",
       serviceCode: null,
+      quantity: Math.max(1, Number(line?.quantity || 1) || 1),
       amount,
     };
   });

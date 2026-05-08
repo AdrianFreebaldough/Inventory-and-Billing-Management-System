@@ -6,7 +6,7 @@ import logger from '../utils/logger.js';
 export const getServices = async (req, res) => {
   try {
     // Admin can view all, staff/billing usually only view active
-    const query = req.user.role === 'OWNER' ? {} : { status: 'active' };
+    const query = (req.user.role === 'OWNER' || req.user.role === 'ADMIN') ? {} : { status: 'active' };
     const services = await Service.find(query).sort({ createdAt: -1 });
     
     // Find all pending requests to flag active locks
@@ -227,7 +227,7 @@ export const submitServiceRequest = async (req, res) => {
 // GET Service Requests
 export const getServiceRequests = async (req, res) => {
   try {
-    const query = req.user.role === 'OWNER' ? {} : { requestedBy: req.user.id };
+    const query = (req.user.role === 'OWNER' || req.user.role === 'ADMIN') ? {} : { requestedBy: req.user.id };
     const requests = await ServiceRequest.find(query)
       .populate('serviceId')
       .sort({ createdAt: -1 });

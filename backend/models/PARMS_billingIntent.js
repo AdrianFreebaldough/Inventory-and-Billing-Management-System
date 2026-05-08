@@ -17,9 +17,19 @@ const PARMS_serviceLineSchema = new mongoose.Schema(
       default: null,
       trim: true,
     },
+    description: {
+      type: String,
+      default: null,
+      trim: true,
+    },
     quantity: {
       type: Number,
       default: 1,
+      min: 0,
+    },
+    unitPriceMinor: {
+      type: Number,
+      default: 0,
       min: 0,
     },
     totalMinor: {
@@ -67,9 +77,19 @@ const PARMS_prescriptionLineSchema = new mongoose.Schema(
       default: null,
       trim: true,
     },
+    description: {
+      type: String,
+      default: null,
+      trim: true,
+    },
     quantity: {
       type: Number,
       default: 1,
+      min: 0,
+    },
+    unitPriceMinor: {
+      type: Number,
+      default: 0,
       min: 0,
     },
     totalMinor: {

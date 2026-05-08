@@ -1,7 +1,7 @@
 (function initIBMSAuthSession(global) {
   const LOGIN_PAGE_PATH = "../../HTML/loginPage/loginPage.html";
   const TOKEN_KEYS = ["token", "authToken", "jwtToken", "ibmsToken"];
-  const ROLE_KEYS = ["role", "userRole"];
+  const ROLE_KEYS = ["position", "role", "userRole"];
   const USER_KEYS = ["userEmail", "userName", "isAuthenticated", "authFlag"];
   const SESSION_KEYS = [
     "staffDashboardCurrentRoute",
@@ -85,7 +85,7 @@
     }
 
     const payload = getTokenPayload();
-    return String(payload?.role || "").toLowerCase();
+    return String(payload?.position || payload?.role || "").toLowerCase();
   }
 
   function getValidToken() {
@@ -211,7 +211,11 @@
     if (requiredRole) {
       const normalizedRequired = String(requiredRole).toLowerCase();
       const currentRole = getCurrentRole();
-      if (currentRole !== normalizedRequired) {
+      
+      const isAdminRole = (r) => r === "admin" || r === "owner";
+      const isMatch = (normalizedRequired === currentRole) || (isAdminRole(normalizedRequired) && isAdminRole(currentRole));
+      
+      if (!isMatch) {
         return false;
       }
     }

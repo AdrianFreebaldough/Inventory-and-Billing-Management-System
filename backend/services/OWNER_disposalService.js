@@ -1,6 +1,8 @@
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import mongoose from "mongoose";
+import env from "../config/env.js";
+import { authenticateAgainstHRMS } from "./hrmsAuthService.js";
 import Product from "../models/product.js";
 import InventoryBatch from "../models/InventoryBatch.js";
 import ActivityLog from "../models/activityLog.js";
@@ -394,11 +396,44 @@ export const createDisposalRequest = async ({
       userRole,
     });
 
+    let targetBatchId = batch._id;
+
+    if (parsedQuantity < currentQty) {
+      const [disposalBatch] = await InventoryBatch.create(
+        [
+          {
+            product: batch.product,
+            batchNumber: batch.batchNumber,
+            quantity: parsedQuantity,
+            currentQuantity: parsedQuantity,
+            initialQuantity: parsedQuantity,
+            expiryDate: batch.expiryDate,
+            supplier: batch.supplier,
+            notes: `Reserved for disposal request ${referenceId}`,
+            status: BATCH_MANUAL_STATUS.PENDING_DISPOSAL,
+            lastDisposalReferenceId: referenceId,
+          },
+        ],
+        session ? { session } : undefined
+      );
+
+      // Reduce the original batch quantity
+      batch.currentQuantity = currentQty - parsedQuantity;
+      await batch.save(session ? { session } : undefined);
+
+      targetBatchId = disposalBatch._id;
+    } else {
+      // Locking the entire batch
+      batch.status = BATCH_MANUAL_STATUS.PENDING_DISPOSAL;
+      batch.lastDisposalReferenceId = referenceId;
+      await batch.save(session ? { session } : undefined);
+    }
+
     const createdLog = await createDisposalLogEntry(
       {
         referenceId,
         itemId: product._id,
-        batchId: batch._id,
+        batchId: targetBatchId,
         itemName: product.name,
         genericName: product.genericName || null,
         batchNumber: batch.batchNumber,
@@ -414,10 +449,6 @@ export const createDisposalRequest = async ({
       },
       session
     );
-
-    batch.status = BATCH_MANUAL_STATUS.PENDING_DISPOSAL;
-    batch.lastDisposalReferenceId = referenceId;
-    await batch.save(session ? { session } : undefined);
 
     await ActivityLog.create(
       [
@@ -442,6 +473,9 @@ export const createDisposalRequest = async ({
       ],
       session ? { session } : undefined
     );
+
+    // Sync product quantity after split
+    await syncProductFromBatchTotals({ productId: product._id, session });
 
     return getDisposalLogById(createdLog._id, { session });
   });
@@ -473,11 +507,16 @@ export const directOwnerDisposal = async ({
     const ownerQuery = User.findById(ownerId);
     getQueryWithSession(ownerQuery, session);
     const owner = await ownerQuery;
-    if (!owner || owner.role !== "owner") {
+    if (!owner || (owner.role !== "owner" && owner.role !== "admin")) {
       throw new Error("Owner account not found");
     }
 
-    const passwordMatches = await bcrypt.compare(String(ownerPassword || ""), owner.password);
+    let passwordMatches = await bcrypt.compare(String(ownerPassword || ""), owner.password);
+    if (!passwordMatches && env.HRMS_AUTH_ENABLED) {
+      const hrmsResult = await authenticateAgainstHRMS({ email: owner.email, password: ownerPassword });
+      passwordMatches = hrmsResult.authenticated;
+    }
+
     if (!passwordMatches) {
       throw new Error("Incorrect password. Disposal cancelled.");
     }
@@ -570,9 +609,8 @@ export const directOwnerDisposal = async ({
     batch.disposedAt = afterQuantity <= 0 ? new Date() : null;
     batch.lastDisposalReferenceId = referenceId;
     await batch.save(session ? { session } : undefined);
-
-    await recalculateProductStock(product._id, session);
-
+    const syncResult = await syncProductFromBatchTotals({ productId: product._id, session });
+    const productData = syncResult.product;
     await createStockLog({
       productId: product._id,
       movementType: "DISPOSAL",
@@ -596,10 +634,10 @@ export const directOwnerDisposal = async ({
           performedBy: ownerId,
           entityType: "DisposalLog",
           entityId: createdLog._id,
-          description: `Directly disposed ${parsedQuantity} unit(s) of ${product.name} from batch ${batch.batchNumber}`,
+          description: `Directly disposed ${parsedQuantity} unit(s) of ${productData.name} from batch ${batch.batchNumber}`,
           details: {
             referenceId,
-            itemName: product.name,
+            itemName: productData.name,
             batchNumber: batch.batchNumber,
             quantityDisposed: parsedQuantity,
             beforeQuantity,
@@ -661,6 +699,9 @@ export const rejectDisposalRequest = async ({ disposalId, ownerId }) => {
       session ? { session } : undefined
     );
 
+    // Sync product quantity after rejection
+    await syncProductFromBatchTotals({ productId: disposalLog.itemId, session });
+
     return getDisposalLogById(disposalLog._id, { session });
   });
 };
@@ -685,11 +726,16 @@ export const approveDisposalRequest = async ({
     const ownerQuery = User.findById(ownerId);
     getQueryWithSession(ownerQuery, session);
     const owner = await ownerQuery;
-    if (!owner || owner.role !== "owner") {
+    if (!owner || (owner.role !== "owner" && owner.role !== "admin")) {
       throw new Error("Owner account not found");
     }
 
-    const passwordMatches = await bcrypt.compare(String(adminPassword || ""), owner.password);
+    let passwordMatches = await bcrypt.compare(String(adminPassword || ""), owner.password);
+    if (!passwordMatches && env.HRMS_AUTH_ENABLED) {
+      const hrmsResult = await authenticateAgainstHRMS({ email: owner.email, password: adminPassword });
+      passwordMatches = hrmsResult.authenticated;
+    }
+
     if (!passwordMatches) {
       throw new Error("Incorrect password. Approval denied.");
     }
@@ -715,7 +761,8 @@ export const approveDisposalRequest = async ({
     batch.lastDisposalReferenceId = disposalLog.referenceId;
     await batch.save(session ? { session } : undefined);
 
-    const product = await recalculateProductStock(disposalLog.itemId, session);
+    const syncResult = await syncProductFromBatchTotals({ productId: disposalLog.itemId, session });
+    const product = syncResult.product;
 
     const approvedAt = new Date();
     disposalLog.status = "Approved";

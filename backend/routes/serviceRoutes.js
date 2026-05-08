@@ -18,15 +18,15 @@ const router = express.Router();
 router.get('/', protect, getServices);
 
 // Direct Admin Control
-router.post('/', protect, authorizeRoles('OWNER'), adminAddService);
-router.put('/:id', protect, authorizeRoles('OWNER'), adminEditService);
-router.patch('/:id/archive', protect, authorizeRoles('OWNER'), adminArchiveService);
-router.patch('/:id/restore', protect, authorizeRoles('OWNER'), adminRestoreService);
+router.post('/', protect, authorizeRoles('OWNER', 'ADMIN'), adminAddService);
+router.put('/:id', protect, authorizeRoles('OWNER', 'ADMIN'), adminEditService);
+router.patch('/:id/archive', protect, authorizeRoles('OWNER', 'ADMIN'), adminArchiveService);
+router.patch('/:id/restore', protect, authorizeRoles('OWNER', 'ADMIN'), adminRestoreService);
 
 // Service Requests Workflow
 router.post('/requests', protect, submitServiceRequest);
 router.get('/requests', protect, getServiceRequests);
-router.put('/requests/:id/approve', protect, authorizeRoles('OWNER'), approveServiceRequest);
-router.put('/requests/:id/reject', protect, authorizeRoles('OWNER'), rejectServiceRequest);
+router.put('/requests/:id/approve', protect, authorizeRoles('OWNER', 'ADMIN'), approveServiceRequest);
+router.put('/requests/:id/reject', protect, authorizeRoles('OWNER', 'ADMIN'), rejectServiceRequest);
 
 export default router;

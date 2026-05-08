@@ -1095,7 +1095,7 @@ export const OWNER_archiveProduct = async (req, res) => {
       product.isArchived = true;
       product.archivedAt = new Date();
       product.archivedBy = req.user.id;
-      await product.save({ session });
+      await product.save({ session, validateBeforeSave: false });
 
       await ActivityLog.create(
         [
@@ -1268,7 +1268,7 @@ export const OWNER_restoreProduct = async (req, res) => {
       product.isArchived = false;
       product.archivedAt = null;
       product.archivedBy = null;
-      await product.save({ session });
+      await product.save({ session, validateBeforeSave: false });
 
       /* Remove the snapshot from the archived collection */
       await OWNER_ArchivedProduct.deleteOne({

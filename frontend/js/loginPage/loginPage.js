@@ -85,15 +85,20 @@ function clearAuthSessionData() {
 
 function updateSessionFromAuthPayload(payload) {
   localStorage.setItem("token", payload?.token || "");
-  localStorage.setItem("role", payload?.user?.role || "");
+  
+  // Explicitly check and store position/role
+  const resolvedRole = payload?.user?.position || payload?.user?.role || "staff";
+  localStorage.setItem("role", resolvedRole);
+  localStorage.setItem("position", resolvedRole);
+  
   localStorage.setItem("userEmail", payload?.user?.email || "");
   localStorage.setItem("userAccountId", payload?.user?.accountId || payload?.user?.email || "");
   localStorage.setItem("userName", payload?.user?.name || "");
 }
 
 function redirectToDashboardByRole(role) {
-  if (role === "owner") {
-    window.location.href = resolveDashboardRedirect("owner");
+  if (role === "owner" || role === "admin") {
+    window.location.href = resolveDashboardRedirect(role);
     return;
   }
 
@@ -368,7 +373,14 @@ function initializeLoginPage() {
 
       clearFirstLoginChallengeToken();
       updateSessionFromAuthPayload(payload);
-      redirectToDashboardByRole(payload?.user?.role);
+      
+      const position = payload?.user?.position || payload?.user?.role || "staff";
+      const redirectPath = resolveDashboardRedirect(position);
+      
+      console.log("Authenticated Position:", position);
+      console.log("Redirecting to:", redirectPath);
+      
+      window.location.href = redirectPath;
       return;
     } catch (error) {
       if (passwordMsg) {
@@ -507,12 +519,12 @@ function resolveDashboardRedirect(role) {
   const isRootLogin = path === "/" || /\/index\.html$/i.test(path);
 
   if (isRootLogin) {
-    return role === "owner"
+    return (role === "owner" || role === "admin")
       ? "/HTML/admin_dashboard/admin_dashboard.html"
       : "/HTML/staff_dashboard/staff_dashboard.html";
   }
 
-  return role === "owner"
+  return (role === "owner" || role === "admin")
     ? "../admin_dashboard/admin_dashboard.html"
     : "../staff_dashboard/staff_dashboard.html";
 }
@@ -600,7 +612,14 @@ function validateLogin() {
 
       clearFirstLoginChallengeToken();
       updateSessionFromAuthPayload(payload);
-      redirectToDashboardByRole(payload?.user?.role);
+      
+      const position = payload?.user?.position || payload?.user?.role || "staff";
+      const redirectPath = resolveDashboardRedirect(position);
+      
+      console.log("Authenticated Position:", position);
+      console.log("Redirecting to:", redirectPath);
+      
+      window.location.href = redirectPath;
     })
     .catch((error) => {
       isLoginSubmitting = false;

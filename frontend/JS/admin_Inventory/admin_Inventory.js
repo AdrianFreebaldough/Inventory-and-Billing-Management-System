@@ -107,7 +107,7 @@ const STATUS_COLORS = {
 };
 
 const STATUS_DISPLAY = {
-  'in-stock': 'In Stock', pending: 'Pending', 'low-stock': 'Low Stock',
+  'in-stock': 'In Stock', pending: 'Under Review', 'low-stock': 'Low Stock',
   'out-of-stock': 'Out of Stock', archived: 'Archived', approved: 'Approved', denied: 'Rejected',
 };
 
@@ -260,23 +260,34 @@ function mapBackendRequestToUI(r) {
     : "-";
 
   const product = r.product || {};
+  const itemName = isRestock ? (product.name || "Unknown") : (r.itemName || "Unknown");
+
   return {
     id: r._id,
     requestType: r.requestType,
-    itemName: isRestock ? (product.name || "Unknown") : (r.itemName || "Unknown"),
-    type: isRestock ? (product.name || "Unknown") : (r.itemName || "Unknown"),
+    itemName: itemName,
+    name: itemName,
+    type: isRestock ? (product.brandName || product.brand || "Medicine") : (r.brandName || r.brand || "Medicine"),
     category: toCanonicalInventoryCategory(isRestock ? (product.category || "") : (r.category || "")),
     currentQuantity: isRestock ? (product.quantity ?? 0) : 0,
-    minStock: isRestock ? 10 : 10,       // product minStock not populated; safe default
+    minStock: isRestock ? (product.minStock ?? 10) : (r.minStock ?? 10),
     unit: r.unit || "pcs",
     requestQuantity: isRestock ? (r.requestedQuantity ?? 0) : (r.initialQuantity ?? 0),
     requestedBy: r.requestedBy?.name || r.requestedByName || "Staff",
     requestDate,
     status: DB_REQUEST_STATUS_TO_UI[r.status] || r.status,
-    supplier: "",
+    supplier: r.supplier || "",
     productId: isRestock ? (product._id || null) : null,
     notes: r.rejectionReason || "",
     submittedAt,
+    genericName: isRestock ? (product.genericName || "") : (r.genericName || ""),
+    brandName: isRestock ? (product.brandName || "") : (r.brandName || ""),
+    strength: isRestock ? (product.strength || "") : (r.strength || ""),
+    price: isRestock ? (product.unitPrice ?? 0) : (r.unitPrice ?? 0),
+    expiryDate: isRestock ? (product.expiryDate ? formatDateDisplay(product.expiryDate) : "—") : (r.expiryDate ? formatDateDisplay(r.expiryDate) : "—"),
+    expiryDateISO: isRestock ? (product.expiryDate || r.expiryDate || "") : (r.expiryDate || ""),
+    batchCount: isRestock ? (product.batchCount || 0) : 1,
+    isPendingRequest: true,
   };
 }
 
@@ -471,11 +482,45 @@ async function fetchPriceChangeRequests() {
 }
 
 async function refreshInventory() {
+  let items = [];
   if (showArchivedItems) {
-    inventoryItems = await fetchArchivedItems();
+    items = await fetchArchivedItems();
   } else {
-    inventoryItems = await fetchInventoryItems();
+    items = await fetchInventoryItems();
   }
+
+  // Ensure requests are loaded so we can identify items with pending actions
+  if (restockRequests.length === 0) {
+    const [inventoryReqs, discrepancyReqs, disposalReqs, priceChangeReqs] = await Promise.all([
+      fetchAllRequests(),
+      fetchDiscrepancyRequests(),
+      fetchDisposalRequests(),
+      fetchPriceChangeRequests(),
+    ]);
+    restockRequests = [...inventoryReqs, ...discrepancyReqs, ...disposalReqs, ...priceChangeReqs];
+  }
+
+  if (!showArchivedItems) {
+    // 1. Mark existing items that have a pending request
+    items = items.map(item => {
+      const hasPending = restockRequests.some(req =>
+        (req.requestType === "RESTOCK" || req.isDiscrepancy || req.isDisposal || req.isPriceChange) &&
+        String(req.productId || "") === String(item.id) &&
+        req.status === "pending"
+      );
+      return { ...item, hasPendingRequest: hasPending };
+    });
+
+    // 2. Add ADD_ITEM requests as new pending items in the inventory list
+    const pendingAddItems = restockRequests.filter(req =>
+      req.requestType === "ADD_ITEM" && req.status === "pending"
+    );
+
+    inventoryItems = [...items, ...pendingAddItems];
+  } else {
+    inventoryItems = items;
+  }
+
   renderInventoryCategorySelect(inventoryItems);
   applyFilters();
 }
@@ -494,7 +539,8 @@ async function refreshRequests() {
 }
 
 async function refreshAll() {
-  await Promise.all([refreshInventory(), refreshRequests()]);
+  await refreshRequests();
+  await refreshInventory();
 }
 
 /* ================= UTILITY HELPERS ================= */
@@ -856,6 +902,9 @@ function applyFilters() {
     const matchStatus = (() => {
       if (currentStatusFilter === "all") return true;
       if (riskFilters.has(currentStatusFilter)) return item.expiryRisk === currentStatusFilter;
+      if (currentStatusFilter === "pending") {
+        return item.status === "pending" || item.hasPendingRequest === true;
+      }
       return item.status === currentStatusFilter;
     })();
     const itemCategoryKey = normalizeCategoryKey(item.category);
@@ -922,8 +971,9 @@ function renderInventory() {
       pendingDisposalOnly: item.hasPendingDisposalOnlyStock === true,
     });
 
-    const colors = getStatusColors(item.status);
-    const statusText = getStatusDisplayText(item.status);
+    const isPending = item.status === 'pending' || item.hasPendingRequest === true;
+    const colors = isPending ? STATUS_COLORS['pending'] : getStatusColors(item.status);
+    const statusText = isPending ? 'Under Review' : getStatusDisplayText(item.status);
     const archivedPill = item.archived ? `<span class="ml-2 inline-block px-2 py-1 rounded text-xs font-medium bg-gray-200 text-gray-700">Archived</span>` : "";
 
     const card = document.createElement("div");
@@ -960,13 +1010,15 @@ function renderInventory() {
       </div>
       <div class="flex flex-col gap-2 mt-auto">
         <div class="flex gap-2">
-          <button class="view-details-btn flex-1 border border-gray-300 py-2 rounded text-xs font-medium hover:bg-gray-100 transition-colors">View Details</button>
+          <button class="view-details-btn flex-1 border border-gray-300 py-2 rounded text-xs font-medium hover:bg-gray-100 transition-colors">
+            ${item.status === 'pending' ? 'Under Review' : 'View Details'}
+          </button>
           ${item.archived
         ? `<button class="restore-btn flex-1 bg-emerald-600 text-white py-2 rounded text-xs font-medium hover:bg-emerald-700 transition-colors" data-item-id="${item.id}">Restore</button>`
-        : `<button class="edit-discrepancy-btn flex-1 bg-amber-500 text-white py-2 rounded text-xs font-medium hover:bg-amber-600 transition-colors" data-item-id="${item.id}">Edit Discrepancy</button>`
+        : (item.status === 'pending' ? '' : `<button class="edit-discrepancy-btn flex-1 bg-amber-500 text-white py-2 rounded text-xs font-medium hover:bg-amber-600 transition-colors" data-item-id="${item.id}">Edit Discrepancy</button>`)
       }
         </div>
-        ${!item.archived
+        ${!item.archived && item.status !== 'pending'
         ? `<button class="archive-btn w-full border border-gray-400 bg-gray-50 text-gray-700 py-2 rounded text-xs font-medium hover:bg-gray-100 transition-colors" data-item-id="${item.id}">Archive</button>`
         : ''
       }
@@ -1015,7 +1067,7 @@ function renderRestockRequests() {
 
     const isPending = req.status === "pending";
     const reviewBtnHtml = isPending
-      ? `<button class="review-request-btn w-full bg-blue-600 text-white py-2 rounded text-xs font-medium hover:bg-blue-700 transition-colors">Review Request</button>`
+      ? `<button class="review-request-btn w-full bg-blue-600 text-white py-2 rounded text-xs font-medium hover:bg-blue-700 transition-colors">Under Review</button>`
       : "";
 
     const discrepancyDetails = req.requestType === "DISCREPANCY"
@@ -1210,7 +1262,7 @@ function showOwnerDirectDisposalModal(item, batch) {
 
 function showReviewDiscrepancyModal(request) {
   const content = `
-    <h3 class="text-lg font-semibold mb-1">Review Discrepancy Request</h3>
+    <h3 class="text-lg font-semibold mb-1">Under Review</h3>
     <p class="text-sm text-gray-600 mb-4">DISCREPANCY</p>
     <div class="space-y-3 text-sm">
       <div class="flex justify-between py-2 border-b"><span class="text-gray-600">Item Name</span><span class="font-semibold">${request.itemName}</span></div>
@@ -1273,7 +1325,7 @@ function showReviewDiscrepancyModal(request) {
 
 function showReviewDisposalModal(request) {
   const content = `
-    <h3 class="text-lg font-semibold mb-1">Approve Disposal Request</h3>
+    <h3 class="text-lg font-semibold mb-1">Under Review</h3>
     <p class="text-sm text-gray-600 mb-4">DISPOSAL</p>
     <div class="space-y-3 text-sm">
       <div class="flex justify-between py-2 border-b"><span class="text-gray-600">Item Name</span><span class="font-semibold">${escapeHtml(request.itemName || "Unknown")}</span></div>
@@ -1336,6 +1388,10 @@ function showReviewDisposalModal(request) {
 
 /* ================= SHOW ITEM DETAILS ================= */
 async function showItemDetails(item) {
+  if (item.isPendingRequest) {
+    showReviewRestockModal(item);
+    return;
+  }
   const modal = document.getElementById("itemDetailsModal");
   if (!modal) return;
 
@@ -1372,7 +1428,7 @@ async function showItemDetails(item) {
       const pendingPriceResponse = await apiFetch(API.priceChangeRequestForProduct(detailItem.id));
       const pendingPriceRequest = pendingPriceResponse?.data || null;
       if (pendingPriceRequest && String(pendingPriceRequest.status || "") === "pending") {
-        requestedPricePreview.textContent = `Pending Approval · Requested: P${Number(pendingPriceRequest.requestedPrice || 0).toFixed(2)}`;
+        requestedPricePreview.textContent = `Under Review · Requested: P${Number(pendingPriceRequest.requestedPrice || 0).toFixed(2)}`;
         requestedPricePreview.classList.remove("hidden");
       }
     } catch {
@@ -1558,7 +1614,7 @@ function showReviewRestockModal(request) {
   })();
 
   const content = `
-    <h3 class="text-lg font-semibold mb-1">Review Request Restock</h3>
+    <h3 class="text-lg font-semibold mb-1">Under Review</h3>
     <p class="text-sm text-gray-600 mb-4">${request.requestType}</p>
     <div class="space-y-3 text-sm">
       <div class="flex justify-between py-2 border-b"><span class="text-gray-600">Item Name</span><span class="font-semibold">${request.itemName}</span></div>
@@ -1659,7 +1715,7 @@ function showReviewRestockModal(request) {
 
 function showReviewPriceChangeModal(request) {
   const content = `
-    <h3 class="text-lg font-semibold mb-1">Review Price Change Request</h3>
+    <h3 class="text-lg font-semibold mb-1">Under Review</h3>
     <p class="text-sm text-gray-600 mb-4">PRICE_CHANGE</p>
     <div class="space-y-3 text-sm">
       <div class="flex justify-between py-2 border-b"><span class="text-gray-600">Product</span><span class="font-semibold">${escapeHtml(request.itemName || "Unknown")}</span></div>
@@ -2734,7 +2790,7 @@ export async function initAdminInventory() {
   await refreshAll();
 
   requestsAutoRefreshTimer = setInterval(() => {
-    refreshRequests();
+    refreshAll();
   }, REQUESTS_AUTO_REFRESH_MS);
 
   console.log("Admin Inventory initialized successfully");

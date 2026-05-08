@@ -23,7 +23,7 @@ import {
 const OWNER_router = express.Router();
 
 /* 🔐 OWNER ONLY */
-OWNER_router.use(protect, authorizeRoles("owner"));
+OWNER_router.use(protect, authorizeRoles("owner", "admin"));
 
 /* 📦 INVENTORY */
 OWNER_router.get("/", OWNER_getActiveInventory);

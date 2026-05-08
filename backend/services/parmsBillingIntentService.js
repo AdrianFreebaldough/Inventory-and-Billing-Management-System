@@ -137,7 +137,7 @@ const normalizeInvoiceStatus = (invoiceStatusValue, fallbackPaymentStatus) => {
 };
 
 const lineTotalMinor = (line = {}) => {
-  const quantity = Number(line.quantity ?? 1);
+  const quantity = Number(line.quantity ?? line.qty ?? 1);
   const parsedQuantity = Number.isFinite(quantity) && quantity > 0 ? quantity : 1;
 
   const explicitMinor = resolveMinorValue(
@@ -159,6 +159,33 @@ const lineTotalMinor = (line = {}) => {
   return 0;
 };
 
+const lineUnitPriceMinor = (line = {}) => {
+  const quantity = Number(line.quantity ?? line.qty ?? 1);
+  const parsedQuantity = Number.isFinite(quantity) && quantity > 0 ? quantity : 1;
+
+  const unitMinor = resolveMinorValue(
+    line.unit_price_minor,
+    line.unitPriceMinor,
+    line.price_minor,
+    line.priceMinor
+  );
+
+  if (unitMinor > 0) return unitMinor;
+
+  const explicitTotalMinor = resolveMinorValue(
+    line.total_minor,
+    line.totalAmountMinor,
+    line.line_total_minor,
+    line.amount_minor
+  );
+
+  if (explicitTotalMinor > 0) {
+    return Math.round(explicitTotalMinor / parsedQuantity);
+  }
+
+  return 0;
+};
+
 const normalizeServiceLines = (serviceLines = []) => {
   if (!Array.isArray(serviceLines)) return [];
 
@@ -166,7 +193,9 @@ const normalizeServiceLines = (serviceLines = []) => {
     lineId: toNonEmptyString(line?.line_id || line?.lineId || `svc-${index + 1}`) || `svc-${index + 1}`,
     parmsServiceCode: toNonEmptyString(line?.parms_service_code || line?.parmsServiceCode),
     serviceType: toNonEmptyString(line?.service_type || line?.serviceType),
-    quantity: Math.max(0, Number(line?.quantity || 1) || 1),
+    quantity: Math.max(0, Number(line?.quantity || line?.qty || 1) || 1),
+    description: toNonEmptyString(line?.description || line?.label || line?.name || line?.metadata?.description || line?.metadata?.notes || "Service"),
+    unitPriceMinor: lineUnitPriceMinor(line),
     totalMinor: lineTotalMinor(line),
     metadata: typeof line?.metadata === "object" && line.metadata !== null ? line.metadata : {},
   }));
@@ -185,7 +214,9 @@ const normalizePrescriptionLines = (prescriptionLines = []) => {
       medicationName,
       dosage: toNonEmptyString(line?.dosage),
       frequency: toNonEmptyString(line?.frequency),
-      quantity: Math.max(0, Number(line?.quantity || 1) || 1),
+      quantity: Math.max(0, Number(line?.quantity || line?.qty || 1) || 1),
+      description: medicationName || "Medication",
+      unitPriceMinor: lineUnitPriceMinor(line),
       totalMinor: lineTotalMinor(line),
       selectedBrand: toNonEmptyString(line?.selected_brand || line?.selectedBrand),
       selectedBrandSku: toNonEmptyString(line?.selected_brand_sku || line?.selectedBrandSku),
@@ -287,23 +318,41 @@ const buildTotals = ({ payload, serviceLines, prescriptionLines, paymentStatus }
 };
 
 const buildPricedLines = (intent) => {
-  const serviceLines = (intent.serviceLines || []).map((line) => ({
-    line_id: line.lineId,
-    service_type: line.serviceType,
-    parms_service_code: line.parmsServiceCode,
-    quantity: line.quantity,
-    total_minor: line.totalMinor,
-  }));
+  const serviceLines = (intent.serviceLines || []).map((line) => {
+    const qty = Math.max(1, line.quantity || 1);
+    const unitPriceMinor = line.unitPriceMinor || Math.round((line.totalMinor || 0) / qty);
+    const displayName = line.description || "Service";
 
-  const prescriptionLines = (intent.prescriptionLines || []).map((line) => ({
-    rx_id: line.rxId,
-    generic_name: line.genericName,
-    medication_name: line.medicationName,
-    selected_brand: line.selectedBrand,
-    selected_brand_sku: line.selectedBrandSku,
-    quantity: line.quantity,
-    total_minor: line.totalMinor,
-  }));
+    return {
+      productId: line.lineId || null,
+      name: displayName,
+      genericName: "",
+      brandName: "",
+      unitPrice: Number(unitPriceMinor / 100),
+      quantity: qty,
+      lineTotal: Number((line.totalMinor || 0) / 100),
+      type: "service",
+      batchAllocations: []
+    };
+  });
+
+  const prescriptionLines = (intent.prescriptionLines || []).map((line) => {
+    const qty = Math.max(1, line.quantity || 1);
+    const unitPriceMinor = line.unitPriceMinor || Math.round((line.totalMinor || 0) / qty);
+    const displayName = line.description || line.medicationName || "Medication";
+
+    return {
+      productId: line.rxId || null,
+      name: displayName,
+      genericName: line.genericName || "",
+      brandName: line.selectedBrand || "",
+      unitPrice: Number(unitPriceMinor / 100),
+      quantity: qty,
+      lineTotal: Number((line.totalMinor || 0) / 100),
+      type: "item",
+      batchAllocations: []
+    };
+  });
 
   return [...serviceLines, ...prescriptionLines];
 };
@@ -408,6 +457,45 @@ export const markIntentPaidFromTransaction = async ({ transaction, session = nul
   intent.paidAt = paidAt;
   intent.processedAt = paidAt;
   intent.lastTransactionId = transaction._id;
+
+  if (transaction.receiptSnapshot && Array.isArray(transaction.receiptSnapshot.items)) {
+    intent.serviceLines = transaction.receiptSnapshot.items.map((item, idx) => {
+      const exactServiceName = item.name || "Item";
+      return {
+        lineId: item.productId ? String(item.productId) : `svc-${idx + 1}`,
+        parmsServiceCode: null,
+        serviceType: exactServiceName,
+        description: exactServiceName,
+        quantity: item.quantity || 1,
+        unitPriceMinor: amountMajorToMinor(item.unitPrice) || 0,
+        totalMinor: amountMajorToMinor(item.lineTotal) || 0,
+        metadata: {
+          generic_name: item.genericName,
+          brand_name: item.brandName,
+          name: exactServiceName
+        }
+      };
+    });
+  }
+
+  if (transaction.receiptSnapshot && Array.isArray(transaction.receiptSnapshot.pendingBalances)) {
+    intent.prescriptionLines = transaction.receiptSnapshot.pendingBalances.map((line, idx) => {
+      const isLab = line.sourceType === "laboratory";
+      return {
+        rxId: line.referenceId || `rx-${idx + 1}`,
+        genericName: line.description,
+        medicationName: line.description,
+        description: line.description || "Medication",
+        dosage: null,
+        frequency: null,
+        quantity: line.quantity || 1,
+        unitPriceMinor: amountMajorToMinor(line.amount / (line.quantity || 1)) || 0,
+        totalMinor: amountMajorToMinor(line.amount) || 0,
+        selectedBrand: null,
+        selectedBrandSku: null
+      };
+    });
+  }
 
   await intent.save(session ? { session } : undefined);
 

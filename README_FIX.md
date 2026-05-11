@@ -2,6 +2,8 @@
 
 ## 📋 Issue Summary
 
+npx tailwindcss -i ./frontend/css/input.css -o ./frontend/css/output.css --watch
+
 **Problem:** When clicking "Generate Report" in the Logs Report page:
 - ✅ Summary section updates correctly
 - ❌ Dashboard table shows no data

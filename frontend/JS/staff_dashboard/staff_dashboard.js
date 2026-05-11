@@ -53,7 +53,7 @@ function mapTransactions(raw) {
   if (!raw?.data) return [];
   return raw.data.map(tx => ({
     id: tx.transactionId ? String(tx.transactionId).slice(-6).toUpperCase() : "—",
-    patient: tx.patientId || "Walk-in",
+    patient: tx.patientName || tx.patientId || "Walk-in",
     time: tx.dateTime
       ? new Date(tx.dateTime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
       : "",
@@ -412,8 +412,8 @@ document.addEventListener("DOMContentLoaded", () => {
           ? transactions.map(tx => `
               <div class="flex items-start justify-between py-3">
                 <div>
-                  <p class="text-sm font-semibold text-gray-900">TX-${tx.id}</p>
-                  <p class="text-xs uppercase tracking-wide text-gray-500">${tx.patient}</p>
+                  <p class="text-sm font-semibold text-gray-900">${tx.patient}</p>
+                  <p class="text-xs text-gray-500">Transaction ID: TX-${tx.id}</p>
                   <p class="text-xs text-gray-500">${tx.time}</p>
                 </div>
                 <div class="text-right">

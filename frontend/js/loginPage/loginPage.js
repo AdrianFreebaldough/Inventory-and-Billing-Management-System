@@ -346,6 +346,11 @@ function initializeLoginPage() {
     if (updateBtn) {
       updateBtn.disabled = true;
       updateBtn.classList.add("opacity-50", "cursor-not-allowed");
+      
+      const btnText = document.getElementById("updatePasswordBtnText");
+      const btnSpinner = document.getElementById("updatePasswordBtnSpinner");
+      if (btnText) btnText.textContent = "Updating...";
+      if (btnSpinner) btnSpinner.classList.remove("hidden");
     }
 
     try {
@@ -383,6 +388,16 @@ function initializeLoginPage() {
       window.location.href = redirectPath;
       return;
     } catch (error) {
+      if (updateBtn) {
+        updateBtn.disabled = false;
+        updateBtn.classList.remove("opacity-50", "cursor-not-allowed");
+        
+        const btnText = document.getElementById("updatePasswordBtnText");
+        const btnSpinner = document.getElementById("updatePasswordBtnSpinner");
+        if (btnText) btnText.textContent = "Update Password";
+        if (btnSpinner) btnSpinner.classList.add("hidden");
+      }
+
       if (passwordMsg) {
         passwordMsg.textContent = String(error?.message || "Unable to update password");
         passwordMsg.className = "text-red-600";
@@ -578,6 +593,17 @@ function validateLogin() {
   isLoginSubmitting = true;
   const API_BASE_URL = resolveApiBaseUrl();
 
+  const loginBtn = $("loginBtn");
+  const loginBtnText = $("loginBtnText");
+  const loginBtnSpinner = $("loginBtnSpinner");
+
+  if (loginBtn) {
+    loginBtn.disabled = true;
+    loginBtn.classList.add("opacity-50", "cursor-not-allowed");
+  }
+  if (loginBtnText) loginBtnText.textContent = "Logging in...";
+  if (loginBtnSpinner) loginBtnSpinner.classList.remove("hidden");
+
   fetch(`${API_BASE_URL}/api/auth/login`, {
     method: "POST",
     headers: {
@@ -603,6 +629,14 @@ function validateLogin() {
         clearAuthSessionData();
         setFirstLoginChallengeToken(payload.challengeToken);
         showFirstLoginPasswordPage();
+        
+        // Reset button state just in case
+        if (loginBtn) {
+          loginBtn.disabled = false;
+          loginBtn.classList.remove("opacity-50", "cursor-not-allowed");
+        }
+        if (loginBtnText) loginBtnText.textContent = "Log In";
+        if (loginBtnSpinner) loginBtnSpinner.classList.add("hidden");
         return;
       }
 
@@ -623,6 +657,14 @@ function validateLogin() {
     })
     .catch((error) => {
       isLoginSubmitting = false;
+      
+      if (loginBtn) {
+        loginBtn.disabled = false;
+        loginBtn.classList.remove("opacity-50", "cursor-not-allowed");
+      }
+      if (loginBtnText) loginBtnText.textContent = "Log In";
+      if (loginBtnSpinner) loginBtnSpinner.classList.add("hidden");
+
       const message = String(error.message || "Invalid email or password");
 
       if (userWarn) {

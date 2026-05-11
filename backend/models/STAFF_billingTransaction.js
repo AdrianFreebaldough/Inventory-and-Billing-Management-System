@@ -314,12 +314,7 @@ const STAFF_billingTransactionSchema = new mongoose.Schema(
     subtotal: {
       type: Number,
       required: true,
-      validate: {
-        validator: function (v) {
-          return v > 0;
-        },
-        message: "Subtotal must be greater than zero.",
-      },
+      min: 0,
     },
     discountRate: {
       type: Number,
@@ -354,12 +349,7 @@ const STAFF_billingTransactionSchema = new mongoose.Schema(
     totalAmount: {
       type: Number,
       required: true,
-      validate: {
-        validator: function (v) {
-          return v > 0;
-        },
-        message: "Total amount must be greater than zero.",
-      },
+      min: 0,
     },
     editedPatientId: {
       type: String,

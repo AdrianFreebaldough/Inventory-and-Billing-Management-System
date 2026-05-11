@@ -181,17 +181,17 @@ export const OWNER_getExpenseSummary = async (req, res) => {
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
 
     const todayExpenses = await STAFF_Expense.aggregate([
-      { $match: { date: { $gte: todayStart }, status: "Approved" } },
+      { $match: { reviewedAt: { $gte: todayStart }, status: "Approved" } },
       { $group: { _id: null, total: { $sum: "$amount" } } },
     ]);
 
     const weekExpenses = await STAFF_Expense.aggregate([
-      { $match: { date: { $gte: weekStart }, status: "Approved" } },
+      { $match: { reviewedAt: { $gte: weekStart }, status: "Approved" } },
       { $group: { _id: null, total: { $sum: "$amount" } } },
     ]);
 
     const monthExpenses = await STAFF_Expense.aggregate([
-      { $match: { date: { $gte: monthStart }, status: "Approved" } },
+      { $match: { reviewedAt: { $gte: monthStart }, status: "Approved" } },
       { $group: { _id: null, total: { $sum: "$amount" } } },
     ]);
 

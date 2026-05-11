@@ -11,6 +11,7 @@ import {
   isAllCategories,
   normalizeInventoryCategoryKey,
   toCanonicalInventoryCategory,
+  setInventoryCategories,
 } from "../utils/inventoryCategories.js";
 
 /* ================= API ENDPOINTS ================= */
@@ -431,6 +432,21 @@ async function fetchArchivedItems() {
   }
 }
 
+async function loadSystemSettings() {
+  try {
+    const response = await apiFetch("/api/settings", { method: "GET" });
+    const settings = response?.data;
+    if (settings && settings.inventory?.categories) {
+      // We are keeping the categories consistent with Staff Inventory (static list)
+      // for this implementation as requested. 
+      // setInventoryCategories(settings.inventory.categories);
+      console.log("[Inventory] Categories from settings ignored to maintain parity with Staff module");
+    }
+  } catch (error) {
+    console.error("[Inventory] Failed to load system settings:", error);
+  }
+}
+
 async function fetchPendingRequests() {
   try {
     const res = await apiFetch(API.pendingRequests);
@@ -539,6 +555,7 @@ async function refreshRequests() {
 }
 
 async function refreshAll() {
+  await loadSystemSettings();
   await refreshRequests();
   await refreshInventory();
 }
@@ -2565,7 +2582,7 @@ function closeAllModals() {
 }
 
 /* ================= INIT ================= */
-export async function initAdminInventory() {
+export async function initAdminInventory(options = {}) {
   const auth = window.IBMSAuth;
   if (auth && !auth.isSessionValid("owner")) {
     auth.clearAuthData();
@@ -2573,7 +2590,7 @@ export async function initAdminInventory() {
     return;
   }
 
-  console.log("=== INIT ADMIN INVENTORY STARTED ===");
+  console.log("=== INIT ADMIN INVENTORY STARTED ===", options);
 
   if (requestsAutoRefreshTimer) {
     clearInterval(requestsAutoRefreshTimer);
@@ -2609,6 +2626,13 @@ export async function initAdminInventory() {
   tabInventory?.addEventListener("click", () => switchTab("inventory"));
   tabRestock?.addEventListener("click", () => switchTab("restock"));
 
+  // Initial tab selection
+  if (options.tab === "restock") {
+    switchTab("restock");
+  } else {
+    switchTab("inventory");
+  }
+
   /* ---- Inventory status filters ---- */
   document.querySelectorAll(".status-filter").forEach(btn =>
     btn.addEventListener("click", () => {
@@ -2628,16 +2652,26 @@ export async function initAdminInventory() {
 
   const categoryFilterSelect = document.getElementById("categoryFilterSelect");
   categoryFilterSelect?.addEventListener("change", () => {
-    currentCategoryFilter = categoryFilterSelect.value || ALL_CATEGORIES_LABEL;
+    const newCategory = categoryFilterSelect.value || ALL_CATEGORIES_LABEL;
+    currentCategoryFilter = newCategory;
+    currentRestockCategoryFilter = newCategory; // Synchronize across tabs
+    
     currentInventoryPage = 1;
     renderInventoryCategorySelect(inventoryItems);
+    renderRestockCategorySelect(restockRequests);
     applyFilters();
+    applyRestockFilters();
   });
 
   const categoryFilterSelectRestock = document.getElementById("categoryFilterSelectRestock");
   categoryFilterSelectRestock?.addEventListener("change", () => {
-    currentRestockCategoryFilter = categoryFilterSelectRestock.value || ALL_CATEGORIES_LABEL;
+    const newCategory = categoryFilterSelectRestock.value || ALL_CATEGORIES_LABEL;
+    currentCategoryFilter = newCategory; // Synchronize across tabs
+    currentRestockCategoryFilter = newCategory;
+    
+    renderInventoryCategorySelect(inventoryItems);
     renderRestockCategorySelect(restockRequests);
+    applyFilters();
     applyRestockFilters();
   });
 

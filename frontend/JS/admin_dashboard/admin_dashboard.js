@@ -103,6 +103,21 @@ async function OWNER_fetchDashboardData() {
   };
 }
 
+let globalLowStockThreshold = 10;
+
+async function loadSystemSettings() {
+  try {
+    const response = await apiFetch("/api/settings", { method: "GET" });
+    const settings = response?.data;
+    if (settings && settings.inventory?.invLowStockThreshold !== undefined) {
+      globalLowStockThreshold = settings.inventory.invLowStockThreshold;
+      console.log(`[Dashboard] Global Low Stock Threshold: ${globalLowStockThreshold}`);
+    }
+  } catch (error) {
+    console.error("[Dashboard] Failed to load system settings:", error);
+  }
+}
+
 /* ════════════════════════════════════════════════════════════════
    Data mappers  (backend response → UI-friendly shape)
    ════════════════════════════════════════════════════════════════ */
@@ -144,9 +159,9 @@ function mapLowStock(raw) {
     name: p.name || "Unknown",
     category: p.category || "",
     currentStock: p.quantity ?? 0,
-    minStock: p.minStock ?? 10,
+    minStock: p.minStock ?? globalLowStockThreshold,
     status: p.status === "out" ? "critical"
-      : p.quantity <= (p.minStock ?? 10) * 0.25 ? "critical"
+      : p.quantity <= (p.minStock ?? globalLowStockThreshold) * 0.25 ? "critical"
         : "warning",
     unit: p.unit || "pcs",
   }));
@@ -310,6 +325,7 @@ document.addEventListener("DOMContentLoaded", () => {
     renderLoadingSkeleton();
 
     try {
+      await loadSystemSettings();
       const raw = await OWNER_fetchDashboardData();
       renderDashboardContent(raw);
     } catch (err) {
@@ -527,7 +543,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const c = typeColors[request.requestType] || typeColors.RESTOCK;
 
     return `
-      <div class="flex items-start space-x-4 p-4 rounded-xl bg-slate-50 border border-slate-100 hover:bg-slate-100 transition-colors cursor-pointer group">
+      <div onclick="loadInventory({ tab: 'restock' })" class="flex items-start space-x-4 p-4 rounded-xl bg-slate-50 border border-slate-100 hover:bg-slate-100 transition-colors cursor-pointer group">
         <div class="w-10 h-10 rounded-lg ${c.icon} flex items-center justify-center flex-shrink-0 group-hover:scale-110 transition-transform">
           <svg class="w-5 h-5 ${c.svg}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"></path>
@@ -573,7 +589,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const percentage = Math.min(100, Math.round((alert.currentStock / minStock) * 100));
 
     return `
-      <div>
+      <div onclick="loadInventory()" class="cursor-pointer hover:bg-slate-50 p-2 rounded-xl transition-colors">
         <div class="flex justify-between items-center mb-2">
           <span class="text-sm font-medium text-slate-900">${alert.name}</span>
           <span class="text-xs font-semibold ${colors.text}">${alert.status.charAt(0).toUpperCase() + alert.status.slice(1)}</span>
@@ -736,7 +752,13 @@ document.addEventListener("DOMContentLoaded", () => {
             grid: { color: "#f1f5f9", drawBorder: false },
           },
           x: {
-            ticks: { color: "#94a3b8", font: { size: 11 } },
+            ticks: { 
+              color: "#94a3b8", 
+              font: { size: 11 },
+              autoSkip: false,
+              maxRotation: 0,
+              minRotation: 0
+            },
             grid: { display: false },
           },
         },
@@ -758,7 +780,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   /* ================= INVENTORY ================= */
-  async function loadInventory() {
+  async function loadInventory(options = {}) {
     setActive(navInventory);
     ensureOwnerLayoutShell();
 
@@ -771,7 +793,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
       const module = await import("../admin_Inventory/admin_Inventory.js");
       if (typeof module.initAdminInventory !== "function") throw new Error("initAdminInventory() missing");
-      await module.initAdminInventory();
+      await module.initAdminInventory(options);
     } catch (error) {
       console.error(error);
       mainContent.innerHTML = `<div class="text-red-500 p-4 font-medium">Failed to load Inventory module: ${error.message}</div>`;

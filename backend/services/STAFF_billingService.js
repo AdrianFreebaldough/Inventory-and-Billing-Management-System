@@ -10,6 +10,7 @@ import { BATCH_MANUAL_STATUS } from "./batchLifecycleService.js";
 import { syncProductFromBatchTotals } from "./inventoryIntegrityService.js";
 import { syncCompletedTransactionReceiptToPARMS } from "./parmsIntegrationService.js";
 import { markIntentPaidFromTransaction, resolveOpenIntentForPatient } from "./parmsBillingIntentService.js";
+import Settings from "../models/Settings.js";
 
 class STAFF_BillingError extends Error {
   constructor(message, statusCode = 400) {
@@ -261,7 +262,7 @@ const STAFF_buildItemsSnapshot = async (itemsPayload, session = null) => {
       throw new STAFF_BillingError(`Invalid productId at item index ${index}`, 400);
     }
 
-    if (!Number.isFinite(item.quantity) || item.quantity <= 0 || !Number.isInteger(item.quantity)) {
+    if (!Number.isFinite(item.quantity) || item.quantity <= 0) {
       throw new STAFF_BillingError(`Invalid quantity at item index ${index}`, 400);
     }
   });
@@ -571,6 +572,7 @@ export const STAFF_createBillingTransaction = async ({
   pendingBalances = [],
   parmsIntentId = null,
 }) => {
+  const settings = await Settings.getInstance();
   const guestMode = Boolean(isGuest);
   const finalPatientId = guestMode
     ? await STAFF_getNextGuestPatientId()
@@ -607,20 +609,22 @@ export const STAFF_createBillingTransaction = async ({
     throw new STAFF_BillingError("At least one billable line is required", 400);
   }
 
-  // IMPORTANT: Prices in DB already include 12% VAT
-  // We use REVERSE VAT calculation to show breakdown
-  const subtotal = snapshot.totalAmount;
+  const subtotal = STAFF_roundCurrency(snapshot.totalAmount);
   const discountAmount = STAFF_roundCurrency(subtotal * parsedDiscountRate);
   const discountedInventoryTotal = STAFF_roundCurrency(subtotal - discountAmount);
-  const totalAmount = STAFF_roundCurrency(discountedInventoryTotal + pendingBalanceTotal);
+
+  // Use global VAT rate from settings (decimal format, e.g., 0.12)
+  const currentVatRate = (settings.billing?.vatRate || 12) / 100;
+  const vatMultiplier = 1 + currentVatRate;
 
   // Reverse VAT calculation: Total = Net + VAT
-  // Total = Net * 1.12
-  // Net = Total / 1.12
+  // Total = Net * Multiplier
+  // Net = Total / Multiplier
   // VAT = Total - Net
-  const inventoryNetAmount = STAFF_roundCurrency(discountedInventoryTotal / 1.12);
+  const inventoryNetAmount = STAFF_roundCurrency(discountedInventoryTotal / vatMultiplier);
   const vatIncluded = STAFF_roundCurrency(discountedInventoryTotal - inventoryNetAmount);
   const netAmount = STAFF_roundCurrency(inventoryNetAmount + pendingBalanceTotal);
+  const totalAmount = STAFF_roundCurrency(discountedInventoryTotal + pendingBalanceTotal);
 
   let linkedIntent = null;
   const requestedIntentId = String(parmsIntentId || "").trim() || null;
@@ -651,8 +655,8 @@ export const STAFF_createBillingTransaction = async ({
     subtotal,
     discountRate: parsedDiscountRate,
     discountAmount,
-    vatRate: 0.12,
-    vatAmount: 0, // Keep for backward compatibility
+    vatRate: currentVatRate,
+    vatAmount: vatIncluded,
     vatIncluded,
     netAmount,
     totalAmount,
@@ -691,7 +695,10 @@ export const STAFF_completeBillingTransaction = async ({ transactionId, staffId,
 
   const completedTransaction = await STAFF_executeWithOptionalTransaction(async (session) => {
     // Recheck status and stock in checkout step to block double-submit and race conditions.
-    const transaction = await STAFF_getTransactionForStaff(transactionId, staffId, session);
+    const [transaction, settings] = await Promise.all([
+      STAFF_getTransactionForStaff(transactionId, staffId, session),
+      Settings.getInstance()
+    ]);
     const now = new Date();
 
     if (transaction.status !== "PENDING_PAYMENT") {
@@ -757,7 +764,7 @@ export const STAFF_completeBillingTransaction = async ({ transactionId, staffId,
     const receiptSnapshot = {
       receiptNumber,
       clinic: {
-        name: process.env.CLINIC_NAME || "IBMS Clinic",
+        name: settings.profile?.clinicName || process.env.CLINIC_NAME || "IBMS Clinic",
       },
       transactionDateTime: completedAt,
       patientId: transaction.patientId,

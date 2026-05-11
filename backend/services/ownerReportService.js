@@ -2,6 +2,7 @@ import Product from "../models/product.js";
 import User from "../models/user.js";
 import Owner_StockLog from "../models/Owner_StockLog.model.js";
 import STAFF_BillingTransaction from "../models/STAFF_billingTransaction.js";
+import STAFF_Expense from "../models/STAFF_expense.js";
 
 const CATEGORY_BUCKETS = ["Medications", "Medical Supplies", "Diagnostic Kits", "Vaccines"];
 
@@ -296,16 +297,58 @@ const getPreviousCompletedSummary = async (config) => {
   ]);
 };
 
+const getApprovedExpensesInRange = async (config) => {
+  return STAFF_Expense.find({
+    status: "Approved",
+    reviewedAt: {
+      $gte: config.start,
+      $lte: config.end,
+    },
+  }).lean();
+};
+
+const getPreviousExpensesSummary = async (config) => {
+  return STAFF_Expense.aggregate([
+    {
+      $match: {
+        status: "Approved",
+        reviewedAt: {
+          $gte: config.previousStart,
+          $lte: config.previousEnd,
+        },
+      },
+    },
+    {
+      $group: {
+        _id: null,
+        totalExpenses: { $sum: "$amount" },
+      },
+    },
+  ]);
+};
+
 export const getSalesReportData = async ({ period }) => {
   const config = resolvePeriodConfig(period);
-  const transactions = await getCompletedTransactionsInRange(config);
-  const previousSummaryAgg = await getPreviousCompletedSummary(config);
+  const [transactions, expenses, previousSummaryAgg, previousExpensesAgg] = await Promise.all([
+    getCompletedTransactionsInRange(config),
+    getApprovedExpensesInRange(config),
+    getPreviousCompletedSummary(config),
+    getPreviousExpensesSummary(config),
+  ]);
+
   const previousSummary = previousSummaryAgg[0] || { totalRevenue: 0, transactionCount: 0 };
+  const previousExpenses = previousExpensesAgg[0] || { totalExpenses: 0 };
+  
+  const currentTotalExpenses = expenses.reduce((sum, e) => sum + Number(e.amount || 0), 0);
+  const previousTotalExpenses = Number(previousExpenses.totalExpenses || 0);
+
+  const netTotalRevenue = Math.max(0, Number(transactions.reduce((sum, row) => sum + Number(row.totalAmount || 0), 0).toFixed(2)) - currentTotalExpenses);
+  const previousNetTotalRevenue = Math.max(0, Number(previousSummary.totalRevenue || 0) - previousTotalExpenses);
 
   const revenueSeries = accumulateSeries({
     config,
-    records: transactions,
-    datePicker: (row) => row.completedAt,
+    records: [...transactions, ...expenses.map(e => ({ ...e, totalAmount: -e.amount, completedAt: e.reviewedAt }))],
+    datePicker: (row) => row.completedAt || row.reviewedAt,
     valuePicker: (row) => row.totalAmount,
   });
 
@@ -394,11 +437,11 @@ export const getSalesReportData = async ({ period }) => {
       data: topServicesRows.map((row) => Number(row.totalRevenue.toFixed(2))),
     },
     stats: {
-      totalRevenue,
+      totalRevenue: netTotalRevenue,
       totalTransactions,
       averageTransaction,
-      revenueTrend: toTrendDirection(totalRevenue, previousSummary.totalRevenue),
-      revenueTrendPercent: toPercentString(totalRevenue, previousSummary.totalRevenue),
+      revenueTrend: toTrendDirection(netTotalRevenue, previousNetTotalRevenue),
+      revenueTrendPercent: toPercentString(netTotalRevenue, previousNetTotalRevenue),
       transactionsTrend: toTrendDirection(totalTransactions, previousSummary.transactionCount),
       transactionsTrendPercent: toPercentString(totalTransactions, previousSummary.transactionCount),
       averageTrend: toTrendDirection(averageTransaction, previousAverageTransaction),
@@ -610,8 +653,16 @@ const getDiscountType = (discountAmount) => {
 export const getBillingReportData = async ({ period }) => {
   const config = resolvePeriodConfig(period);
 
-  const [completedTransactions, previousSummaryAgg, cashiers, transactionRows] = await Promise.all([
+  const [
+    completedTransactions, 
+    expenses,
+    previousSummaryAgg, 
+    previousExpensesAgg,
+    cashiers, 
+    transactionRows
+  ] = await Promise.all([
     getCompletedTransactionsInRange(config),
+    getApprovedExpensesInRange(config),
     STAFF_BillingTransaction.aggregate([
       {
         $match: {
@@ -632,6 +683,7 @@ export const getBillingReportData = async ({ period }) => {
         },
       },
     ]),
+    getPreviousExpensesSummary(config),
     STAFF_BillingTransaction.aggregate([
       {
         $match: {
@@ -661,6 +713,10 @@ export const getBillingReportData = async ({ period }) => {
       .lean(),
   ]);
 
+  const currentTotalExpenses = expenses.reduce((sum, e) => sum + Number(e.amount || 0), 0);
+  const previousExpenses = previousExpensesAgg[0] || { totalExpenses: 0 };
+  const previousTotalExpenses = Number(previousExpenses.totalExpenses || 0);
+
   const cashierIds = cashiers.map((row) => row._id).filter(Boolean);
   const transactionStaffIds = transactionRows.map((row) => row.staffId).filter(Boolean);
   const staffIds = [...new Set([...cashierIds, ...transactionStaffIds].map((id) => String(id)))];
@@ -679,7 +735,7 @@ export const getBillingReportData = async ({ period }) => {
 
   const collectionNetSeries = accumulateSeries({
     config,
-    records: completedTransactions,
+    records: [...completedTransactions, ...expenses.map(e => ({ ...e, totalAmount: -e.amount, completedAt: e.reviewedAt }))],
     datePicker: (row) => row.completedAt,
     valuePicker: (row) => row.totalAmount,
   });
@@ -690,9 +746,9 @@ export const getBillingReportData = async ({ period }) => {
   const totalDiscounts = Number(
     completedTransactions.reduce((sum, row) => sum + Number(row.discountAmount || 0), 0).toFixed(2)
   );
-  const netCollection = Number(
+  const netCollection = Math.max(0, Number(
     completedTransactions.reduce((sum, row) => sum + Number(row.totalAmount || 0), 0).toFixed(2)
-  );
+  ) - currentTotalExpenses);
   const averageTransaction = completedTransactions.length
     ? Number((netCollection / completedTransactions.length).toFixed(2))
     : 0;
@@ -703,8 +759,9 @@ export const getBillingReportData = async ({ period }) => {
     netCollection: 0,
     totalTransactions: 0,
   };
+  const previousNetCollection = Math.max(0, Number(previousSummary.netCollection || 0) - previousTotalExpenses);
   const previousAverage = previousSummary.totalTransactions
-    ? Number((Number(previousSummary.netCollection || 0) / Number(previousSummary.totalTransactions || 1)).toFixed(2))
+    ? Number((previousNetCollection / Number(previousSummary.totalTransactions || 1)).toFixed(2))
     : 0;
 
   const discountBreakdown = {
@@ -758,8 +815,8 @@ export const getBillingReportData = async ({ period }) => {
       grossBilledTrendPercent: toPercentString(grossBilled, previousSummary.grossBilled),
       totalDiscountsTrend: toTrendDirection(totalDiscounts, previousSummary.totalDiscounts),
       totalDiscountsTrendPercent: toPercentString(totalDiscounts, previousSummary.totalDiscounts),
-      netCollectionTrend: toTrendDirection(netCollection, previousSummary.netCollection),
-      netCollectionTrendPercent: toPercentString(netCollection, previousSummary.netCollection),
+      netCollectionTrend: toTrendDirection(netCollection, previousNetCollection),
+      netCollectionTrendPercent: toPercentString(netCollection, previousNetCollection),
       avgTransactionTrend: toTrendDirection(averageTransaction, previousAverage),
       avgTransactionTrendPercent: toPercentString(averageTransaction, previousAverage),
     },

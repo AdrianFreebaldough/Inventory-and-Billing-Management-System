@@ -2,6 +2,7 @@ import mongoose from "mongoose";
 import Product from "../models/product.js";
 import STAFF_BillingTransaction from "../models/STAFF_billingTransaction.js";
 import InventoryRequest from "../models/InventoryRequest.js";
+import STAFF_Expense from "../models/STAFF_expense.js";
 
 // Uses STAFF_BillingTransaction for accurate billing data from POS system.
 
@@ -45,7 +46,8 @@ export const STAFF_getDashboardSummary = async (req, res) => {
     const { start, end } = STAFF_getTodayRange();
     const staffId = new mongoose.Types.ObjectId(req.user.id);
 
-    const [summaryAggregation, pendingRestockRequests] = await Promise.all([
+    const [summaryAggregation, expenseAggregation, pendingRestockRequests] = await Promise.all([
+      /* Gross Revenue from Transactions */
       STAFF_BillingTransaction.aggregate([
         {
           $match: {
@@ -63,12 +65,30 @@ export const STAFF_getDashboardSummary = async (req, res) => {
         {
           $group: {
             _id: null,
-            todaysRevenue: { $sum: "$totalAmount" },
+            grossRevenue: { $sum: "$totalAmount" },
             todaysTransactions: { $sum: 1 },
             itemsIssuedToday: { $sum: "$itemCount" },
           },
         },
       ]),
+
+      /* Approved Expenses for Today (based on reviewedAt) */
+      STAFF_Expense.aggregate([
+        {
+          $match: {
+            staffId: staffId,
+            status: "Approved",
+            reviewedAt: { $gte: start, $lt: end },
+          },
+        },
+        {
+          $group: {
+            _id: null,
+            total: { $sum: "$amount" },
+          },
+        },
+      ]),
+
       InventoryRequest.countDocuments({
         requestedBy: staffId,
         status: "pending",
@@ -77,13 +97,16 @@ export const STAFF_getDashboardSummary = async (req, res) => {
     ]);
 
     const summary = summaryAggregation[0] || {
-      todaysRevenue: 0,
+      grossRevenue: 0,
       todaysTransactions: 0,
       itemsIssuedToday: 0,
     };
 
+    const totalExpenses = expenseAggregation[0]?.total || 0;
+    const todaysRevenue = Math.max(0, summary.grossRevenue - totalExpenses);
+
     return res.status(200).json({
-      todaysRevenue: summary.todaysRevenue,
+      todaysRevenue: Number(todaysRevenue.toFixed(2)),
       todaysTransactions: summary.todaysTransactions,
       itemsIssuedToday: summary.itemsIssuedToday,
       pendingRestockRequests,
@@ -103,12 +126,13 @@ export const STAFF_getRecentTransactions = async (req, res) => {
     })
       .sort({ createdAt: -1 })
       .limit(limit)
-      .select("patientId totalAmount items status completedAt createdAt")
+      .select("patientId patientName totalAmount items status completedAt createdAt")
       .lean();
 
     const data = transactions.map((transaction) => ({
       transactionId: transaction._id,
       patientId: transaction.patientId || null,
+      patientName: transaction.patientName || null,
       totalAmount: transaction.totalAmount,
       itemCount: (transaction.items || []).reduce(
         (sum, item) => sum + (item.quantity || 0),

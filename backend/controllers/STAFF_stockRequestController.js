@@ -4,6 +4,7 @@ import InventoryBatch from "../models/InventoryBatch.js";
 import Notification from "../models/Notification.js";
 import STAFF_ActivityLog from "../models/STAFF_activityLog.js";
 import User from "../models/user.js";
+import InventoryRequest from "../models/InventoryRequest.js";
 import { createStockLog } from "../services/Owner_StockLog.service.js";
 import { syncProductFromBatchTotals } from "../services/inventoryIntegrityService.js";
 import { createCachedActorDisplayResolver } from "../utils/requesterDisplayName.js";
@@ -54,9 +55,18 @@ export const STAFF_getLowStockItems = async (req, res) => {
       .sort({ quantity: 1 })
       .lean();
 
+    // Filter out items that already have a pending restock request
+    const pendingRequestProductIds = await InventoryRequest.find({
+      requestType: "RESTOCK",
+      status: "pending",
+    }).distinct("product");
+
+    const pendingIdsStrings = pendingRequestProductIds.map(id => id.toString());
+    const filteredItems = lowStockItems.filter(item => !pendingIdsStrings.includes(item._id.toString()));
+
     return res.status(200).json({
-      count: lowStockItems.length,
-      data: lowStockItems,
+      count: filteredItems.length,
+      data: filteredItems,
     });
   } catch (error) {
     return res.status(500).json({ message: error.message || "Internal server error" });
@@ -101,6 +111,22 @@ export const STAFF_createStockRequest = async (req, res) => {
       status: "Pending",
       notes: notes || "",
     });
+
+    // Mirror to standard InventoryRequest collection so Admin Dashboard and Review UI see them.
+    await Promise.all(
+      requestItems.map((item) =>
+        InventoryRequest.create({
+          requestType: "RESTOCK",
+          product: item.productId,
+          requestedQuantity: item.requestedQuantity,
+          requestedBy: req.user.id,
+          status: "pending",
+          date_requested: new Date(),
+          // Store the original STAFF_StockRequest ID for tracking if needed
+          notes: `Part of multi-item request: ${stockRequest.requestId}. ${notes || ""}`.trim(),
+        })
+      )
+    );
 
     // Create a notification for each active owner.
     const owners = await User.find({

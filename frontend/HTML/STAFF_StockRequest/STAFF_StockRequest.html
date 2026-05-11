@@ -73,7 +73,39 @@
     </div>
   </div>
 
+  <!-- Toast Container -->
+  <div id="toastContainer" class="fixed bottom-6 left-1/2 -translate-x-1/2 z-[100] pointer-events-none"></div>
+
   <script>
+    function showToast(message, type = 'success') {
+      const container = document.getElementById('toastContainer');
+      const toast = document.createElement('div');
+      
+      // Styling to match the user's photo: White background, blue border, rounded
+      toast.className = `
+        mb-4 px-6 py-3 rounded-xl bg-white border-2 border-blue-500 
+        shadow-xl flex items-center justify-center transform transition-all duration-300 translate-y-10 opacity-0
+      `;
+      
+      toast.innerHTML = `
+        <span class="text-blue-600 font-semibold text-lg text-center">${message}</span>
+      `;
+      
+      container.appendChild(toast);
+      
+      // Animate in
+      setTimeout(() => {
+        toast.classList.remove('translate-y-10', 'opacity-0');
+        toast.classList.add('translate-y-0', 'opacity-100');
+      }, 10);
+      
+      // Auto-remove after 3 seconds
+      setTimeout(() => {
+        toast.classList.add('opacity-0', 'translate-y-2');
+        setTimeout(() => toast.remove(), 300);
+      }, 3000);
+    }
+
     const resolveApiBase = () => {
       const configuredBase = String(window.IBMS_API_BASE_URL || '').trim().replace(/\/+$/, '');
       if (configuredBase) {
@@ -201,9 +233,10 @@
         const result = await response.json();
 
         if (response.ok) {
-          alert(`Stock request submitted successfully! Request ID: ${result.data.requestId}`);
+          showToast('Stock Request Submitted Successfully');
           document.getElementById('requestNotes').value = '';
-          document.getElementById('selectAll').checked = false;
+          const selectAll = document.getElementById('selectAll');
+          if (selectAll) selectAll.checked = false;
           loadLowStockItems();
           loadRequestHistory();
         } else {

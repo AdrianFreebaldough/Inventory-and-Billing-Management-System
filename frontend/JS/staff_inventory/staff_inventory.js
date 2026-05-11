@@ -1550,7 +1550,7 @@ function requestRestock(item) {
         submitBtn.addEventListener("click", async () => {
             const qtyInput = modalContent.querySelector("#restockQuantityInput");
             const errorEl = modalContent.querySelector("#restockQuantityError");
-            const quantity = qtyInput ? parseInt(qtyInput.value) : 0;
+            const quantity = qtyInput ? parseFloat(qtyInput.value) : 0;
 
             if (errorEl) errorEl.classList.add("hidden");
             if (!qtyInput?.value || qtyInput.value === "" || quantity <= 0) {

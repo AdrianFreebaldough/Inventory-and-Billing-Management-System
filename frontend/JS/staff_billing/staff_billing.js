@@ -18,13 +18,14 @@ import {
 	isAllCategories,
 	normalizeInventoryCategoryKey,
 	toCanonicalInventoryCategory,
+	setInventoryCategories,
 } from "../utils/inventoryCategories.js";
 
 /* ===== Constants ===== */
 
 const BILLING_MODE_RETURN_KEY = "lastStaffRoute";
-const VAT_RATE = 0.12;
-const CLINIC_NAME = "ZCMMF";
+let VAT_RATE = 0.12;
+let CLINIC_NAME = "ZCMMF";
 const PRODUCT_REFRESH_INTERVAL_MS = 60000;
 const CART_ITEM_HIDE_PATIENT_INFO_THRESHOLD = 5;
 const CART_ITEM_AUTO_SCROLL_THRESHOLD = 2;
@@ -101,6 +102,7 @@ const state = {
 	isLoading: false,
 	historySearchTerm: "",
 	isResolvingPatient: false,
+	settingsLoaded: false,
 };
 
 /* ===== DOM Elements ===== */
@@ -181,6 +183,7 @@ const nextSaleBtn = document.getElementById("nextSaleBtn");
 const heldCloseBtn = document.getElementById("heldCloseBtn");
 const heldList = document.getElementById("heldList");
 
+const historyPrintBtn = document.getElementById("historyPrintBtn");
 const historyViewCloseBtn = document.getElementById("historyViewCloseBtn");
 const historyViewTxnId = document.getElementById("historyViewTxnId");
 const historyViewDateTime = document.getElementById("historyViewDateTime");
@@ -307,10 +310,31 @@ function hideLoading() {
 	loadingOverlay.classList.add("hidden");
 	loadingOverlay.classList.remove("flex");
 }
-
 function generatePatientId() {
 	const suffix = Math.floor(100000 + Math.random() * 900000);
 	return `PAT-${suffix}`;
+}
+
+async function loadSystemSettings() {
+	try {
+		const response = await apiFetch("/api/settings", { method: "GET" });
+		const settings = response?.data;
+		if (settings) {
+			if (settings.billing?.vatRate !== undefined) {
+				VAT_RATE = settings.billing.vatRate / 100;
+			}
+			if (settings.profile?.clinicName) {
+				CLINIC_NAME = settings.profile.clinicName;
+			}
+			if (settings.inventory?.categories) {
+				setInventoryCategories(settings.inventory.categories);
+			}
+			state.settingsLoaded = true;
+			console.log(`[Billing] Settings loaded: VAT=${VAT_RATE*100}%, Clinic=${CLINIC_NAME}`);
+		}
+	} catch (error) {
+		console.error("[Billing] Failed to load system settings:", error);
+	}
 }
 
 function normalizePendingBalanceLines(lines = []) {
@@ -1259,8 +1283,8 @@ function renderItemRows() {
 								data-id="${item.id}"
 								min="0"
 								max="${maxSellableStock}"
-								step="1"
-								inputmode="numeric"
+								step="any"
+								inputmode="decimal"
 								value="${isNotSellable ? 0 : displayQty}"
 								${isQtyInputDisabled ? "disabled" : ""}
 								class="pos-qty-input h-6 w-[55px] border border-slate-300 bg-white px-1 text-center text-xs font-semibold text-slate-800 outline-none focus:border-cyan-600${
@@ -1406,13 +1430,13 @@ function renderProductPanel() {
 }
 
 function validateCommittedQuantity(item, rawValue, previousQty) {
-	const cleaned = String(rawValue ?? "").replace(/[^\d-]/g, "").trim();
+	const cleaned = String(rawValue ?? "").replace(/[^\d.-]/g, "").trim();
 
 	if (!cleaned) {
 		return previousQty > 0 ? previousQty : 0;
 	}
 
-	const parsed = Number.parseInt(cleaned, 10);
+	const parsed = parseFloat(cleaned);
 	if (!Number.isFinite(parsed) || parsed < 0) {
 		return 0;
 	}
@@ -2644,9 +2668,11 @@ function attachEvents() {
 	});
 
 	printSlipBtn?.addEventListener("click", () => {
-		if (state.lastCompletedSale) {
-			window.print();
-		}
+		window.print();
+	});
+	
+	historyPrintBtn?.addEventListener("click", () => {
+		window.print();
 	});
 
 	nextSaleBtn?.addEventListener("click", async () => {
@@ -2738,7 +2764,7 @@ async function init() {
 	showLoading("Loading billing system...");
 
 	try {
-		await Promise.all([loadProducts(), loadHistory(), loadBillingSettings()]);
+		await Promise.all([loadSystemSettings(), loadProducts(), loadHistory(), loadBillingSettings()]);
 		hideLoading();
 		refreshUi();
 		attachEvents();

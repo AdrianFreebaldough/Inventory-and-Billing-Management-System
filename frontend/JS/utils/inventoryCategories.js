@@ -1,4 +1,4 @@
-export const INVENTORY_CATEGORY_LIST = [
+export let INVENTORY_CATEGORY_LIST = [
   "Antibiotic",
   "Medicine",
   "Analgesic",
@@ -10,6 +10,16 @@ export const INVENTORY_CATEGORY_LIST = [
   "First Aid",
   "Personal Care",
 ];
+
+/**
+ * Updates the global category list from backend settings.
+ * Called during app initialization.
+ */
+export function setInventoryCategories(newCategories) {
+  if (Array.isArray(newCategories) && newCategories.length > 0) {
+    INVENTORY_CATEGORY_LIST = [...newCategories];
+  }
+}
 
 export const ALL_CATEGORIES_LABEL = "All Categories";
 export const FILTER_PLACEHOLDER_LABEL = "Filter by category";

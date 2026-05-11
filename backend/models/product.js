@@ -148,8 +148,20 @@ const productSchema = new mongoose.Schema(
 productSchema.index({ status: 1, isArchived: 1, quantity: 1 });
 
 /* 🔄 Auto-update status based on quantity vs minStock threshold */
-productSchema.pre("save", function () {
-  const threshold = this.minStock ?? 10;
+productSchema.pre("save", async function () {
+  // Use per-product minStock if defined, otherwise fallback to global settings threshold
+  let threshold = this.minStock;
+  
+  if (threshold === undefined || threshold === null) {
+    try {
+      const Settings = mongoose.model("Settings");
+      const settings = await Settings.getInstance();
+      threshold = settings.inventory?.invLowStockThreshold ?? 10;
+    } catch (error) {
+      threshold = 10; // Fail-safe default
+    }
+  }
+
   if (this.quantity <= 0) {
     this.status = "out";
   } else if (this.quantity <= threshold) {

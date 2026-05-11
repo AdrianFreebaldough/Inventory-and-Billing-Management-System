@@ -1,10 +1,12 @@
 import User from "../models/user.js";
 import Product from "../models/product.js";
 import STAFF_BillingTransaction from "../models/STAFF_billingTransaction.js";
+import STAFF_Expense from "../models/STAFF_expense.js";
 import InventoryRequest from "../models/InventoryRequest.js";
 import ActivityLog from "../models/activityLog.js";
 import STAFF_ActivityLog from "../models/STAFF_activityLog.js";
 import Owner_StockLog from "../models/Owner_StockLog.model.js";
+import Settings from "../models/Settings.js";
 import { createCachedActorDisplayResolver } from "../utils/requesterDisplayName.js";
 
 /* ================================================================
@@ -50,9 +52,12 @@ export const getDashboardSummary = async (_req, res) => {
     const [
       totalRevenueAgg,
       todaysRevenueAgg,
+      totalExpensesAgg,
+      todaysExpensesAgg,
       activeStaffCount,
       pendingInventoryRequests,
       lowStockCandidates,
+      settings,
     ] = await Promise.all([
       /* Total revenue – all completed transactions */
       STAFF_BillingTransaction.aggregate([
@@ -66,28 +71,56 @@ export const getDashboardSummary = async (_req, res) => {
         { $group: { _id: null, total: { $sum: "$totalAmount" } } },
       ]),
 
+      /* Total approved expenses */
+      STAFF_Expense.aggregate([
+        { $match: { status: "Approved" } },
+        { $group: { _id: null, total: { $sum: "$amount" } } },
+      ]),
+
+      /* Today's approved expenses */
+      STAFF_Expense.aggregate([
+        { $match: { status: "Approved", reviewedAt: { $gte: todayStart } } },
+        { $group: { _id: null, total: { $sum: "$amount" } } },
+      ]),
+
       /* Active staff count */
       User.countDocuments({ role: "staff", isActive: true }),
 
       /* Pending inventory requests */
       InventoryRequest.countDocuments({ status: "pending" }),
 
-      /* Low / out-of-stock items (uses model-driven status, NOT hardcoded threshold) */
+      /* Low / out-of-stock items */
       Product.find({
         status: { $in: ["low", "out"] },
         isArchived: { $ne: true },
       })
         .select("category")
         .lean(),
+      
+      /* Global Settings */
+      Settings.getInstance(),
     ]);
 
-    const lowStockItems = lowStockCandidates.filter(
-      (item) => !isInventoryServiceCategory(item.category)
-    ).length;
+    const totalRevenueRaw = totalRevenueAgg[0]?.total || 0;
+    const todaysRevenueRaw = todaysRevenueAgg[0]?.total || 0;
+    const totalExpenses = totalExpensesAgg[0]?.total || 0;
+    const todaysExpenses = todaysExpensesAgg[0]?.total || 0;
+
+    // Deduct expenses from revenue
+    const totalRevenue = Math.max(0, totalRevenueRaw - totalExpenses);
+    const todaysRevenue = Math.max(0, todaysRevenueRaw - todaysExpenses);
+
+    const globalThreshold = settings.inventory?.invLowStockThreshold ?? 10;
+
+    const lowStockItems = lowStockCandidates.filter((item) => {
+      if (isInventoryServiceCategory(item.category)) return false;
+      const threshold = item.minStock ?? globalThreshold;
+      return item.quantity <= threshold;
+    }).length;
 
     res.json({
-      totalRevenue: totalRevenueAgg[0]?.total || 0,
-      todaysRevenue: todaysRevenueAgg[0]?.total || 0,
+      totalRevenue,
+      todaysRevenue,
       activeStaffCount,
       pendingInventoryRequests,
       lowStockItems,
@@ -111,36 +144,74 @@ export const getRevenueTrend = async (_req, res) => {
 
     const dayLabels = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-    const revenue = await STAFF_BillingTransaction.aggregate([
-      {
-        $match: {
-          status: "COMPLETED",
-          completedAt: { $gte: start },
-        },
-      },
-      {
-        $group: {
-          _id: {
-            $dateToString: { format: "%Y-%m-%d", date: "$completedAt" },
+    const [revenue, expenses] = await Promise.all([
+      STAFF_BillingTransaction.aggregate([
+        {
+          $match: {
+            status: "COMPLETED",
+            completedAt: { $gte: start },
           },
-          total: { $sum: "$totalAmount" },
         },
-      },
-      { $sort: { _id: 1 } },
+        {
+          $group: {
+            _id: {
+              $dateToString: { 
+                format: "%Y-%m-%d", 
+                date: "$completedAt",
+                timezone: Intl.DateTimeFormat().resolvedOptions().timeZone 
+              },
+            },
+            total: { $sum: "$totalAmount" },
+          },
+        },
+        { $sort: { _id: 1 } },
+      ]),
+      STAFF_Expense.aggregate([
+        {
+          $match: {
+            status: "Approved",
+            reviewedAt: { $gte: start },
+          },
+        },
+        {
+          $group: {
+            _id: {
+              $dateToString: { 
+                format: "%Y-%m-%d", 
+                date: "$reviewedAt",
+                timezone: Intl.DateTimeFormat().resolvedOptions().timeZone 
+              },
+            },
+            total: { $sum: "$amount" },
+          },
+        },
+        { $sort: { _id: 1 } },
+      ])
     ]);
 
-    /* Build a full 7-day series so the chart always has 7 points */
+    /* Build a full 7-day series using local date keys to match local labels */
     const revenueMap = new Map(revenue.map((r) => [r._id, r.total]));
+    const expenseMap = new Map(expenses.map((e) => [e._id, e.total]));
     const labels = [];
     const data = [];
 
     for (let i = 0; i < 7; i++) {
       const d = new Date(start);
       d.setDate(start.getDate() + i);
-      const key = d.toISOString().slice(0, 10);           // YYYY-MM-DD
+      
+      // Use YYYY-MM-DD format based on local date
+      const key = [
+        d.getFullYear(),
+        String(d.getMonth() + 1).padStart(2, "0"),
+        String(d.getDate()).padStart(2, "0")
+      ].join("-");
+
       const label = dayLabels[d.getDay()];
       labels.push(label);
-      data.push(revenueMap.get(key) || 0);
+      
+      const dailyRevenue = revenueMap.get(key) || 0;
+      const dailyExpense = expenseMap.get(key) || 0;
+      data.push(Math.max(0, dailyRevenue - dailyExpense));
     }
 
     res.json({ labels, data });
@@ -203,15 +274,23 @@ export const getPendingInventoryRequests = async (_req, res) => {
    ================================================================ */
 export const getLowStockItems = async (_req, res) => {
   try {
-    const products = await Product.find({
-      status: { $in: ["low", "out"] },
-      isArchived: { $ne: true },
-    })
-      .sort({ quantity: 1 })
-      .select("name category quantity minStock status unit")
-      .lean();
+    const [settings, products] = await Promise.all([
+      Settings.getInstance(),
+      Product.find({ isArchived: { $ne: true } })
+        .sort({ quantity: 1 })
+        .select("name category quantity minStock status unit")
+        .lean(),
+    ]);
 
-    res.json(products.filter((product) => !isInventoryServiceCategory(product.category)));
+    const globalThreshold = settings.inventory?.invLowStockThreshold ?? 10;
+
+    const filtered = products.filter((product) => {
+      if (isInventoryServiceCategory(product.category)) return false;
+      const threshold = product.minStock ?? globalThreshold;
+      return product.quantity <= threshold;
+    });
+
+    res.json(filtered);
   } catch (error) {
     console.error("getLowStockItems error:", error);
     res.status(500).json({ message: error.message });
